@@ -42,11 +42,11 @@
 
 ## P0-03 Design System 手动验证
 
-环境：Windows 10 22H2 或 Windows 11，仓库根目录为 D:Anime。
+环境：Windows 10 22H2 或 Windows 11，仓库根目录为 `D:\Anime`。
 
 ### 测试 1：启动并确认资源加载
 
-1. 打开底部 PowerShell，进入 D:Anime。
+1. 打开底部 PowerShell，进入 `D:\Anime`。
 2. 执行 ./scripts/run.ps1。
 3. 预期：ReminNote 主窗口正常打开；背景、侧栏、卡片、页标题和底部栏保持统一亮色信息面板风格。
 4. 失败：窗口启动异常、出现 XAML/资源字典错误、界面缺少颜色或控件样式。
@@ -75,6 +75,6 @@
 ### 测试 5：数据与网络边界
 
 1. 关闭应用。
-2. 检查 D:Anime.devdata 和项目目录。
+2. 检查 `D:\Anime\.devdata` 和项目目录。
 3. 预期：本 Slice 不新增 SQLite、Token、网络缓存或生产配置文件。
 4. 失败：出现未授权的数据/Token 文件或应用产生网络访问。

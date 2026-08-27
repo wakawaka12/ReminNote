@@ -21,7 +21,7 @@ SDK 版本由 `global.json` 固定到 .NET 10.0.100，并允许同一 LTS 小版
 ./scripts/clean.ps1
 ```
 
-脚本使用 NuGet lock 文件的 locked mode；依赖变更必须经过审查并更新 lock 文件。脚本会优先使用 PATH 中可用的 .NET SDK，若当前进程 PATH 尚未刷新，则回退到标准 x64 安装路径。
+脚本使用 NuGet lock 文件的 locked mode；依赖变更必须经过审查并更新 lock 文件。脚本会先检查标准 x64 安装路径 `%ProgramFiles%\dotnet\dotnet.exe`，且只有确认该路径提供 .NET 10 SDK 时才会直接使用；否则再按 PATH 中的 dotnet 命令顺序寻找提供 .NET 10 SDK 的可用宿主。若 PATH 中排在前面的 dotnet 没有 SDK，裸 `dotnet` 命令可能失败，但仓库脚本仍会继续解析可用 SDK。
 
 ## P0-02 依赖
 

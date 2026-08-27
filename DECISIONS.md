@@ -50,3 +50,19 @@
 - 决策：TODAY 与 ANIME 各自拥有 Features 子目录、资源字典、ViewModel 和 DI 注册扩展；共享 App Shell 只引用稳定入口。
 - 原因：支持独立 worktree 并行开发，减少 MainWindow、App 和共享 ViewModel 的合并冲突。
 - 限制：这是 P0 的静态模块边界，不建立运行时插件发现或通用模块框架。
+
+## ADR-0008：P0-06 Widget 复用 Design System 的资源所有权
+
+- 日期：2026-08-27
+- 状态：已接受
+- 决策：P0-06 Widget 复用 `ReminNote.Windows/Resources/DesignSystem/**` 的原始 XAML 文件；Widget 项目通过项目文件 Link 引入这些文件，不复制令牌，也不反向引用整个 `ReminNote.Windows` 程序集。
+- 原因：保持 Main App 与 Widget 使用同一份视觉令牌源，避免复制后发生漂移；同时维持 Widget 的独立构建边界，不把主窗口壳层拖入 Widget。
+- 结果：P0-06 必须验证 Link 指向的源文件存在且没有复制的 Design System 副本；若未来需要独立程序集，再以新的 ADR 取代本决策，不在功能窗口内临时拆分公共资源。
+
+## ADR-0009：i18n foundation 延后至 P0-07
+
+- 日期：2026-08-27
+- 状态：已接受
+- 决策：P0-03 至 P0-06 的本地 Mock 保持简体中文默认显示，不在当前 Slice 引入完整国际化运行时；P0-07 必须建立稳定资源键，提取 Shell 与功能页面的用户可见文案，并将“简体中文默认显示、ViewModel/业务逻辑不散落用户文案”纳入验收。
+- 原因：主计划将 `resource/i18n foundation` 列入 P0，且 P0-07 明确承担 stabilization 与 i18n；当前并行 Mock 阶段先保持功能边界和视觉验收稳定，避免现在引入超出 P0-03 的框架改造。
+- 结果：当前 P0-03 不因该决策扩大实现范围；在宣告整个 P0 完成前，必须完成资源键边界和默认语言验收，并同步处理既有 Shell/Features 硬编码文案。
