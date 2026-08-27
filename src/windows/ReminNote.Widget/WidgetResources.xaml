@@ -1,0 +1,560 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <SolidColorBrush x:Key="WidgetSoftAccentBrush" Color="#EDF0FF" />
+    <SolidColorBrush x:Key="WidgetSoftBorderBrush" Color="#D9DDFB" />
+    <SolidColorBrush x:Key="WidgetMutedBackgroundBrush" Color="#F8F9FC" />
+    <SolidColorBrush x:Key="WidgetAlertBrush" Color="#F06A6A" />
+    <SolidColorBrush x:Key="WidgetAlertSoftBrush" Color="#FFF1F1" />
+    <SolidColorBrush x:Key="WidgetSuccessBrush" Color="#2F9E79" />
+    <SolidColorBrush x:Key="WidgetAnimeBrush" Color="#7B5CE1" />
+    <Thickness x:Key="WidgetContentMargin">18,14,18,14</Thickness>
+    <Thickness x:Key="WidgetHeaderPadding">18,14,12,12</Thickness>
+    <Thickness x:Key="WidgetFooterPadding">12,8,12,8</Thickness>
+    <CornerRadius x:Key="WidgetWindowCornerRadius">20</CornerRadius>
+    <CornerRadius x:Key="WidgetCardCornerRadius">14</CornerRadius>
+    <CornerRadius x:Key="WidgetControlCornerRadius">8</CornerRadius>
+
+    <Style x:Key="WidgetWindowSurfaceStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Background"
+                Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush"
+                Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness"
+                Value="1" />
+        <Setter Property="CornerRadius"
+                Value="{DynamicResource WidgetWindowCornerRadius}" />
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect BlurRadius="22"
+                                  Direction="270"
+                                  ShadowDepth="7"
+                                  Opacity="0.18"
+                                  Color="#506078" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WidgetHeaderSurfaceStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Padding"
+                Value="{DynamicResource WidgetHeaderPadding}" />
+        <Setter Property="Background"
+                Value="{DynamicResource WidgetSoftAccentBrush}" />
+        <Setter Property="BorderBrush"
+                Value="{DynamicResource WidgetSoftBorderBrush}" />
+        <Setter Property="BorderThickness"
+                Value="0,0,0,1" />
+    </Style>
+
+    <Style x:Key="WidgetFooterSurfaceStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Padding"
+                Value="{DynamicResource WidgetFooterPadding}" />
+        <Setter Property="Background"
+                Value="{DynamicResource WidgetMutedBackgroundBrush}" />
+        <Setter Property="BorderBrush"
+                Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness"
+                Value="0,1,0,0" />
+    </Style>
+
+    <Style x:Key="WidgetBrandTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="17" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetEyebrowTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetPageTitleTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="24" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetPageSubtitleTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Margin" Value="0,3,0,0" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetCardEyebrowTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetPrimaryTitleTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Margin" Value="0,5,0,0" />
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentPrimaryBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="WidgetMetaTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Margin" Value="0,4,0,0" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetFeedbackTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Margin" Value="0,6,0,0" />
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Foreground" Value="{DynamicResource WidgetSuccessBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style x:Key="WidgetStatusTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetTimeTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Margin" Value="0,3,0,0" />
+        <Setter Property="FontSize" Value="22" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetPrimaryCardStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Padding" Value="14" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WidgetSoftBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource WidgetCardCornerRadius}" />
+    </Style>
+
+    <Style x:Key="WidgetPrimaryAnimeCardStyle"
+           BasedOn="{StaticResource WidgetPrimaryCardStyle}"
+           TargetType="{x:Type Border}">
+        <Setter Property="BorderBrush" Value="#DED5FF" />
+        <Setter Property="Background" Value="#FCFBFF" />
+    </Style>
+
+    <Style x:Key="WidgetQueueItemStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Padding" Value="9,8" />
+        <Setter Property="Margin" Value="0,5,0,0" />
+        <Setter Property="Background" Value="{DynamicResource WidgetMutedBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource WidgetControlCornerRadius}" />
+    </Style>
+
+    <Style x:Key="WidgetQueueTimeTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="WidgetQueueTitleTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentPrimaryBrush}" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="WidgetQueueMetaTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Margin" Value="0,3,0,0" />
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetQueueMarkerTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="WidgetSectionLabelTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetSummaryTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetTabButtonStyle"
+           TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="10,7" />
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="TabBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{DynamicResource WidgetControlCornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="TabBorder" Property="Background" Value="{DynamicResource WidgetSoftAccentBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="TabBorder" Property="Opacity" Value="0.78" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="TabBorder" Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
+                            <Setter TargetName="TabBorder" Property="BorderThickness" Value="1" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WidgetTodayTabButtonStyle"
+           BasedOn="{StaticResource WidgetTabButtonStyle}"
+           TargetType="{x:Type Button}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsTodayActive}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource CardBackgroundBrush}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="WidgetAnimeTabButtonStyle"
+           BasedOn="{StaticResource WidgetTabButtonStyle}"
+           TargetType="{x:Type Button}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsAnimeActive}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource WidgetAnimeBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource CardBackgroundBrush}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="WidgetActionButtonStyle"
+           TargetType="{x:Type Button}">
+        <Setter Property="Padding" Value="10,7" />
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="ActionBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{DynamicResource WidgetControlCornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ActionBorder" Property="Opacity" Value="0.84" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="ActionBorder" Property="Opacity" Value="0.68" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="ActionBorder" Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WidgetPrimaryActionButtonStyle"
+           BasedOn="{StaticResource WidgetActionButtonStyle}"
+           TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource CardBackgroundBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetSecondaryActionButtonStyle"
+           BasedOn="{StaticResource WidgetActionButtonStyle}"
+           TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetStateChipStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WidgetSoftBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource WidgetControlCornerRadius}" />
+    </Style>
+
+    <Style x:Key="WidgetStateButtonStyle"
+           TargetType="{x:Type Button}">
+        <Setter Property="Padding" Value="9,6" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="StateBorder"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="{DynamicResource WidgetControlCornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Content="{TemplateBinding Content}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="StateBorder" Property="Background" Value="{DynamicResource WidgetSoftAccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WidgetCloseButtonStyle"
+           TargetType="{x:Type Button}">
+        <Setter Property="Width" Value="28" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="CloseBorder"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="{DynamicResource WidgetControlCornerRadius}">
+                        <ContentPresenter HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Content="{TemplateBinding Content}"
+                                          TextElement.Foreground="{TemplateBinding Foreground}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="CloseBorder" Property="Background" Value="{DynamicResource WidgetAlertSoftBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource WidgetAlertBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WidgetFooterButtonStyle"
+           BasedOn="{StaticResource WidgetSecondaryActionButtonStyle}"
+           TargetType="{x:Type Button}">
+        <Setter Property="Padding" Value="7,5" />
+        <Setter Property="FontSize" Value="9" />
+    </Style>
+
+    <Style x:Key="WidgetFooterTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="WidgetCoverPlaceholderStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Width" Value="64" />
+        <Setter Property="Height" Value="78" />
+        <Setter Property="Background" Value="{DynamicResource WidgetAnimeBrush}" />
+        <Setter Property="CornerRadius" Value="10" />
+    </Style>
+
+    <Style x:Key="WidgetCoverLabelTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="#EDE8FF" />
+    </Style>
+
+    <Style x:Key="WidgetCoverNumberTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Margin" Value="0,2,0,0" />
+        <Setter Property="FontSize" Value="26" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource CardBackgroundBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetAlertOverlayStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Margin" Value="12" />
+        <Setter Property="Padding" Value="18" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WidgetAlertBrush}" />
+        <Setter Property="BorderThickness" Value="2" />
+        <Setter Property="CornerRadius" Value="{DynamicResource WidgetCardCornerRadius}" />
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.16" Color="#F06A6A" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WidgetAlertIconTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Width" Value="30" />
+        <Setter Property="Height" Value="30" />
+        <Setter Property="FontSize" Value="22" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource WidgetAlertBrush}" />
+        <Setter Property="TextAlignment" Value="Center" />
+    </Style>
+
+    <Style x:Key="WidgetAlertEyebrowTextStyle"
+           BasedOn="{StaticResource WidgetCardEyebrowTextStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Foreground" Value="{DynamicResource WidgetAlertBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetAlertTitleTextStyle"
+           BasedOn="{StaticResource WidgetPrimaryTitleTextStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Margin" Value="0,3,0,0" />
+    </Style>
+
+    <Style x:Key="WidgetAlertBodyTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style x:Key="WidgetAlertContextTextStyle"
+           BasedOn="{StaticResource TextBlockBaseStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Margin" Value="0,10,0,0" />
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="WidgetQuickAddTextBoxStyle"
+           TargetType="{x:Type TextBox}">
+        <Setter Property="Padding" Value="10,8" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentPrimaryBrush}" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <Style x:Key="WidgetQuickAddOverlayStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="VerticalAlignment" Value="Bottom" />
+        <Setter Property="Margin" Value="12" />
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="Background" Value="{DynamicResource WidgetSoftAccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WidgetSoftBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource WidgetCardCornerRadius}" />
+    </Style>
+
+    <Style x:Key="WidgetDrawerOverlayStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="VerticalAlignment" Value="Stretch" />
+        <Setter Property="Width" Value="320" />
+        <Setter Property="Margin" Value="12" />
+        <Setter Property="Padding" Value="18" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource WidgetCardCornerRadius}" />
+        <Setter Property="Effect">
+            <Setter.Value>
+                <DropShadowEffect BlurRadius="18" ShadowDepth="3" Opacity="0.18" Color="#506078" />
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="WidgetReminderItemStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Padding" Value="11,10" />
+        <Setter Property="Background" Value="{DynamicResource WidgetMutedBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource WidgetControlCornerRadius}" />
+    </Style>
+
+    <Style x:Key="WidgetReminderStatusTextStyle"
+           BasedOn="{StaticResource WidgetQueueMarkerTextStyle}"
+           TargetType="{x:Type TextBlock}">
+        <Setter Property="Foreground" Value="{DynamicResource WidgetAlertBrush}" />
+    </Style>
+</ResourceDictionary>

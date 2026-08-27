@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>ReminNote.Widget</RootNamespace>
+    <AssemblyName>ReminNote.Widget</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Page Include="..\ReminNote.Windows\Resources\DesignSystem\Colors.xaml"
+          Link="Resources\DesignSystem\Colors.xaml" />
+    <Page Include="..\ReminNote.Windows\Resources\DesignSystem\Spacing.xaml"
+          Link="Resources\DesignSystem\Spacing.xaml" />
+    <Page Include="..\ReminNote.Windows\Resources\DesignSystem\Typography.xaml"
+          Link="Resources\DesignSystem\Typography.xaml" />
+    <Page Include="..\ReminNote.Windows\Resources\DesignSystem\Controls.xaml"
+          Link="Resources\DesignSystem\Controls.xaml" />
+  </ItemGroup>
+</Project>
