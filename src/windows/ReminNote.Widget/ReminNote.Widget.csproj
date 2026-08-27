@@ -22,4 +22,13 @@
     <Page Include="..\ReminNote.Windows\Resources\DesignSystem\Controls.xaml"
           Link="Resources\DesignSystem\Controls.xaml" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\ReminNote.Windows\Resources\Localization\UiText.cs"
+             Link="Resources\Localization\UiText.cs" />
+    <EmbeddedResource Include="..\ReminNote.Windows\Resources\Localization\UiText.resx"
+                      Link="Resources\Localization\UiText.resx">
+      <LogicalName>ReminNote.Windows.Resources.Localization.UiText.resources</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
 </Project>

@@ -46,7 +46,7 @@
                                  Value="True">
                             <Setter TargetName="ButtonBorder"
                                     Property="BorderBrush"
-                                    Value="{DynamicResource SidebarFocusBrush}" />
+                                    Value="{DynamicResource AccessibleFocusBrush}" />
                             <Setter TargetName="ButtonBorder"
                                     Property="BorderThickness"
                                     Value="1" />

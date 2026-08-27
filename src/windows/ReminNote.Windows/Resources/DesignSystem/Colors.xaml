@@ -33,5 +33,7 @@
     <SolidColorBrush x:Key="CardBackgroundBrush" Color="{DynamicResource CardBackgroundColor}" />
     <SolidColorBrush x:Key="BorderBrush" Color="{DynamicResource BorderColor}" />
     <SolidColorBrush x:Key="FocusBrush" Color="{DynamicResource FocusColor}" />
+    <SolidColorBrush x:Key="AccessibleFocusBrush"
+                     Color="{DynamicResource {x:Static SystemColors.HighlightColorKey}}" />
     <SolidColorBrush x:Key="DisabledBrush" Color="{DynamicResource DisabledColor}" />
 </ResourceDictionary>

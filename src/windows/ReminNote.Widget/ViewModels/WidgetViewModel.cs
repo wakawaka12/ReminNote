@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReminNote.Windows.Resources.Localization;
 
 namespace ReminNote.Widget.ViewModels;
 
@@ -53,13 +54,13 @@ public sealed class WidgetViewModel : ObservableObject
     {
         TodayUpcomingItems =
         [
-            new WidgetQueueItem("12:00", "吃钙片", "TODAY · 个人健康", "NOW"),
-            new WidgetQueueItem("18:30", "准备明日计划", "TODAY · REVIEW", "NEXT")
+            new WidgetQueueItem("12:00", "吃钙片", UiText.Get(UiText.WidgetTodayHealthMetaKey), "NOW"),
+            new WidgetQueueItem("18:30", "准备明日计划", UiText.Get(UiText.WidgetTodayReviewMetaKey), "NEXT")
         ];
         AnimeUpcomingItems =
         [
-            new WidgetQueueItem("22:30", "药屋少女的呢喃", "第 08 集 · 追番中", "01:12"),
-            new WidgetQueueItem("明天", "迷宫饭", "第 14 集 · WATCH LATER", "+2")
+            new WidgetQueueItem("22:30", "药屋少女的呢喃", UiText.Get(UiText.WidgetAnimeWatchingMetaKey), "01:12"),
+            new WidgetQueueItem("明天", "迷宫饭", UiText.Get(UiText.WidgetAnimeWatchLaterMetaKey), "+2")
         ];
 
         ShowTodayCommand = new RelayCommand(ShowToday);
@@ -116,12 +117,13 @@ public sealed class WidgetViewModel : ObservableObject
 
     public IRelayCommand DismissAlertCommand { get; }
 
-    public string ActivePageTitle => _activePage == WidgetPage.Today ? "今天" : "动画";
+    public string ActivePageTitle => _activePage == WidgetPage.Today
+        ? UiText.ShellTodayTitle
+        : UiText.ShellAnimeTitle;
 
     public string ActivePageSubtitle => _activePage == WidgetPage.Today
-        ? "TODAY · 计划与提醒"
-        : "ANIME · 追番与播出"
-        ;
+        ? UiText.Get(UiText.WidgetTodayPageSubtitleKey)
+        : UiText.Get(UiText.WidgetAnimePageSubtitleKey);
 
     public bool IsTodayActive => _activePage == WidgetPage.Today;
 
@@ -129,11 +131,11 @@ public sealed class WidgetViewModel : ObservableObject
 
     public string InteractionStateLabel => _interactionState switch
     {
-        WidgetInteractionState.Locked => "LOCKED",
-        WidgetInteractionState.TempInteractive => "TEMP",
-        WidgetInteractionState.Unlocked => "UNLOCKED",
-        WidgetInteractionState.Alert => "ALERT",
-        _ => "MOCK"
+        WidgetInteractionState.Locked => UiText.Get(UiText.WidgetStateLockedKey),
+        WidgetInteractionState.TempInteractive => UiText.Get(UiText.WidgetStateTempKey),
+        WidgetInteractionState.Unlocked => UiText.Get(UiText.WidgetStateUnlockedKey),
+        WidgetInteractionState.Alert => UiText.Get(UiText.WidgetStateAlertKey),
+        _ => UiText.Get(UiText.WidgetStateMockKey)
     };
 
     public string InteractionStateIcon => _interactionState switch
@@ -145,7 +147,9 @@ public sealed class WidgetViewModel : ObservableObject
         _ => "·"
     };
 
-    public string TaskStatusLabel => _isTaskCompleted ? "已完成" : "ANYTIME";
+    public string TaskStatusLabel => _isTaskCompleted
+        ? UiText.Get(UiText.WidgetTaskCompletedKey)
+        : UiText.Get(UiText.WidgetTaskAnytimeKey);
 
     public string TaskFeedback
     {
@@ -284,41 +288,41 @@ public sealed class WidgetViewModel : ObservableObject
 
     private void SubmitQuickAdd()
     {
-        QuickAddFeedback = $"已加入 Mock 队列：{QuickAddText.Trim()}";
+        QuickAddFeedback = UiText.Format(UiText.WidgetQuickAddFeedbackKey, QuickAddText.Trim());
         QuickAddText = string.Empty;
     }
 
     private void CompleteTask()
     {
         _isTaskCompleted = true;
-        TaskFeedback = "Mock 状态：COMPLETED · 未写入数据";
+        TaskFeedback = UiText.Get(UiText.WidgetTaskCompletedFeedbackKey);
     }
 
     private void SnoozeTask()
     {
         _isTaskCompleted = false;
-        TaskFeedback = "Mock 状态：已延后 30 分钟 · 原计划未改变";
+        TaskFeedback = UiText.Get(UiText.WidgetTaskSnoozedFeedbackKey);
     }
 
     private void RescheduleTask()
     {
         _isTaskCompleted = false;
-        TaskFeedback = "Mock 状态：已模拟移动到明天 09:00";
+        TaskFeedback = UiText.Get(UiText.WidgetTaskRescheduledFeedbackKey);
     }
 
     private void WatchAnime()
     {
-        AnimeFeedback = "Mock 状态：WATCHED · 未修改动画数据";
+        AnimeFeedback = UiText.Get(UiText.WidgetAnimeWatchedFeedbackKey);
     }
 
     private void WatchLater()
     {
-        AnimeFeedback = "Mock 状态：WATCH LATER · 未修改动画数据";
+        AnimeFeedback = UiText.Get(UiText.WidgetAnimeWatchLaterFeedbackKey);
     }
 
     private void ScheduleAnimeTask()
     {
-        AnimeFeedback = "Mock 状态：已模拟排入明天任务 · 未创建真实 Task";
+        AnimeFeedback = UiText.Get(UiText.WidgetAnimeScheduledFeedbackKey);
     }
 
     private void OpenReminderDrawer()
@@ -334,7 +338,7 @@ public sealed class WidgetViewModel : ObservableObject
     private void MarkReminderRead()
     {
         IsReminderDrawerOpen = false;
-        QuickAddFeedback = "Mock 提醒已标记为已读 · ReminderInstance 未持久化";
+        QuickAddFeedback = UiText.Get(UiText.WidgetReminderReadFeedbackKey);
         IsQuickAddOpen = true;
     }
 

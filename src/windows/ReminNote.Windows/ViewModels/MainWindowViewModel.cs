@@ -2,6 +2,7 @@
 using CommunityToolkit.Mvvm.Input;
 using ReminNote.Windows.Features.Anime;
 using ReminNote.Windows.Features.Today;
+using ReminNote.Windows.Resources.Localization;
 
 namespace ReminNote.Windows.ViewModels;
 
@@ -19,8 +20,8 @@ public sealed class MainWindowViewModel : ObservableObject
         _animePage = animePage;
         NavigationItems =
         [
-            new NavigationItemViewModel(ShellPage.Today, "今天", "任务与提醒"),
-            new NavigationItemViewModel(ShellPage.Anime, "动画", "追番与记录")
+            new NavigationItemViewModel(ShellPage.Today, UiText.ShellTodayTitle, UiText.ShellTodaySubtitle),
+            new NavigationItemViewModel(ShellPage.Anime, UiText.ShellAnimeTitle, UiText.ShellAnimeSubtitle)
         ];
         NavigateCommand = new RelayCommand<NavigationItemViewModel?>(Navigate);
         _currentPage = _todayPage;
@@ -38,9 +39,9 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public string ActiveTitle => CurrentPage switch
     {
-        TodayPageViewModel => "今天",
-        AnimePageViewModel => "动画",
-        _ => "ReminNote"
+        TodayPageViewModel => UiText.ShellTodayTitle,
+        AnimePageViewModel => UiText.ShellAnimeTitle,
+        _ => UiText.ShellFallbackTitle
     };
 
     private void Navigate(NavigationItemViewModel? item)

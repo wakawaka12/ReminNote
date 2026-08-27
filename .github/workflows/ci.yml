@@ -20,6 +20,17 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Environment diagnostics
+        shell: pwsh
+        run: |
+          dotnet --version
+          dotnet --info
+          dotnet sln ReminNote.sln list
+
+      - name: P0-07 repository verification
+        shell: pwsh
+        run: ./scripts/verify-p0-07.ps1
+
       - name: Restore
         run: dotnet restore ReminNote.sln --locked-mode
 

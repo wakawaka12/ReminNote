@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.Input;
+using ReminNote.Windows.Resources.Localization;
 using ReminNote.Windows.ViewModels;
 
 namespace ReminNote.Windows.Features.Anime;
@@ -16,21 +17,21 @@ public sealed class AnimePageViewModel : ShellPageViewModel
     private AnimeMockEntry? _selectedEntry;
     private string _selectedSectionKey = AllSectionKey;
     private string _searchQuery = string.Empty;
-    private string _interactionStatus = "LOCAL MOCK · 固定数据 · 未连接网络";
+    private string _interactionStatus = UiText.Get(UiText.AnimeMockStatusKey);
 
     public AnimePageViewModel(IAnimeMockCatalog mockCatalog)
-        : base("本地动画库 Mock · 追番、播出与待看状态均为当前运行中的演示数据。")
+        : base(UiText.AnimePageDescription)
     {
         ArgumentNullException.ThrowIfNull(mockCatalog);
         _allEntries = mockCatalog.LoadCatalog();
         VisibleEntries = new ObservableCollection<AnimeMockEntry>();
         Sections =
         [
-            new AnimeSectionItem(AllSectionKey, "总览", "LIBRARY"),
-            new AnimeSectionItem(ThisSeasonSectionKey, "本季", "THIS SEASON"),
-            new AnimeSectionItem(WatchingSectionKey, "追番中", "WATCHING"),
-            new AnimeSectionItem(WatchLaterSectionKey, "待看", "WATCH LATER"),
-            new AnimeSectionItem(PlanToWatchSectionKey, "计划观看", "PLAN TO WATCH")
+            new AnimeSectionItem(AllSectionKey, UiText.Get(UiText.AnimeSectionAllLabelKey), UiText.Get(UiText.AnimeSectionAllEnglishKey)),
+            new AnimeSectionItem(ThisSeasonSectionKey, UiText.Get(UiText.AnimeSectionThisSeasonLabelKey), UiText.Get(UiText.AnimeSectionThisSeasonEnglishKey)),
+            new AnimeSectionItem(WatchingSectionKey, UiText.Get(UiText.AnimeSectionWatchingLabelKey), UiText.Get(UiText.AnimeSectionWatchingEnglishKey)),
+            new AnimeSectionItem(WatchLaterSectionKey, UiText.Get(UiText.AnimeSectionWatchLaterLabelKey), UiText.Get(UiText.AnimeSectionWatchLaterEnglishKey)),
+            new AnimeSectionItem(PlanToWatchSectionKey, UiText.Get(UiText.AnimeSectionPlanToWatchLabelKey), UiText.Get(UiText.AnimeSectionPlanToWatchEnglishKey))
         ];
 
         SelectSectionCommand = new RelayCommand<string?>(SelectSection);
@@ -71,11 +72,11 @@ public sealed class AnimePageViewModel : ShellPageViewModel
 
     public string SelectedSectionDescription => _selectedSectionKey switch
     {
-        ThisSeasonSectionKey => "本季正在关注的本地条目与下一集安排。",
-        WatchingSectionKey => "已经开启追番的条目，会优先显示下一集播出信息。",
-        WatchLaterSectionKey => "已播但尚未观看的剧集，按当前 Mock 的相关性排序。",
-        PlanToWatchSectionKey => "暂存到计划观看的条目，等待你决定何时开始。",
-        _ => "用一个轻量的本地面板管理播出、进度和下一集。"
+        ThisSeasonSectionKey => UiText.Get(UiText.AnimeSectionThisSeasonDescriptionKey),
+        WatchingSectionKey => UiText.Get(UiText.AnimeSectionWatchingDescriptionKey),
+        WatchLaterSectionKey => UiText.Get(UiText.AnimeSectionWatchLaterDescriptionKey),
+        PlanToWatchSectionKey => UiText.Get(UiText.AnimeSectionPlanToWatchDescriptionKey),
+        _ => UiText.Get(UiText.AnimeSectionAllDescriptionKey)
     };
 
     public AnimeMockEntry? SelectedEntry
@@ -94,29 +95,29 @@ public sealed class AnimePageViewModel : ShellPageViewModel
         }
     }
 
-    public string SelectedEntryTitle => SelectedEntry?.DisplayTitle ?? "尚未选择动画";
+    public string SelectedEntryTitle => SelectedEntry?.DisplayTitle ?? UiText.Get(UiText.AnimeNoSelectedTitleKey);
 
-    public string SelectedEntrySubtitle => SelectedEntry?.Subtitle ?? "从上方卡片选择一个本地 Mock 条目";
+    public string SelectedEntrySubtitle => SelectedEntry?.Subtitle ?? UiText.Get(UiText.AnimeNoSelectedSubtitleKey);
 
-    public string SelectedEntryDescription => SelectedEntry?.DetailDescription ?? "没有匹配的条目时，详情面板会保留在这里。";
+    public string SelectedEntryDescription => SelectedEntry?.DetailDescription ?? UiText.Get(UiText.AnimeNoSelectedDescriptionKey);
 
-    public string SelectedEntryStatus => SelectedEntry?.StatusLabel ?? "NO SELECTION";
+    public string SelectedEntryStatus => SelectedEntry?.StatusLabel ?? UiText.Get(UiText.AnimeNoSelectedStatusKey);
 
-    public string SelectedEntryProgress => SelectedEntry?.ProgressLabel ?? "等待选择";
+    public string SelectedEntryProgress => SelectedEntry?.ProgressLabel ?? UiText.Get(UiText.AnimeNoSelectedProgressKey);
 
     public bool HasVisibleEntries => VisibleEntries.Count > 0;
 
     public bool HasNoVisibleEntries => !HasVisibleEntries;
 
-    public string VisibleCountLabel => $"{VisibleEntries.Count:00} RESULTS · LOCAL CATALOG";
+    public string VisibleCountLabel => UiText.Format(UiText.AnimeVisibleCountKey, VisibleEntries.Count);
 
     public string EmptyStateTitle => string.IsNullOrWhiteSpace(SearchQuery)
-        ? "这个栏目暂时没有条目"
-        : "没有找到匹配的动画";
+        ? UiText.Get(UiText.AnimeEmptyTitleKey)
+        : UiText.Get(UiText.AnimeEmptySearchTitleKey);
 
     public string EmptyStateDescription => string.IsNullOrWhiteSpace(SearchQuery)
-        ? "切换其他栏目，或重新载入固定的本地 Mock 数据。"
-        : $"“{SearchQuery}”不在当前 Mock 目录中，请尝试标题或英文副标题。";
+        ? UiText.Get(UiText.AnimeEmptyDescriptionKey)
+        : UiText.Format(UiText.AnimeEmptySearchDescriptionKey, SearchQuery);
 
     public string InteractionStatus
     {
@@ -167,7 +168,7 @@ public sealed class AnimePageViewModel : ShellPageViewModel
         }
 
         SelectedEntry = entry;
-        InteractionStatus = $"已选择 {entry.DisplayTitle} · 详情面板已更新";
+        InteractionStatus = UiText.Format(UiText.AnimeInteractionSelectedKey, entry.DisplayTitle);
     }
 
     private void ToggleWatchLater(AnimeMockEntry? entry)
@@ -181,11 +182,11 @@ public sealed class AnimePageViewModel : ShellPageViewModel
         if (entry.IsWatchLater)
         {
             entry.IsWatched = false;
-            InteractionStatus = $"{entry.DisplayTitle} 已加入 WATCH LATER · 仅更新当前 Mock 状态";
+            InteractionStatus = UiText.Format(UiText.AnimeInteractionWatchLaterAddedKey, entry.DisplayTitle);
         }
         else
         {
-            InteractionStatus = $"{entry.DisplayTitle} 已移出 WATCH LATER · 仅更新当前 Mock 状态";
+            InteractionStatus = UiText.Format(UiText.AnimeInteractionWatchLaterRemovedKey, entry.DisplayTitle);
         }
 
         UpdateSectionCounts();
@@ -206,7 +207,7 @@ public sealed class AnimePageViewModel : ShellPageViewModel
             entry.IsWatchLater = false;
         }
 
-        InteractionStatus = $"{entry.DisplayTitle} · 当前剧集已标记为已看 · 没有创建真实历史记录";
+        InteractionStatus = UiText.Format(UiText.AnimeInteractionWatchedKey, entry.DisplayTitle);
         UpdateSectionCounts();
         RefreshVisibleEntries();
     }
@@ -220,8 +221,8 @@ public sealed class AnimePageViewModel : ShellPageViewModel
 
         entry.IsTracked = !entry.IsTracked;
         InteractionStatus = entry.IsTracked
-            ? $"{entry.DisplayTitle} 已开启追番 · 仅更新当前 Mock 状态"
-            : $"{entry.DisplayTitle} 已关闭追番 · 仅更新当前 Mock 状态";
+            ? UiText.Format(UiText.AnimeInteractionTrackingOnKey, entry.DisplayTitle)
+            : UiText.Format(UiText.AnimeInteractionTrackingOffKey, entry.DisplayTitle);
         UpdateSectionCounts();
         RefreshVisibleEntries();
     }
@@ -235,13 +236,13 @@ public sealed class AnimePageViewModel : ShellPageViewModel
 
         entry.IsReminderArmed = !entry.IsReminderArmed;
         InteractionStatus = entry.IsReminderArmed
-            ? $"{entry.DisplayTitle} · 模拟提醒已开启（不会触发真实通知）"
-            : $"{entry.DisplayTitle} · 模拟提醒已关闭";
+            ? UiText.Format(UiText.AnimeInteractionReminderOnKey, entry.DisplayTitle)
+            : UiText.Format(UiText.AnimeInteractionReminderOffKey, entry.DisplayTitle);
     }
 
     private void RefreshMock()
     {
-        InteractionStatus = "MOCK 已重新载入 · 数据固定在内存中 · 未访问网络";
+        InteractionStatus = UiText.Get(UiText.AnimeInteractionRefreshKey);
         RefreshVisibleEntries();
     }
 

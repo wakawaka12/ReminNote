@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-当前执行 P0-03 ReminNote Design System foundation。本阶段保留 P0-02 的可启动 WPF 应用壳、Host 组合和最小 MVVM 导航；本阶段只整理可复用视觉资源，不接入真实任务、数据库、提醒或动画数据。
+当前执行 P0-07 P0 polish / accessibility / i18n / CI stabilization。本阶段在已完成的 WPF 应用壳、TODAY、ANIME 和 Widget Mock 上收敛稳定资源键、简体中文默认显示、键盘焦点、UI Automation 标记和构建验证；不接入真实任务、数据库、提醒、网络或生产数据。
 
 ## 已冻结的核心边界
 
@@ -30,3 +30,10 @@
 - 颜色、文字层级、间距和圆角以资源键集中定义，页面不重复散落同类视觉常量。
 - 当前只提供亮色基线；完整主题、用户背景、对比度和动画设置不在本 Slice 内。
 - 导航按钮必须保留鼠标悬停、按下、禁用和键盘焦点反馈。
+
+## P0-07 规则
+
+- Shell、TODAY、ANIME 和 Widget 的用户可见文案必须通过稳定资源键或资源格式化边界提供，默认显示简体中文；本 Slice 不实现运行时语言切换。
+- 可交互控件必须保留可见键盘焦点，并为关键按钮、输入框、页面区域提供 `AutomationProperties.Name` 或 `HelpText`。
+- P0 Mock 仍只使用进程内示例数据；P0-07 不引入数据库、网络、IPC、提醒调度、真实国际化切换或 P1+ 功能。
+- `scripts/verify-p0-07.ps1` 是 `dotnet test` 之外的静态/配置门禁；当前没有测试项目时不得把空测试结果描述为业务测试覆盖。

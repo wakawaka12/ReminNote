@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReminNote.Windows.Resources.Localization;
 using ReminNote.Windows.ViewModels;
 
 namespace ReminNote.Windows.Features.Today;
@@ -9,19 +10,19 @@ public sealed class TodayPageViewModel : ShellPageViewModel
 {
     private static readonly TodayGroupDefinition[] GroupDefinitions =
     [
-        new(TodayTaskGroup.Overdue, "OVERDUE", "需要重新安排", true),
-        new(TodayTaskGroup.Morning, "MORNING", "上午计划", true),
-        new(TodayTaskGroup.Afternoon, "AFTERNOON", "下午计划", true),
-        new(TodayTaskGroup.Evening, "EVENING", "晚间计划", true),
-        new(TodayTaskGroup.Anytime, "ANYTIME", "没有固定时间", true),
-        new(TodayTaskGroup.Completed, "COMPLETED", "已记录结果", false)
+        new(TodayTaskGroup.Overdue, UiText.Get(UiText.TodayGroupOverdueTitleKey), UiText.Get(UiText.TodayGroupOverdueSubtitleKey), true),
+        new(TodayTaskGroup.Morning, UiText.Get(UiText.TodayGroupMorningTitleKey), UiText.Get(UiText.TodayGroupMorningSubtitleKey), true),
+        new(TodayTaskGroup.Afternoon, UiText.Get(UiText.TodayGroupAfternoonTitleKey), UiText.Get(UiText.TodayGroupAfternoonSubtitleKey), true),
+        new(TodayTaskGroup.Evening, UiText.Get(UiText.TodayGroupEveningTitleKey), UiText.Get(UiText.TodayGroupEveningSubtitleKey), true),
+        new(TodayTaskGroup.Anytime, UiText.Get(UiText.TodayGroupAnytimeTitleKey), UiText.Get(UiText.TodayGroupAnytimeSubtitleKey), true),
+        new(TodayTaskGroup.Completed, UiText.Get(UiText.TodayGroupCompletedTitleKey), UiText.Get(UiText.TodayGroupCompletedSubtitleKey), false)
     ];
 
     private readonly List<TodayTaskViewModel> _tasks = [];
     private int _quickTaskNumber = 1;
     private bool _isQuickAddOpen;
     private string _quickAddText = string.Empty;
-    private string _interactionMessage = "示例数据已加载 · 所有操作仅在本次运行中有效";
+    private string _interactionMessage = UiText.Get(UiText.TodayInteractionLoadedKey);
     private TodayTaskViewModel? _selectedTask;
 
     public TodayPageViewModel()
@@ -30,7 +31,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     }
 
     public TodayPageViewModel(ITodayMockDataService mockDataService)
-        : base("TODAY 高保真 Mock · 仅使用进程内示例数据，不连接数据库或网络。")
+        : base(UiText.TodayPageDescription)
     {
         ArgumentNullException.ThrowIfNull(mockDataService);
 
@@ -78,15 +79,15 @@ public sealed class TodayPageViewModel : ShellPageViewModel
 
     public string DateSummary => $"{DateLabel} · {WeekdayLabel}";
 
-    public string MockBadge { get; } = "MOCK · 仅内存";
+    public string MockBadge { get; } = UiText.TodayMockBadge;
 
-    public string NeedsReviewText => $"NEEDS REVIEW · {NeedsReviewCount}";
+    public string NeedsReviewText => UiText.Format(UiText.TodayNeedsReviewTextKey, NeedsReviewCount);
 
     public string NeedsReviewDescription => NeedsReviewCount == 0
-        ? "今天没有等待结果的 RANGE 计划"
-        : "有 RANGE 计划等待你的结果记录";
+        ? UiText.Get(UiText.TodayNeedsReviewNoneKey)
+        : UiText.Get(UiText.TodayNeedsReviewPendingKey);
 
-    public string PlanSummary => $"{OpenTaskCount} OPEN  ·  {CompletedTaskCount} DONE";
+    public string PlanSummary => UiText.Format(UiText.TodayPlanSummaryKey, OpenTaskCount, CompletedTaskCount);
 
     public int OpenTaskCount => _tasks.Count(task => !task.IsCompleted);
 
@@ -132,14 +133,14 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     private void OpenQuickAdd()
     {
         IsQuickAddOpen = true;
-        InteractionMessage = "Quick Add 已展开 · P0 Mock 只会创建 ANYTIME 任务";
+        InteractionMessage = UiText.Get(UiText.TodayInteractionQuickAddOpenedKey);
     }
 
     private void CancelQuickAdd()
     {
         QuickAddText = string.Empty;
         IsQuickAddOpen = false;
-        InteractionMessage = "已取消 Quick Add · 示例数据未改变";
+        InteractionMessage = UiText.Get(UiText.TodayInteractionQuickAddCancelledKey);
     }
 
     private void AddQuickTask()
@@ -147,7 +148,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         var title = QuickAddText.Trim();
         if (title.Length == 0)
         {
-            InteractionMessage = "请输入任务标题后再添加";
+            InteractionMessage = UiText.Get(UiText.TodayInteractionQuickAddEmptyKey);
             return;
         }
 
@@ -156,7 +157,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel
             Title: title,
             Group: TodayTaskGroup.Anytime,
             TimeLabel: "ANYTIME",
-            StatusLabel: "PLANNED",
+            Status: TodayMockStatus.Planned,
             PriorityLabel: "NORMAL",
             CategoryLabel: "Quick Add",
             TimeShapeLabel: "ANYTIME",
@@ -171,7 +172,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         SelectTask(task);
         QuickAddText = string.Empty;
         IsQuickAddOpen = false;
-        InteractionMessage = $"已添加「{task.Title}」到 ANYTIME · 状态仅在本次运行有效";
+        InteractionMessage = UiText.Format(UiText.TodayInteractionQuickAddAddedKey, task.Title);
         NotifySummaryChanged();
     }
 
@@ -180,12 +181,12 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         var task = _tasks.FirstOrDefault(candidate => candidate.IsNeedsReviewVisible);
         if (task is null)
         {
-            InteractionMessage = "当前没有需要复盘的 RANGE Mock 任务";
+            InteractionMessage = UiText.Get(UiText.TodayInteractionNoReviewKey);
             return;
         }
 
         SelectTask(task);
-        InteractionMessage = $"已定位到待复盘任务「{task.Title}」 · 请记录结果";
+        InteractionMessage = UiText.Format(UiText.TodayInteractionReviewLocatedKey, task.Title);
     }
 
     private void SelectTask(TodayTaskViewModel task)
@@ -208,8 +209,8 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         RebuildGroups();
         NotifySummaryChanged();
         InteractionMessage = task.IsCompleted
-            ? $"已完成「{task.Title}」 · 未记录真实完成时间 · 状态仅在本次运行有效"
-            : $"已恢复「{task.Title}」 · 仍保留原计划时间 · 状态仅在本次运行有效";
+            ? UiText.Format(UiText.TodayInteractionCompletedKey, task.Title)
+            : UiText.Format(UiText.TodayInteractionRestoredKey, task.Title);
     }
 
     private void ToggleTaskPin(TodayTaskViewModel task)
@@ -218,8 +219,8 @@ public sealed class TodayPageViewModel : ShellPageViewModel
 
         task.SetPinned(!task.IsPinned);
         InteractionMessage = task.IsPinned
-            ? $"已置顶「{task.Title}」 · PIN 独立于优先级"
-            : $"已取消置顶「{task.Title}」";
+            ? UiText.Format(UiText.TodayInteractionPinnedKey, task.Title)
+            : UiText.Format(UiText.TodayInteractionUnpinnedKey, task.Title);
     }
 
     private void RebuildGroups()
@@ -274,7 +275,11 @@ public sealed class TodayTaskGroupViewModel : ObservableObject
 
     public bool HasItems => Items.Count > 0;
 
-    public string ItemCountText => $"{Items.Count} ITEMS";
+    public string ItemCountText => UiText.Format(UiText.TodayItemsKey, Items.Count);
+
+    public string AutomationName => Title;
+
+    public string AutomationHelpText => ItemCountText;
 
     public string ExpandGlyph => IsExpanded ? "−" : "+";
 
@@ -312,7 +317,7 @@ public sealed class TodayTaskGroupViewModel : ObservableObject
 
 public sealed class TodayTaskViewModel : ObservableObject
 {
-    private readonly string _sourceStatusLabel;
+    private readonly TodayMockStatus _sourceStatus;
     private bool _isCompleted;
     private bool _isPinned;
     private bool _isSelected;
@@ -332,7 +337,7 @@ public sealed class TodayTaskViewModel : ObservableObject
         Title = mockTask.Title;
         OriginalGroup = mockTask.Group;
         TimeLabel = mockTask.TimeLabel;
-        _sourceStatusLabel = mockTask.StatusLabel;
+        _sourceStatus = mockTask.Status;
         PriorityLabel = mockTask.PriorityLabel;
         CategoryLabel = mockTask.CategoryLabel;
         TimeShapeLabel = mockTask.TimeShapeLabel;
@@ -390,23 +395,41 @@ public sealed class TodayTaskViewModel : ObservableObject
         private set => SetProperty(ref _isSelected, value);
     }
 
-    public string StatusLabel => IsCompleted ? "COMPLETED" : _sourceStatusLabel;
+    public string StatusLabel => IsCompleted
+        ? UiText.Get(UiText.TodayStatusCompletedKey)
+        : _sourceStatus switch
+        {
+            TodayMockStatus.Overdue => UiText.Get(UiText.TodayStatusOverdueKey),
+            TodayMockStatus.Completed => UiText.Get(UiText.TodayStatusCompletedKey),
+            TodayMockStatus.Upcoming => UiText.Get(UiText.TodayStatusUpcomingKey),
+            TodayMockStatus.AwaitingResult => UiText.Get(UiText.TodayStatusAwaitingResultKey),
+            TodayMockStatus.Planned => UiText.Get(UiText.TodayStatusPlannedKey),
+            _ => UiText.Get(UiText.TodayStatusPlannedKey)
+        };
 
     public string StatusDescription => IsCompleted
-        ? "已记录完成 · 仅为本次运行内的 Mock 状态"
+        ? UiText.Get(UiText.TodayStatusDescriptionCompletedKey)
         : IsNeedsReviewVisible
-            ? "计划时间已结束 · 等待用户记录结果"
-            : "计划状态 · 不代表正在执行或已追踪耗时";
+            ? UiText.Get(UiText.TodayStatusDescriptionReviewKey)
+            : UiText.Get(UiText.TodayStatusDescriptionPlannedKey);
 
     public string CompletionGlyph => IsCompleted ? "✓" : "○";
 
-    public string CompletionActionLabel => IsCompleted ? "恢复未完成" : "标记完成";
+    public string CompletionActionLabel => IsCompleted
+        ? UiText.Get(UiText.TodayRestoreIncompleteKey)
+        : UiText.Get(UiText.TodayMarkCompleteKey);
 
     public string PinGlyph => IsPinned ? "★" : "☆";
 
-    public string PinActionLabel => IsPinned ? "取消置顶" : "置顶";
+    public string PinActionLabel => IsPinned
+        ? UiText.Get(UiText.TodayUnpinKey)
+        : UiText.Get(UiText.TodayPinKey);
 
-    public string ReviewLabel => IsNeedsReviewVisible ? "NEEDS REVIEW" : string.Empty;
+    public string ReviewLabel => IsNeedsReviewVisible ? UiText.Get(UiText.TodayNeedsReviewLabelKey) : string.Empty;
+
+    public string AutomationName => Title;
+
+    public string AutomationHelpText => UiText.Format(UiText.CommonAutomationContextKey, TimeLabel, StatusLabel);
 
     public IRelayCommand SelectCommand { get; }
 
