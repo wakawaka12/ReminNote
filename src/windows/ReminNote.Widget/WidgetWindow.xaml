@@ -74,9 +74,9 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0">
-                        <TextBlock Text="{Binding ActivePageTitle}"
+                        <TextBlock Text="{Binding ActivePageTitle, Mode=OneWay}"
                                    Style="{StaticResource WidgetPageTitleTextStyle}" />
-                        <TextBlock Text="{Binding ActivePageSubtitle}"
+                        <TextBlock Text="{Binding ActivePageSubtitle, Mode=OneWay}"
                                    Style="{StaticResource WidgetPageSubtitleTextStyle}" />
                         <TextBlock Text="{x:Static local:UiText.WidgetExpandedLayout}"
                                    Style="{StaticResource WidgetEyebrowTextStyle}"
@@ -396,7 +396,7 @@
                                    Style="{StaticResource WidgetAlertBodyTextStyle}" />
                         <TextBlock Style="{StaticResource WidgetAlertContextTextStyle}">
                             <Run Text="{x:Static local:UiText.WidgetCurrentPage}" />
-                            <Run Text="{Binding ActivePageTitle}" />
+                            <Run Text="{Binding ActivePageTitle, Mode=OneWay}" />
                         </TextBlock>
                     </StackPanel>
                     <StackPanel Grid.Row="2"
