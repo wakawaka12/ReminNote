@@ -7,6 +7,7 @@ public static class AnimeFeatureRegistration
     public static IServiceCollection AddAnimeFeature(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
+        services.AddSingleton<IAnimeMockCatalog, AnimeMockCatalogService>();
         services.AddSingleton<AnimePageViewModel>();
         return services;
     }

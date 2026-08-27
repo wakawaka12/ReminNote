@@ -1,22 +1,668 @@
-﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:anime="clr-namespace:ReminNote.Windows.Features.Anime">
+    <Color x:Key="AnimeInkColor">#24314D</Color>
+    <Color x:Key="AnimeMutedInkColor">#71809A</Color>
+    <Color x:Key="AnimeLineColor">#DCE4F0</Color>
+    <Color x:Key="AnimeSkyColor">#EAF4FF</Color>
+    <Color x:Key="AnimeSkyStrongColor">#CDE6FF</Color>
+    <Color x:Key="AnimeMintColor">#E6F6F0</Color>
+    <Color x:Key="AnimePeachColor">#FFF0E8</Color>
+    <Color x:Key="AnimeLavenderColor">#F0EDFF</Color>
+    <Color x:Key="AnimeButtonHoverColor">#F0F6FF</Color>
+    <Color x:Key="AnimeButtonPressedColor">#DCEBFB</Color>
+
+    <SolidColorBrush x:Key="AnimeInkBrush" Color="{DynamicResource AnimeInkColor}" />
+    <SolidColorBrush x:Key="AnimeMutedInkBrush" Color="{DynamicResource AnimeMutedInkColor}" />
+    <SolidColorBrush x:Key="AnimeLineBrush" Color="{DynamicResource AnimeLineColor}" />
+    <SolidColorBrush x:Key="AnimeSkyBrush" Color="{DynamicResource AnimeSkyColor}" />
+    <SolidColorBrush x:Key="AnimeSkyStrongBrush" Color="{DynamicResource AnimeSkyStrongColor}" />
+    <SolidColorBrush x:Key="AnimeMintBrush" Color="{DynamicResource AnimeMintColor}" />
+    <SolidColorBrush x:Key="AnimePeachBrush" Color="{DynamicResource AnimePeachColor}" />
+    <SolidColorBrush x:Key="AnimeLavenderBrush" Color="{DynamicResource AnimeLavenderColor}" />
+    <SolidColorBrush x:Key="AnimeButtonHoverBrush" Color="{DynamicResource AnimeButtonHoverColor}" />
+    <SolidColorBrush x:Key="AnimeButtonPressedBrush" Color="{DynamicResource AnimeButtonPressedColor}" />
+
+    <BooleanToVisibilityConverter x:Key="AnimeBooleanToVisibilityConverter" />
+
+    <Style x:Key="AnimeEyebrowTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="AnimeSectionHeadingTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="AnimeSectionEnglishTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="AnimeMetaTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="AnimeHeroTitleTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="Margin" Value="0,7,0,0" />
+        <Setter Property="FontSize" Value="25" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="AnimeHeroCountdownTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="Margin" Value="0,8,0,0" />
+        <Setter Property="FontFamily" Value="Consolas, Segoe UI" />
+        <Setter Property="FontSize" Value="25" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="AnimeCoverKickerTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontSize" Value="9" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="#FFFFFFFF" />
+        <Setter Property="Opacity" Value="0.8" />
+    </Style>
+
+    <Style x:Key="AnimeCoverGlyphTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontFamily" Value="Consolas, Segoe UI" />
+        <Setter Property="FontSize" Value="22" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Foreground" Value="#FFFFFFFF" />
+    </Style>
+
+    <Style x:Key="AnimeCoverTaglineTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontSize" Value="10" />
+        <Setter Property="Foreground" Value="#FFFFFFFF" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Opacity" Value="0.9" />
+    </Style>
+
+    <Style x:Key="AnimeButtonStyle"
+           TargetType="{x:Type Button}">
+        <Setter Property="MinHeight" Value="32" />
+        <Setter Property="Padding" Value="12,7" />
+        <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource AnimeInkBrush}" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AnimeLineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Focusable" Value="True" />
+        <Setter Property="KeyboardNavigation.IsTabStop" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="ButtonBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="7"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          ContentStringFormat="{TemplateBinding ContentStringFormat}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource AnimeButtonHoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource AnimeButtonPressedBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="ButtonBorder" Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
+                            <Setter TargetName="ButtonBorder" Property="BorderThickness" Value="2" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="AnimeAccentButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource AnimeButtonStyle}">
+        <Setter Property="Foreground" Value="#FFFFFFFF" />
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="AnimeSmallButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource AnimeButtonStyle}">
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="Padding" Value="9,5" />
+        <Setter Property="FontSize" Value="10" />
+    </Style>
+
+    <Style x:Key="AnimeSectionButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource AnimeButtonStyle}">
+        <Setter Property="Width" Value="112" />
+        <Setter Property="Height" Value="62" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Padding" Value="12,8" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                <Setter Property="Background" Value="{DynamicResource AnimeInkBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AnimeInkBrush}" />
+                <Setter Property="Foreground" Value="#FFFFFFFF" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="AnimeSearchTextBoxStyle"
+           TargetType="{x:Type TextBox}">
+        <Setter Property="Height" Value="38" />
+        <Setter Property="Padding" Value="13,8" />
+        <Setter Property="FontFamily" Value="Microsoft YaHei UI, Segoe UI" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Foreground" Value="{DynamicResource ContentPrimaryBrush}" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AnimeLineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+
+    <Style x:Key="AnimeHeroCardStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Padding" Value="20" />
+        <Setter Property="Background" Value="{DynamicResource AnimeSkyBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource AnimeSkyStrongBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="14" />
+    </Style>
+
+    <Style x:Key="AnimeEntryCardStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Padding" Value="12" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="11" />
+    </Style>
+
+    <Style x:Key="AnimeDetailsCardStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Padding" Value="16" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="11" />
+    </Style>
+
+    <Style x:Key="AnimeBadgeBorderStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Padding" Value="7,4" />
+        <Setter Property="Background" Value="{DynamicResource AnimeMintBrush}" />
+        <Setter Property="CornerRadius" Value="5" />
+    </Style>
+
+    <Style x:Key="AnimeProgressBarStyle"
+           TargetType="{x:Type ProgressBar}">
+        <Setter Property="Height" Value="4" />
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="100" />
+        <Setter Property="Background" Value="{DynamicResource AnimeLineBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+    </Style>
+
     <DataTemplate DataType="{x:Type anime:AnimePageViewModel}">
         <Grid Margin="{StaticResource PageContentMargin}">
-            <StackPanel MaxWidth="720">
-                <TextBlock Text="动画"
-                           Style="{StaticResource PageTitleTextStyle}" />
-                <TextBlock Text="{Binding Description}"
-                           Style="{StaticResource PageDescriptionTextStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
-                    <StackPanel>
-                        <TextBlock Text="ANIME Shell 占位"
-                                   Style="{StaticResource CardTitleTextStyle}" />
-                        <TextBlock Text="动画数据、追番状态和网络 Provider 会在后续 Slice 接入。"
-                                   Style="{StaticResource CardBodyTextStyle}" />
-                    </StackPanel>
-                </Border>
-            </StackPanel>
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          Padding="0,0,8,0">
+                <StackPanel>
+                    <Grid Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="动画"
+                                       Style="{StaticResource PageTitleTextStyle}" />
+                            <TextBlock Text="{Binding Description}"
+                                       Style="{StaticResource PageDescriptionTextStyle}" />
+                        </StackPanel>
+                        <Border Grid.Column="1"
+                                VerticalAlignment="Top"
+                                Style="{StaticResource AnimeBadgeBorderStyle}"
+                                Background="{DynamicResource AnimeLavenderBrush}">
+                            <StackPanel>
+                                <TextBlock Text="P0-05"
+                                           Style="{StaticResource AnimeSectionEnglishTextStyle}"
+                                           Foreground="{DynamicResource AnimeInkBrush}" />
+                                <TextBlock Text="LOCAL MOCK"
+                                           Margin="0,2,0,0"
+                                           Style="{StaticResource AnimeEyebrowTextStyle}"
+                                           Foreground="{DynamicResource AnimeInkBrush}" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource AnimeSearchTextBoxStyle}"
+                                 ToolTip="搜索本地 Mock 标题、英文副标题或类型"
+                                 AutomationProperties.Name="搜索动画" />
+                        <Button Grid.Column="1"
+                                Margin="8,0,0,0"
+                                Content="清除"
+                                Command="{Binding ClearSearchCommand}"
+                                Style="{StaticResource AnimeSmallButtonStyle}" />
+                    </Grid>
+
+                    <Border Margin="0,0,0,16"
+                            Style="{StaticResource AnimeHeroCardStyle}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="140" />
+                                <ColumnDefinition Width="104" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="NEXT AIRING"
+                                           Style="{StaticResource AnimeEyebrowTextStyle}" />
+                                <TextBlock Text="{Binding NextAiring.DisplayTitle}"
+                                           Style="{StaticResource AnimeHeroTitleTextStyle}" />
+                                <TextBlock Text="{Binding NextAiring.Subtitle}"
+                                           Margin="0,3,0,0"
+                                           Style="{StaticResource AnimeMetaTextStyle}" />
+                                <StackPanel Margin="0,12,0,0"
+                                            Orientation="Horizontal">
+                                    <Border Background="{DynamicResource AccentBrush}"
+                                            CornerRadius="5"
+                                            Padding="7,4">
+                                        <TextBlock Text="{Binding NextAiring.EpisodeLabel}"
+                                                   FontSize="10"
+                                                   FontWeight="Bold"
+                                                   Foreground="#FFFFFFFF" />
+                                    </Border>
+                                    <TextBlock Text="{Binding NextAiring.AiringLabel}"
+                                               Margin="9,4,0,0"
+                                               Style="{StaticResource AnimeMetaTextStyle}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding NextAiring.DetailDescription}"
+                                           Margin="0,12,10,0"
+                                           MaxHeight="40"
+                                           Style="{StaticResource CardBodyTextStyle}" />
+                                <StackPanel Margin="0,13,0,0"
+                                            Orientation="Horizontal">
+                                    <Button Content="{Binding NextAiring.ReminderButtonText}"
+                                            Command="{Binding ToggleReminderCommand}"
+                                            CommandParameter="{Binding NextAiring}"
+                                            Style="{StaticResource AnimeAccentButtonStyle}" />
+                                    <Button Content="查看详情"
+                                            Margin="8,0,0,0"
+                                            Command="{Binding SelectAnimeCommand}"
+                                            CommandParameter="{Binding NextAiring}"
+                                            Style="{StaticResource AnimeButtonStyle}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1"
+                                        Margin="16,4,10,0">
+                                <TextBlock Text="COUNTDOWN"
+                                           Style="{StaticResource AnimeEyebrowTextStyle}" />
+                                <TextBlock Text="{Binding NextAiring.CountdownLabel}"
+                                           Style="{StaticResource AnimeHeroCountdownTextStyle}" />
+                                <TextBlock Text="{Binding NextAiring.AiringStatusLabel}"
+                                           Margin="0,4,0,0"
+                                           Style="{StaticResource AnimeMetaTextStyle}" />
+                                <TextBlock Text="静态演示时间"
+                                           Margin="0,9,0,0"
+                                           Style="{StaticResource AnimeMetaTextStyle}" />
+                            </StackPanel>
+                            <Border Grid.Column="2"
+                                    Height="148"
+                                    VerticalAlignment="Center"
+                                    Background="{Binding NextAiring.AccentBrush}"
+                                    CornerRadius="10"
+                                    Padding="11">
+                                <Grid>
+                                    <TextBlock Text="{Binding NextAiring.CoverKicker}"
+                                               Style="{StaticResource AnimeCoverKickerTextStyle}" />
+                                    <TextBlock Text="{Binding NextAiring.CoverGlyph}"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center"
+                                               Style="{StaticResource AnimeCoverGlyphTextStyle}" />
+                                    <TextBlock Text="{Binding NextAiring.CoverTagline}"
+                                               VerticalAlignment="Bottom"
+                                               Style="{StaticResource AnimeCoverTaglineTextStyle}" />
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <ItemsControl ItemsSource="{Binding Sections}"
+                                  Margin="0,0,0,16">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Command="{Binding RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}, Path=DataContext.SelectSectionCommand}"
+                                        CommandParameter="{Binding Key}"
+                                        Style="{StaticResource AnimeSectionButtonStyle}"
+                                        Margin="0,0,8,8">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <TextBlock Text="{Binding EnglishLabel}"
+                                                   Style="{StaticResource AnimeSectionEnglishTextStyle}" />
+                                        <StackPanel Grid.Row="1"
+                                                    Margin="0,5,0,0"
+                                                    Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Label}"
+                                                       FontSize="13"
+                                                       FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding CountLabel}"
+                                                       Margin="8,1,0,0"
+                                                       FontFamily="Consolas, Segoe UI"
+                                                       FontSize="11"
+                                                       FontWeight="Bold" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding SelectedSectionTitle}"
+                                           Style="{StaticResource AnimeSectionHeadingTextStyle}" />
+                                <TextBlock Text="{Binding SelectedSectionEnglishTitle}"
+                                           Margin="10,7,0,0"
+                                           Style="{StaticResource AnimeSectionEnglishTextStyle}" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding SelectedSectionDescription}"
+                                       Margin="0,4,0,0"
+                                       Style="{StaticResource AnimeMetaTextStyle}" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1"
+                                   VerticalAlignment="Bottom"
+                                   Text="{Binding VisibleCountLabel}"
+                                   Style="{StaticResource AnimeSectionEnglishTextStyle}" />
+                    </Grid>
+
+                    <Border Margin="0,0,0,12"
+                            Padding="12"
+                            Background="{DynamicResource AnimePeachBrush}"
+                            BorderBrush="#F5D7C7"
+                            BorderThickness="1"
+                            CornerRadius="9">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="THIS SEASON"
+                                       VerticalAlignment="Center"
+                                       Style="{StaticResource AnimeEyebrowTextStyle}"
+                                       Foreground="{DynamicResource AnimeInkBrush}" />
+                            <TextBlock Grid.Column="1"
+                                       Margin="12,0,8,0"
+                                       VerticalAlignment="Center"
+                                       Text="SUMMER 2026 · MY SEASON / DISCOVER"
+                                       Style="{StaticResource AnimeMetaTextStyle}" />
+                            <Button Grid.Column="2"
+                                    Content="打开本季"
+                                    Command="{Binding SelectSectionCommand}"
+                                    CommandParameter="THIS_SEASON"
+                                    Style="{StaticResource AnimeSmallButtonStyle}" />
+                        </Grid>
+                    </Border>
+
+                    <ItemsControl ItemsSource="{Binding VisibleEntries}"
+                                  Visibility="{Binding HasVisibleEntries, Converter={StaticResource AnimeBooleanToVisibilityConverter}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Width="300"
+                                        Margin="0,0,12,12"
+                                        Style="{StaticResource AnimeEntryCardStyle}">
+                                    <Grid>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="74" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Height="108"
+                                                VerticalAlignment="Top"
+                                                Background="{Binding AccentBrush}"
+                                                CornerRadius="8"
+                                                Padding="9">
+                                            <Grid>
+                                                <TextBlock Text="{Binding CoverKicker}"
+                                                           Style="{StaticResource AnimeCoverKickerTextStyle}" />
+                                                <TextBlock Text="{Binding CoverGlyph}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"
+                                                           Style="{StaticResource AnimeCoverGlyphTextStyle}" />
+                                                <TextBlock Text="{Binding CoverTagline}"
+                                                           VerticalAlignment="Bottom"
+                                                           Style="{StaticResource AnimeCoverTaglineTextStyle}" />
+                                            </Grid>
+                                        </Border>
+                                        <StackPanel Grid.Column="1"
+                                                    Margin="12,0,0,0">
+                                            <TextBlock Text="{Binding StatusLabel}"
+                                                       FontSize="10"
+                                                       FontWeight="Bold"
+                                                       Foreground="{Binding AccentBrush}" />
+                                            <TextBlock Text="{Binding DisplayTitle}"
+                                                       Margin="0,5,0,0"
+                                                       FontSize="16"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource ContentPrimaryBrush}" />
+                                            <TextBlock Text="{Binding Subtitle}"
+                                                       Margin="0,2,0,0"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Style="{StaticResource AnimeMetaTextStyle}" />
+                                            <TextBlock Text="{Binding EpisodeLabel}"
+                                                       Margin="0,10,0,0"
+                                                       FontSize="11"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource ContentPrimaryBrush}" />
+                                            <TextBlock Text="{Binding AiringLabel}"
+                                                       Margin="0,2,0,0"
+                                                       Style="{StaticResource AnimeMetaTextStyle}" />
+                                            <ProgressBar Value="{Binding ProgressValue}"
+                                                         Margin="0,10,0,0"
+                                                         Style="{StaticResource AnimeProgressBarStyle}" />
+                                            <TextBlock Text="{Binding ProgressLabel}"
+                                                       Margin="0,4,0,0"
+                                                       Style="{StaticResource AnimeMetaTextStyle}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1"
+                                                    Grid.ColumnSpan="2"
+                                                    Margin="0,12,0,0"
+                                                    Orientation="Horizontal">
+                                            <Button Content="查看详情"
+                                                    Command="{Binding RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}, Path=DataContext.SelectAnimeCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Style="{StaticResource AnimeSmallButtonStyle}" />
+                                            <Button Content="{Binding WatchLaterButtonText}"
+                                                    Margin="7,0,0,0"
+                                                    Command="{Binding RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}, Path=DataContext.ToggleWatchLaterCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Style="{StaticResource AnimeSmallButtonStyle}" />
+                                            <Button Content="{Binding MarkWatchedButtonText}"
+                                                    Margin="7,0,0,0"
+                                                    Command="{Binding RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}, Path=DataContext.MarkWatchedCommand}"
+                                                    CommandParameter="{Binding}"
+                                                    Style="{StaticResource AnimeSmallButtonStyle}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Border Padding="16"
+                            Margin="0,2,0,12"
+                            Style="{StaticResource AnimeDetailsCardStyle}"
+                            Background="{DynamicResource AnimeLavenderBrush}"
+                            BorderBrush="#DDD7FF">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="SELECTED ANIME"
+                                           Style="{StaticResource AnimeEyebrowTextStyle}"
+                                           Foreground="{DynamicResource AnimeInkBrush}" />
+                                <TextBlock Text="{Binding SelectedEntryTitle}"
+                                           Margin="0,5,0,0"
+                                           FontSize="19"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource ContentPrimaryBrush}" />
+                                <TextBlock Text="{Binding SelectedEntrySubtitle}"
+                                           Margin="0,2,0,0"
+                                           Style="{StaticResource AnimeMetaTextStyle}" />
+                                <TextBlock Text="{Binding SelectedEntryDescription}"
+                                           Margin="0,10,14,0"
+                                           MaxWidth="450"
+                                           TextWrapping="Wrap"
+                                           Style="{StaticResource CardBodyTextStyle}" />
+                                <StackPanel Margin="0,10,0,0"
+                                            Orientation="Horizontal">
+                                    <Border Style="{StaticResource AnimeBadgeBorderStyle}">
+                                        <TextBlock Text="{Binding SelectedEntry.StatusLabel}"
+                                                   FontSize="10"
+                                                   FontWeight="Bold"
+                                                   Foreground="{DynamicResource AnimeInkBrush}" />
+                                    </Border>
+                                    <TextBlock Text="{Binding SelectedEntry.ProgressLabel}"
+                                               Margin="10,5,0,0"
+                                               Style="{StaticResource AnimeMetaTextStyle}" />
+                                </StackPanel>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1"
+                                        Width="116"
+                                        Margin="12,0,0,0">
+                                <Button Content="{Binding SelectedEntry.MarkWatchedButtonText}"
+                                        Command="{Binding MarkWatchedCommand}"
+                                        CommandParameter="{Binding SelectedEntry}"
+                                        Style="{StaticResource AnimeAccentButtonStyle}" />
+                                <Button Content="{Binding SelectedEntry.WatchLaterButtonText}"
+                                        Margin="0,7,0,0"
+                                        Command="{Binding ToggleWatchLaterCommand}"
+                                        CommandParameter="{Binding SelectedEntry}"
+                                        Style="{StaticResource AnimeButtonStyle}" />
+                                <Button Content="{Binding SelectedEntry.TrackingButtonText}"
+                                        Margin="0,7,0,0"
+                                        Command="{Binding ToggleTrackingCommand}"
+                                        CommandParameter="{Binding SelectedEntry}"
+                                        Style="{StaticResource AnimeButtonStyle}" />
+                                <Button Content="{Binding SelectedEntry.ReminderButtonText}"
+                                        Margin="0,7,0,0"
+                                        Command="{Binding ToggleReminderCommand}"
+                                        CommandParameter="{Binding SelectedEntry}"
+                                        Style="{StaticResource AnimeButtonStyle}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border Padding="12"
+                            Background="{DynamicResource CardBackgroundBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="9">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="MOCK STATUS"
+                                       VerticalAlignment="Center"
+                                       Style="{StaticResource AnimeEyebrowTextStyle}" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding InteractionStatus}"
+                                       Margin="12,0,0,0"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Style="{StaticResource AnimeMetaTextStyle}" />
+                            <Button Grid.Column="2"
+                                    Content="重新载入 Mock"
+                                    Margin="12,0,0,0"
+                                    Command="{Binding RefreshMockCommand}"
+                                    Style="{StaticResource AnimeSmallButtonStyle}" />
+                        </Grid>
+                    </Border>
+
+                    <Border Padding="18"
+                            Margin="0,0,0,12"
+                            Background="{DynamicResource CardBackgroundBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="11"
+                            Visibility="{Binding HasNoVisibleEntries, Converter={StaticResource AnimeBooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <TextBlock Text="{Binding EmptyStateTitle}"
+                                       Style="{StaticResource CardTitleTextStyle}" />
+                            <TextBlock Text="{Binding EmptyStateDescription}"
+                                       Style="{StaticResource CardBodyTextStyle}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
         </Grid>
     </DataTemplate>
 </ResourceDictionary>
