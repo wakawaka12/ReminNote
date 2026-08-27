@@ -440,7 +440,7 @@
             <Trigger Property="IsKeyboardFocused"
                      Value="True">
                 <Setter Property="BorderBrush"
-                        Value="{DynamicResource AccentBrush}" />
+                        Value="{DynamicResource AccessibleFocusBrush}" />
                 <Setter Property="BorderThickness"
                         Value="2" />
             </Trigger>

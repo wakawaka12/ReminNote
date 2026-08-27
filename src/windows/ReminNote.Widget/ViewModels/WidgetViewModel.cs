@@ -49,6 +49,7 @@ public sealed class WidgetViewModel : ObservableObject
     private string _animeFeedback = string.Empty;
     private string _quickAddText = string.Empty;
     private string _quickAddFeedback = string.Empty;
+    private string _reminderFeedback = string.Empty;
 
     public WidgetViewModel()
     {
@@ -205,6 +206,20 @@ public sealed class WidgetViewModel : ObservableObject
 
     public bool HasQuickAddFeedback => !string.IsNullOrEmpty(_quickAddFeedback);
 
+    public string ReminderFeedback
+    {
+        get => _reminderFeedback;
+        private set
+        {
+            if (SetProperty(ref _reminderFeedback, value))
+            {
+                OnPropertyChanged(nameof(HasReminderFeedback));
+            }
+        }
+    }
+
+    public bool HasReminderFeedback => !string.IsNullOrEmpty(_reminderFeedback);
+
     public bool IsQuickAddOpen
     {
         get => _isQuickAddOpen;
@@ -295,18 +310,21 @@ public sealed class WidgetViewModel : ObservableObject
     private void CompleteTask()
     {
         _isTaskCompleted = true;
+        OnPropertyChanged(nameof(TaskStatusLabel));
         TaskFeedback = UiText.Get(UiText.WidgetTaskCompletedFeedbackKey);
     }
 
     private void SnoozeTask()
     {
         _isTaskCompleted = false;
+        OnPropertyChanged(nameof(TaskStatusLabel));
         TaskFeedback = UiText.Get(UiText.WidgetTaskSnoozedFeedbackKey);
     }
 
     private void RescheduleTask()
     {
         _isTaskCompleted = false;
+        OnPropertyChanged(nameof(TaskStatusLabel));
         TaskFeedback = UiText.Get(UiText.WidgetTaskRescheduledFeedbackKey);
     }
 
@@ -338,8 +356,7 @@ public sealed class WidgetViewModel : ObservableObject
     private void MarkReminderRead()
     {
         IsReminderDrawerOpen = false;
-        QuickAddFeedback = UiText.Get(UiText.WidgetReminderReadFeedbackKey);
-        IsQuickAddOpen = true;
+        ReminderFeedback = UiText.Get(UiText.WidgetReminderReadFeedbackKey);
     }
 
     private void SimulateAlert()

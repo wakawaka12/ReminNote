@@ -345,10 +345,17 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="{x:Static local:UiText.WidgetFooterLocalMock}"
-                               VerticalAlignment="Center"
-                               Style="{StaticResource WidgetFooterTextStyle}"
-                               Visibility="{Binding IsNotCompact, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    <StackPanel Grid.Column="0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="{x:Static local:UiText.WidgetFooterLocalMock}"
+                                   Style="{StaticResource WidgetFooterTextStyle}"
+                                   Visibility="{Binding IsNotCompact, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <TextBlock Text="{Binding ReminderFeedback}"
+                                   Margin="8,0,0,0"
+                                   Style="{StaticResource WidgetFeedbackTextStyle}"
+                                   Visibility="{Binding HasReminderFeedback, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    </StackPanel>
                     <Button Grid.Column="1"
                             Content="{x:Static local:UiText.WidgetQuickAdd}"
                             Command="{Binding ToggleQuickAddCommand}"
