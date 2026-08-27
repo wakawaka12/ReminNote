@@ -1,7 +1,7 @@
 # P0-07 P0 polish / accessibility / i18n / CI stabilization 实施简报
 
-日期：2026-08-27  
-实施分支：`codex/p0-07-stabilization-impl`  
+日期：2026-08-27
+实施分支：`codex/p0-07-stabilization-impl`
 实施基线：`codex/p0-integration@4bca2cb`
 
 ## Goal
