@@ -1,0 +1,23 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# IDE and user-local files
+.vs/
+.idea/
+*.user
+*.suo
+
+# NuGet and local tooling caches
+*.nupkg
+*.snupkg
+packages/
+
+# Development data only. Production data must never live here.
+.devdata/*
+!.devdata/.gitkeep
+!.devdata/README.md
+
+# Local logs and reports
+artifacts/
+TestResults/

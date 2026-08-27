@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>ReminNote.Windows</RootNamespace>
+    <AssemblyName>ReminNote.Windows</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <ProjectReference Include="..\ReminNote.Core\ReminNote.Core.csproj" />
+    <ProjectReference Include="..\ReminNote.Infrastructure\ReminNote.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
