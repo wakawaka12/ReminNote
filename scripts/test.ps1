@@ -18,3 +18,5 @@ if ($LASTEXITCODE -ne 0) {
 if ($LASTEXITCODE -ne 0) {
     throw "Tests failed with exit code $LASTEXITCODE"
 }
+
+& (Join-Path $PSScriptRoot 'verify-p0-07.ps1')

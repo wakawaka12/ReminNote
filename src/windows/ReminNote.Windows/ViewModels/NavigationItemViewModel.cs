@@ -9,4 +9,9 @@ public enum ShellPage
 public sealed record NavigationItemViewModel(
     ShellPage Page,
     string Title,
-    string Subtitle);
+    string Subtitle)
+{
+    public string AutomationName => Title;
+
+    public string AutomationHelpText => Subtitle;
+}

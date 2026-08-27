@@ -252,8 +252,8 @@
                             <Setter TargetName="TabBorder" Property="Opacity" Value="0.78" />
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="TabBorder" Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
-                            <Setter TargetName="TabBorder" Property="BorderThickness" Value="1" />
+                            <Setter TargetName="TabBorder" Property="BorderBrush" Value="{DynamicResource AccessibleFocusBrush}" />
+                            <Setter TargetName="TabBorder" Property="BorderThickness" Value="2" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -313,7 +313,8 @@
                             <Setter TargetName="ActionBorder" Property="Opacity" Value="0.68" />
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
-                            <Setter TargetName="ActionBorder" Property="BorderBrush" Value="{DynamicResource FocusBrush}" />
+                            <Setter TargetName="ActionBorder" Property="BorderBrush" Value="{DynamicResource AccessibleFocusBrush}" />
+                            <Setter TargetName="ActionBorder" Property="BorderThickness" Value="2" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -355,6 +356,8 @@
         <Setter Property="FontSize" Value="9" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Focusable" Value="True" />
+        <Setter Property="KeyboardNavigation.IsTabStop" Value="True" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type Button}">
@@ -368,6 +371,10 @@
                                           TextElement.Foreground="{TemplateBinding Foreground}" />
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="StateBorder" Property="BorderBrush" Value="{DynamicResource AccessibleFocusBrush}" />
+                            <Setter TargetName="StateBorder" Property="BorderThickness" Value="2" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="StateBorder" Property="Background" Value="{DynamicResource WidgetSoftAccentBrush}" />
                         </Trigger>
@@ -387,6 +394,8 @@
         <Setter Property="Foreground" Value="{DynamicResource ContentSecondaryBrush}" />
         <Setter Property="FontSize" Value="20" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Focusable" Value="True" />
+        <Setter Property="KeyboardNavigation.IsTabStop" Value="True" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="{x:Type Button}">
@@ -399,6 +408,10 @@
                                           TextElement.Foreground="{TemplateBinding Foreground}" />
                     </Border>
                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="CloseBorder" Property="BorderBrush" Value="{DynamicResource AccessibleFocusBrush}" />
+                            <Setter TargetName="CloseBorder" Property="BorderThickness" Value="2" />
+                        </Trigger>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="CloseBorder" Property="Background" Value="{DynamicResource WidgetAlertSoftBrush}" />
                             <Setter Property="Foreground" Value="{DynamicResource WidgetAlertBrush}" />
@@ -505,12 +518,20 @@
 
     <Style x:Key="WidgetQuickAddTextBoxStyle"
            TargetType="{x:Type TextBox}">
+        <Setter Property="Focusable" Value="True" />
+        <Setter Property="KeyboardNavigation.IsTabStop" Value="True" />
         <Setter Property="Padding" Value="10,8" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="Foreground" Value="{DynamicResource ContentPrimaryBrush}" />
         <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
+        <Style.Triggers>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource AccessibleFocusBrush}" />
+                <Setter Property="BorderThickness" Value="2" />
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style x:Key="WidgetQuickAddOverlayStyle"

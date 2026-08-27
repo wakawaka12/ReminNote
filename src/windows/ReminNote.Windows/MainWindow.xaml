@@ -1,7 +1,9 @@
 ﻿<Window x:Class="ReminNote.Windows.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ReminNote"
+        xmlns:local="clr-namespace:ReminNote.Windows.Resources.Localization"
+        Title="{x:Static local:UiText.ShellWindowTitle}"
+        AutomationProperties.Name="{x:Static local:UiText.ShellWindowTitle}"
         MinWidth="960"
         MinHeight="640"
         Background="{DynamicResource ShellBackgroundBrush}">
@@ -17,29 +19,33 @@
         </Grid.RowDefinitions>
 
         <Border Grid.RowSpan="3"
-                Style="{StaticResource SidebarSurfaceStyle}">
+                Style="{StaticResource SidebarSurfaceStyle}"
+                AutomationProperties.Name="{x:Static local:UiText.ShellNavigation}">
             <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Top"
                             Margin="{StaticResource SidebarBrandMargin}">
-                    <TextBlock Text="ReminNote"
+                    <TextBlock Text="{x:Static local:UiText.ShellBrandName}"
                                Style="{StaticResource BrandTitleTextStyle}" />
-                    <TextBlock Text="个人提醒与记录"
+                    <TextBlock Text="{x:Static local:UiText.ShellBrandSubtitle}"
                                Margin="0,6,0,0"
                                Style="{StaticResource SidebarSubtitleTextStyle}" />
                 </StackPanel>
 
                 <TextBlock DockPanel.Dock="Bottom"
                            Margin="{StaticResource SidebarFooterMargin}"
-                           Text="P0-03 · Design System"
+                           Text="{x:Static local:UiText.ShellStageLabel}"
                            Style="{StaticResource SidebarFooterTextStyle}" />
 
                 <ItemsControl ItemsSource="{Binding NavigationItems}"
-                              Margin="{StaticResource NavigationItemsMargin}">
+                              Margin="{StaticResource NavigationItemsMargin}"
+                              AutomationProperties.Name="{x:Static local:UiText.ShellPageNavigation}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
                             <Button Style="{StaticResource NavigationButtonStyle}"
                                     Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                    CommandParameter="{Binding}">
+                                    CommandParameter="{Binding}"
+                                    AutomationProperties.Name="{Binding AutomationName}"
+                                    AutomationProperties.HelpText="{Binding AutomationHelpText}">
                                 <StackPanel>
                                     <TextBlock Text="{Binding Title}"
                                                Style="{StaticResource SidebarNavigationTitleTextStyle}" />
@@ -55,23 +61,26 @@
 
         <Border Grid.Column="1"
                 Grid.Row="0"
-                Style="{StaticResource HeaderSurfaceStyle}">
+                Style="{StaticResource HeaderSurfaceStyle}"
+                AutomationProperties.Name="{x:Static local:UiText.ShellHeaderRegion}">
             <StackPanel>
                 <TextBlock Text="{Binding ActiveTitle}"
                            Style="{StaticResource ShellHeaderTitleTextStyle}" />
-                <TextBlock Text="本地优先 · 当前为 P0-03 设计系统壳"
+                <TextBlock Text="{x:Static local:UiText.ShellHeaderSubtitle}"
                            Style="{StaticResource ShellHeaderSubtitleTextStyle}" />
             </StackPanel>
         </Border>
 
         <ContentControl Grid.Column="1"
                         Grid.Row="1"
-                        Content="{Binding CurrentPage}" />
+                        Content="{Binding CurrentPage}"
+                        AutomationProperties.Name="{x:Static local:UiText.ShellMainContent}" />
 
         <Border Grid.Column="1"
                 Grid.Row="2"
-                Style="{StaticResource FooterSurfaceStyle}">
-            <TextBlock Text="基础壳已启动 · 设计系统已加载 · 业务数据尚未接入"
+                Style="{StaticResource FooterSurfaceStyle}"
+                AutomationProperties.Name="{x:Static local:UiText.ShellStatusRegion}">
+            <TextBlock Text="{x:Static local:UiText.ShellFooter}"
                        Style="{StaticResource FooterTextStyle}" />
         </Border>
     </Grid>

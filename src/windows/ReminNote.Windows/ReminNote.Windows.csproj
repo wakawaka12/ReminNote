@@ -14,4 +14,10 @@
     <ProjectReference Include="..\ReminNote.Core\ReminNote.Core.csproj" />
     <ProjectReference Include="..\ReminNote.Infrastructure\ReminNote.Infrastructure.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Update="Resources\Localization\UiText.resx">
+      <LogicalName>ReminNote.Windows.Resources.Localization.UiText.resources</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
 </Project>

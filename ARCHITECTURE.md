@@ -9,6 +9,7 @@ src/windows/
   ReminNote.Windows
   ReminNote.Agent
   ReminNote.Bootstrap
+  ReminNote.Widget
 ```
 
 ## 引用边界
@@ -19,6 +20,7 @@ ReminNote.Infrastructure  ->  ReminNote.Core
 ReminNote.Windows          ->  ReminNote.Core, ReminNote.Infrastructure
 ReminNote.Agent            ->  ReminNote.Core, ReminNote.Infrastructure
 ReminNote.Bootstrap        ->  (无业务项目引用)
+ReminNote.Widget            ->  (独立 WPF Widget；仅 Link 共享 Design System 与默认 UI 文案资源)
 ```
 
 Core 必须独立于 WPF、EF Core、Serilog 和 Windows API。Infrastructure 承担持久化、网络和 Provider 实现。Bootstrap 只负责进程启动/激活、崩溃恢复、安全模式及未来的版本切换，不承载业务逻辑，也不直接操作业务数据库。
@@ -54,6 +56,13 @@ src/windows/ReminNote.Windows/Resources/DesignSystem/
 App.xaml 只负责按顺序合并这些资源字典。页面通过资源键使用颜色、文字层级、间距、圆角和壳层样式；资源不包含业务数据或业务规则。控件模板负责导航按钮的基本交互反馈和键盘焦点可见性。
 
 本 Slice 使用 DynamicResource 连接可替换的颜色/控件资源，为未来主题能力保留替换点，但当前不实现主题切换。
+
+## P0-07 稳定化边界
+
+- 默认 UI 文案位于 `src/windows/ReminNote.Windows/Resources/Localization/UiText.resx`，稳定键与读取/格式化边界位于同目录的 `UiText.cs`；Widget 通过项目文件 Link 复用同一份资源源，不复制字典。
+- ViewModel 可以使用 `UiText.Get`/`UiText.Format` 生成动态状态文案，但不应继续新增散落在 View/XAML 外的用户可见文本。
+- Shell、TODAY、ANIME 和 Widget 的关键交互控件使用 `AutomationProperties`；共享焦点令牌为 `AccessibleFocusBrush`。这是 P0 的基础可访问性门槛，不等同于完整无障碍认证。
+- P0-07 不改变 P0 Mock 的业务边界，不新增数据库、网络、IPC 或真实语言切换。
 
 ## P0 并行模块边界
 

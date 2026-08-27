@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
+using ReminNote.Windows.Resources.Localization;
 
 namespace ReminNote.Windows.Features.Anime;
 
@@ -21,6 +22,10 @@ public sealed class AnimeSectionItem : ObservableObject
     public string Label { get; }
 
     public string EnglishLabel { get; }
+
+    public string AutomationName => Label;
+
+    public string AutomationHelpText => $"{EnglishLabel} · {CountLabel}";
 
     public int Count
     {
@@ -195,43 +200,53 @@ public sealed class AnimeMockEntry : ObservableObject
         ? 0
         : Math.Round(WatchedEpisodes * 100d / TotalEpisodes, 0);
 
-    public string ProgressLabel => $"已看 {WatchedEpisodes:00} / {TotalEpisodes:00} 集";
+    public string ProgressLabel => UiText.Format(UiText.AnimeProgressKey, WatchedEpisodes, TotalEpisodes);
 
     public string StatusLabel => IsWatched
-        ? "已看"
+        ? UiText.Get(UiText.AnimeStatusWatchedKey)
         : IsWatchLater
-            ? "WATCH LATER"
+            ? UiText.Get(UiText.AnimeStatusWatchLaterKey)
             : IsTracked
-                ? "追番中"
+                ? UiText.Get(UiText.AnimeStatusTrackingKey)
                 : IsPlanToWatch
-                    ? "PLAN TO WATCH"
-                    : "未分类";
+                    ? UiText.Get(UiText.AnimeStatusPlanToWatchKey)
+                    : UiText.Get(UiText.AnimeStatusUnclassifiedKey);
 
     public string StatusDetailLabel => IsWatched
-        ? "CURRENT EPISODE WATCHED"
+        ? UiText.Get(UiText.AnimeStatusDetailWatchedKey)
         : IsWatchLater
-            ? "READY TO WATCH"
+            ? UiText.Get(UiText.AnimeStatusDetailWatchLaterKey)
             : IsTracked
-                ? "TRACKING SUBSCRIPTION"
+                ? UiText.Get(UiText.AnimeStatusDetailTrackingKey)
                 : IsPlanToWatch
-                    ? "QUEUED FOR LATER"
-                    : "LOCAL ENTRY";
+                    ? UiText.Get(UiText.AnimeStatusDetailPlanToWatchKey)
+                    : UiText.Get(UiText.AnimeStatusDetailLocalKey);
 
     public string AiringStatusLabel => IsWatched
-        ? "已完成本集"
+        ? UiText.Get(UiText.AnimeAiringWatchedKey)
         : IsWatchLater
-            ? "已播 · 等待观看"
-            : "下一集播出";
+            ? UiText.Get(UiText.AnimeAiringWatchLaterKey)
+            : UiText.Get(UiText.AnimeAiringNextKey);
 
-    public string WatchLaterButtonText => IsWatchLater ? "移出待看" : "加入待看";
+    public string WatchLaterButtonText => IsWatchLater
+        ? UiText.Get(UiText.AnimeWatchLaterRemoveKey)
+        : UiText.Get(UiText.AnimeWatchLaterAddKey);
 
-    public string TrackingButtonText => IsTracked ? "关闭追番" : "开启追番";
+    public string TrackingButtonText => IsTracked
+        ? UiText.Get(UiText.AnimeTrackingDisableKey)
+        : UiText.Get(UiText.AnimeTrackingEnableKey);
 
-    public string ReminderButtonText => IsReminderArmed ? "提醒已模拟" : "模拟提醒";
+    public string ReminderButtonText => IsReminderArmed
+        ? UiText.Get(UiText.AnimeReminderOnKey)
+        : UiText.Get(UiText.AnimeReminderOffKey);
 
-    public string ReminderStatusLabel => IsReminderArmed ? "MOCK REMINDER ON" : "NO REMINDER";
+    public string ReminderStatusLabel => IsReminderArmed
+        ? UiText.Get(UiText.AnimeReminderStatusOnKey)
+        : UiText.Get(UiText.AnimeReminderStatusOffKey);
 
-    public string MarkWatchedButtonText => IsWatched ? "已看" : "标记已看";
+    public string MarkWatchedButtonText => IsWatched
+        ? UiText.Get(UiText.AnimeWatchedKey)
+        : UiText.Get(UiText.AnimeMarkWatchedKey);
 
     public static IReadOnlyList<AnimeMockEntry> CreateCatalog() =>
     [
