@@ -529,7 +529,7 @@
                                             <TextBlock Text="{Binding AiringLabel}"
                                                        Margin="0,2,0,0"
                                                        Style="{StaticResource AnimeMetaTextStyle}" />
-                                            <ProgressBar Value="{Binding ProgressValue}"
+                                            <ProgressBar Value="{Binding ProgressValue, Mode=OneWay}"
                                                          Margin="0,10,0,0"
                                                          Style="{StaticResource AnimeProgressBarStyle}" />
                                             <TextBlock Text="{Binding ProgressLabel}"
