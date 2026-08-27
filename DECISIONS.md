@@ -42,3 +42,11 @@
 - 决策：颜色、间距、文字层级、壳层表面和导航控件样式放入 Windows 项目的原生 WPF ResourceDictionary，由 App.xaml 合并。
 - 原因：符合计划中“原生 WPF + 自定义 ReminNote Design System”的方向；不增加大型 UI 框架依赖，并可让 Main App 与后续 Widget 复用同一组资源键。
 - 结果：当前只提供亮色基线和基础键盘焦点反馈；主题切换、用户背景和完整无障碍设置留到后续 Slice。
+
+## ADR-0007：P0 功能模块使用独立资源与 DI 注册入口
+
+- 日期：2026-08-27
+- 状态：已接受
+- 决策：TODAY 与 ANIME 各自拥有 Features 子目录、资源字典、ViewModel 和 DI 注册扩展；共享 App Shell 只引用稳定入口。
+- 原因：支持独立 worktree 并行开发，减少 MainWindow、App 和共享 ViewModel 的合并冲突。
+- 限制：这是 P0 的静态模块边界，不建立运行时插件发现或通用模块框架。

@@ -1,51 +1,10 @@
 ﻿<Window x:Class="ReminNote.Windows.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="clr-namespace:ReminNote.Windows.ViewModels"
         Title="ReminNote"
         MinWidth="960"
         MinHeight="640"
         Background="{DynamicResource ShellBackgroundBrush}">
-    <Window.Resources>
-        <DataTemplate DataType="{x:Type vm:TodayPageViewModel}">
-            <Grid Margin="{StaticResource PageContentMargin}">
-                <StackPanel MaxWidth="720">
-                    <TextBlock Text="今天"
-                               Style="{StaticResource PageTitleTextStyle}" />
-                    <TextBlock Text="{Binding Description}"
-                               Style="{StaticResource PageDescriptionTextStyle}" />
-                    <Border Style="{StaticResource CardBorderStyle}">
-                        <StackPanel>
-                            <TextBlock Text="P0-02 Shell 占位"
-                                       Style="{StaticResource CardTitleTextStyle}" />
-                            <TextBlock Text="TODAY 的真实任务、分组和状态会在后续 Slice 接入。"
-                                       Style="{StaticResource CardBodyTextStyle}" />
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-            </Grid>
-        </DataTemplate>
-
-        <DataTemplate DataType="{x:Type vm:AnimePageViewModel}">
-            <Grid Margin="{StaticResource PageContentMargin}">
-                <StackPanel MaxWidth="720">
-                    <TextBlock Text="动画"
-                               Style="{StaticResource PageTitleTextStyle}" />
-                    <TextBlock Text="{Binding Description}"
-                               Style="{StaticResource PageDescriptionTextStyle}" />
-                    <Border Style="{StaticResource CardBorderStyle}">
-                        <StackPanel>
-                            <TextBlock Text="ANIME Shell 占位"
-                                       Style="{StaticResource CardTitleTextStyle}" />
-                            <TextBlock Text="动画数据、追番状态和网络 Provider 会在后续 Slice 接入。"
-                                       Style="{StaticResource CardBodyTextStyle}" />
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-            </Grid>
-        </DataTemplate>
-    </Window.Resources>
-
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="240" />

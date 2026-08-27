@@ -45,3 +45,7 @@ Codex 和开发运行默认使用 `.devdata/`。不得读取生产数据库、�
 - 不新增第三方 UI 框架或 NuGet 包；修改视觉令牌时应同步检查 Main App 和未来 Widget 的复用关系。
 
 run.ps1 会在当前启动进程缺少 WINDIR 但存在 SystemRoot 时使用进程级回退，避免 WPF 字体缓存初始化失败；不会修改系统环境变量。
+
+## 并行开发
+
+独立 Codex 任务必须使用独立 Git worktree，并遵守 docs/PARALLEL_DEVELOPMENT.md 的文件所有权。功能分支可以本地 commit，但不得自行 push 或合并；公共文件由集成分支统一修改。

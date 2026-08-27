@@ -1,5 +1,7 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReminNote.Windows.Features.Anime;
+using ReminNote.Windows.Features.Today;
 
 namespace ReminNote.Windows.ViewModels;
 

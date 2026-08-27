@@ -10,6 +10,7 @@ ReminNote 是面向 Windows 的提醒与个人记录应用。
 - `DEVELOPMENT.md`
 - `TESTING.md`
 - `DECISIONS.md`
+- `docs/PARALLEL_DEVELOPMENT.md`
 - `docs/slices/P0-02-implementation-brief.md`
 - docs/slices/P0-03-implementation-brief.md
 

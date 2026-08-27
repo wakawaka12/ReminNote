@@ -54,3 +54,9 @@ src/windows/ReminNote.Windows/Resources/DesignSystem/
 App.xaml 只负责按顺序合并这些资源字典。页面通过资源键使用颜色、文字层级、间距、圆角和壳层样式；资源不包含业务数据或业务规则。控件模板负责导航按钮的基本交互反馈和键盘焦点可见性。
 
 本 Slice 使用 DynamicResource 连接可替换的颜色/控件资源，为未来主题能力保留替换点，但当前不实现主题切换。
+
+## P0 并行模块边界
+
+TODAY 与 ANIME 的 ViewModel、资源字典和 DI 注册入口分别位于 Features/Today 与 Features/Anime。App 只调用稳定的模块注册入口并合并固定资源字典路径，MainWindow 只保留共享导航壳。
+
+独立任务的文件所有权与合并规则见 docs/PARALLEL_DEVELOPMENT.md。该边界只用于 P0 模块协作，不是通用插件系统。

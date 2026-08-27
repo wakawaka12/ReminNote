@@ -1,0 +1,22 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:today="clr-namespace:ReminNote.Windows.Features.Today">
+    <DataTemplate DataType="{x:Type today:TodayPageViewModel}">
+        <Grid Margin="{StaticResource PageContentMargin}">
+            <StackPanel MaxWidth="720">
+                <TextBlock Text="今天"
+                           Style="{StaticResource PageTitleTextStyle}" />
+                <TextBlock Text="{Binding Description}"
+                           Style="{StaticResource PageDescriptionTextStyle}" />
+                <Border Style="{StaticResource CardBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Text="P0-02 Shell 占位"
+                                   Style="{StaticResource CardTitleTextStyle}" />
+                        <TextBlock Text="TODAY 的真实任务、分组和状态会在后续 Slice 接入。"
+                                   Style="{StaticResource CardBodyTextStyle}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+    </DataTemplate>
+</ResourceDictionary>

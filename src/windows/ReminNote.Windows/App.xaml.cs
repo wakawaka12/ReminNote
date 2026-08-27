@@ -1,6 +1,8 @@
 ﻿using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using ReminNote.Windows.Features.Anime;
+using ReminNote.Windows.Features.Today;
 using ReminNote.Windows.ViewModels;
 
 namespace ReminNote.Windows;
@@ -14,8 +16,8 @@ public partial class App : Application
         base.OnStartup(e);
 
         var builder = Host.CreateApplicationBuilder(e.Args);
-        builder.Services.AddSingleton<TodayPageViewModel>();
-        builder.Services.AddSingleton<AnimePageViewModel>();
+        builder.Services.AddTodayFeature();
+        builder.Services.AddAnimeFeature();
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();
 
