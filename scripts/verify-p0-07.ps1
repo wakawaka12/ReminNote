@@ -58,6 +58,8 @@ Assert-Condition ($mainWindow.Contains('AutomationProperties.Name')) 'Shell must
 Assert-Condition ($todayResources.Contains('AutomationProperties.Name')) 'TODAY must expose named controls to UI Automation.'
 Assert-Condition ($animeResources.Contains('AutomationProperties.Name')) 'ANIME must expose named controls to UI Automation.'
 Assert-Condition ($widgetWindow.Contains('AutomationProperties.Name')) 'Widget must expose named controls to UI Automation.'
+Assert-Condition ($widgetWindow.Contains('Binding ActivePageTitle, Mode=OneWay')) 'Widget page title bindings must remain one-way because ActivePageTitle is read-only.'
+Assert-Condition ($widgetWindow.Contains('Binding ActivePageSubtitle, Mode=OneWay')) 'Widget page subtitle binding must remain one-way because ActivePageSubtitle is read-only.'
 
 $lockFiles = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'src') -Filter 'packages.lock.json' -Recurse -File)
 $projects = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'src') -Filter '*.csproj' -Recurse -File)
