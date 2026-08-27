@@ -1,22 +1,855 @@
-﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:today="clr-namespace:ReminNote.Windows.Features.Today">
-    <DataTemplate DataType="{x:Type today:TodayPageViewModel}">
-        <Grid Margin="{StaticResource PageContentMargin}">
-            <StackPanel MaxWidth="720">
-                <TextBlock Text="今天"
-                           Style="{StaticResource PageTitleTextStyle}" />
-                <TextBlock Text="{Binding Description}"
-                           Style="{StaticResource PageDescriptionTextStyle}" />
-                <Border Style="{StaticResource CardBorderStyle}">
+    <BooleanToVisibilityConverter x:Key="TodayBooleanToVisibilityConverter" />
+
+    <Style x:Key="TodayEyebrowTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontSize"
+                Value="11" />
+        <Setter Property="FontWeight"
+                Value="SemiBold" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="TodayDateTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="Margin"
+                Value="0,8,0,0" />
+        <Setter Property="FontSize"
+                Value="14" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="TodayIntroTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="Margin"
+                Value="0,8,0,0" />
+        <Setter Property="FontSize"
+                Value="13" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentSecondaryBrush}" />
+        <Setter Property="TextWrapping"
+                Value="Wrap" />
+    </Style>
+
+    <Style x:Key="TodayMetricValueTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontSize"
+                Value="22" />
+        <Setter Property="FontWeight"
+                Value="SemiBold" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="TodayMetricLabelTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="Margin"
+                Value="0,4,0,0" />
+        <Setter Property="FontSize"
+                Value="11" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="TodayTaskTitleTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontSize"
+                Value="15" />
+        <Setter Property="FontWeight"
+                Value="SemiBold" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentPrimaryBrush}" />
+        <Setter Property="TextTrimming"
+                Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="TodayTaskMetaTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="Margin"
+                Value="0,7,0,0" />
+        <Setter Property="FontSize"
+                Value="11" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="TodayTaskTimeTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontSize"
+                Value="13" />
+        <Setter Property="FontWeight"
+                Value="SemiBold" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentPrimaryBrush}" />
+        <Setter Property="HorizontalAlignment"
+                Value="Right" />
+        <Setter Property="TextAlignment"
+                Value="Right" />
+        <Setter Property="TextWrapping"
+                Value="Wrap" />
+    </Style>
+
+    <Style x:Key="TodayGroupTitleTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="FontSize"
+                Value="13" />
+        <Setter Property="FontWeight"
+                Value="SemiBold" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="TodayGroupSubtitleTextStyle"
+           TargetType="{x:Type TextBlock}"
+           BasedOn="{StaticResource TextBlockBaseStyle}">
+        <Setter Property="Margin"
+                Value="0,3,0,0" />
+        <Setter Property="FontSize"
+                Value="11" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentSecondaryBrush}" />
+    </Style>
+
+    <Style x:Key="TodayChipBorderStyle"
+           TargetType="{x:Type Border}">
+        <Setter Property="Padding"
+                Value="8,4" />
+        <Setter Property="Background"
+                Value="{DynamicResource ShellBackgroundBrush}" />
+        <Setter Property="BorderBrush"
+                Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness"
+                Value="1" />
+        <Setter Property="CornerRadius"
+                Value="8" />
+    </Style>
+
+    <Style x:Key="TodayPanelStyle"
+           TargetType="{x:Type Border}"
+           BasedOn="{StaticResource CardBorderStyle}">
+        <Setter Property="Padding"
+                Value="20" />
+        <Setter Property="Margin"
+                Value="0,0,0,16" />
+    </Style>
+
+    <Style x:Key="TodayPrimaryPanelStyle"
+           TargetType="{x:Type Border}"
+           BasedOn="{StaticResource CardBorderStyle}">
+        <Setter Property="Padding"
+                Value="22" />
+        <Setter Property="Margin"
+                Value="0,0,16,16" />
+        <Setter Property="Background"
+                Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderBrush"
+                Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="TodayGroupPanelStyle"
+           TargetType="{x:Type Border}"
+           BasedOn="{StaticResource CardBorderStyle}">
+        <Setter Property="Padding"
+                Value="16" />
+        <Setter Property="Margin"
+                Value="0,0,0,12" />
+    </Style>
+
+    <Style x:Key="TodayTaskCardStyle"
+           TargetType="{x:Type Border}"
+           BasedOn="{StaticResource CardBorderStyle}">
+        <Setter Property="Padding"
+                Value="11" />
+        <Setter Property="Margin"
+                Value="0,0,0,8" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsSelected}"
+                         Value="True">
+                <Setter Property="BorderBrush"
+                        Value="{DynamicResource AccentBrush}" />
+                <Setter Property="BorderThickness"
+                        Value="2" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsCompleted}"
+                         Value="True">
+                <Setter Property="Opacity"
+                        Value="0.72" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="TodayButtonStyle"
+           TargetType="{x:Type Button}">
+        <Setter Property="Background"
+                Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource SidebarPrimaryBrush}" />
+        <Setter Property="BorderBrush"
+                Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderThickness"
+                Value="1" />
+        <Setter Property="Padding"
+                Value="14,9" />
+        <Setter Property="FontFamily"
+                Value="Microsoft YaHei UI, Segoe UI" />
+        <Setter Property="FontSize"
+                Value="12" />
+        <Setter Property="FontWeight"
+                Value="SemiBold" />
+        <Setter Property="Cursor"
+                Value="Hand" />
+        <Setter Property="Focusable"
+                Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="ButtonBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{DynamicResource NavigationCornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused"
+                                 Value="True">
+                            <Setter TargetName="ButtonBorder"
+                                    Property="BorderBrush"
+                                    Value="{DynamicResource FocusBrush}" />
+                            <Setter TargetName="ButtonBorder"
+                                    Property="BorderThickness"
+                                    Value="2" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver"
+                                 Value="True">
+                            <Setter TargetName="ButtonBorder"
+                                    Property="Background"
+                                    Value="{DynamicResource AccentHoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed"
+                                 Value="True">
+                            <Setter TargetName="ButtonBorder"
+                                    Property="Background"
+                                    Value="{DynamicResource AccentPressedBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled"
+                                 Value="False">
+                            <Setter TargetName="ButtonBorder"
+                                    Property="Opacity"
+                                    Value="0.55" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="TodaySecondaryButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource TodayButtonStyle}">
+        <Setter Property="Background"
+                Value="{DynamicResource ShellBackgroundBrush}" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentPrimaryBrush}" />
+        <Setter Property="BorderBrush"
+                Value="{DynamicResource BorderBrush}" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver"
+                     Value="True">
+                <Setter Property="Background"
+                        Value="{DynamicResource CardBackgroundBrush}" />
+                <Setter Property="BorderBrush"
+                        Value="{DynamicResource AccentBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="TodayHeroLightButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource TodayButtonStyle}">
+        <Setter Property="Background"
+                Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource AccentBrush}" />
+        <Setter Property="BorderBrush"
+                Value="{DynamicResource CardBackgroundBrush}" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver"
+                     Value="True">
+                <Setter Property="Background"
+                        Value="{DynamicResource ShellBackgroundBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="TodayHeroOutlineButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource TodayButtonStyle}">
+        <Setter Property="Background"
+                Value="Transparent" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource SidebarPrimaryBrush}" />
+        <Setter Property="BorderBrush"
+                Value="{DynamicResource SidebarPrimaryBrush}" />
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver"
+                     Value="True">
+                <Setter Property="Background"
+                        Value="{DynamicResource AccentHoverBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="TodayTransparentButtonStyle"
+           TargetType="{x:Type Button}">
+        <Setter Property="Background"
+                Value="Transparent" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentPrimaryBrush}" />
+        <Setter Property="BorderBrush"
+                Value="Transparent" />
+        <Setter Property="BorderThickness"
+                Value="0" />
+        <Setter Property="Padding"
+                Value="0" />
+        <Setter Property="Focusable"
+                Value="True" />
+        <Setter Property="Cursor"
+                Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="TransparentButtonBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{DynamicResource NavigationCornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused"
+                                 Value="True">
+                            <Setter TargetName="TransparentButtonBorder"
+                                    Property="BorderBrush"
+                                    Value="{DynamicResource FocusBrush}" />
+                            <Setter TargetName="TransparentButtonBorder"
+                                    Property="BorderThickness"
+                                    Value="1" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver"
+                                 Value="True">
+                            <Setter TargetName="TransparentButtonBorder"
+                                    Property="Background"
+                                    Value="{DynamicResource ShellBackgroundBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="TodayTaskSelectButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource TodayTransparentButtonStyle}">
+        <Setter Property="HorizontalContentAlignment"
+                Value="Stretch" />
+        <Setter Property="VerticalContentAlignment"
+                Value="Center" />
+        <Setter Property="Margin"
+                Value="8,0" />
+    </Style>
+
+    <Style x:Key="TodayGroupHeaderButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource TodayTransparentButtonStyle}">
+        <Setter Property="HorizontalContentAlignment"
+                Value="Stretch" />
+        <Setter Property="VerticalContentAlignment"
+                Value="Center" />
+        <Setter Property="Margin"
+                Value="0,0,0,12" />
+    </Style>
+
+    <Style x:Key="TodayIconButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource TodaySecondaryButtonStyle}">
+        <Setter Property="Width"
+                Value="30" />
+        <Setter Property="Height"
+                Value="30" />
+        <Setter Property="Padding"
+                Value="0" />
+        <Setter Property="HorizontalContentAlignment"
+                Value="Center" />
+        <Setter Property="VerticalContentAlignment"
+                Value="Center" />
+        <Setter Property="FontSize"
+                Value="16" />
+    </Style>
+
+    <Style x:Key="TodayCheckButtonStyle"
+           TargetType="{x:Type Button}"
+           BasedOn="{StaticResource TodayIconButtonStyle}">
+        <Setter Property="FontSize"
+                Value="20" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource AccentBrush}" />
+    </Style>
+
+    <Style x:Key="TodayTextBoxStyle"
+           TargetType="{x:Type TextBox}">
+        <Setter Property="MinHeight"
+                Value="40" />
+        <Setter Property="Padding"
+                Value="12,8" />
+        <Setter Property="FontFamily"
+                Value="Microsoft YaHei UI, Segoe UI" />
+        <Setter Property="FontSize"
+                Value="13" />
+        <Setter Property="Foreground"
+                Value="{DynamicResource ContentPrimaryBrush}" />
+        <Setter Property="Background"
+                Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush"
+                Value="{DynamicResource BorderBrush}" />
+        <Setter Property="BorderThickness"
+                Value="1" />
+        <Style.Triggers>
+            <Trigger Property="IsKeyboardFocused"
+                     Value="True">
+                <Setter Property="BorderBrush"
+                        Value="{DynamicResource AccentBrush}" />
+                <Setter Property="BorderThickness"
+                        Value="2" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <DataTemplate x:Key="TodayTaskItemTemplate">
+        <Border Style="{StaticResource TodayTaskCardStyle}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="30" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="30" />
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0"
+                        Style="{StaticResource TodayCheckButtonStyle}"
+                        Content="{Binding CompletionGlyph}"
+                        Command="{Binding ToggleCompletionCommand}"
+                        ToolTip="{Binding CompletionActionLabel}"
+                        AutomationProperties.Name="{Binding CompletionActionLabel}" />
+
+                <Button Grid.Column="1"
+                        Style="{StaticResource TodayTaskSelectButtonStyle}"
+                        Command="{Binding SelectCommand}">
                     <StackPanel>
-                        <TextBlock Text="P0-02 Shell 占位"
-                                   Style="{StaticResource CardTitleTextStyle}" />
-                        <TextBlock Text="TODAY 的真实任务、分组和状态会在后续 Slice 接入。"
-                                   Style="{StaticResource CardBodyTextStyle}" />
+                        <TextBlock Text="{Binding Title}"
+                                   Style="{StaticResource TodayTaskTitleTextStyle}" />
+                        <StackPanel Orientation="Horizontal">
+                            <Border Style="{StaticResource TodayChipBorderStyle}"
+                                    Margin="0,7,6,0">
+                                <TextBlock Text="{Binding TimeShapeLabel}"
+                                           FontSize="10"
+                                           Foreground="{DynamicResource ContentSecondaryBrush}" />
+                            </Border>
+                            <Border Style="{StaticResource TodayChipBorderStyle}"
+                                    Margin="0,7,6,0">
+                                <TextBlock Text="{Binding StatusLabel}"
+                                           FontSize="10"
+                                           Foreground="{DynamicResource AccentBrush}" />
+                            </Border>
+                            <Border Style="{StaticResource TodayChipBorderStyle}"
+                                    Margin="0,7,0,0"
+                                    Visibility="{Binding IsNeedsReviewVisible, Converter={StaticResource TodayBooleanToVisibilityConverter}}">
+                                <TextBlock Text="NEEDS REVIEW"
+                                           FontSize="10"
+                                           Foreground="{DynamicResource AccentBrush}" />
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Text="{Binding CategoryLabel}"
+                                   Style="{StaticResource TodayTaskMetaTextStyle}" />
                     </StackPanel>
-                </Border>
+                </Button>
+
+                <TextBlock Grid.Column="2"
+                           Text="{Binding TimeLabel}"
+                           Style="{StaticResource TodayTaskTimeTextStyle}"
+                           MaxWidth="118"
+                           Margin="6,0,8,0" />
+
+                <Button Grid.Column="3"
+                        Style="{StaticResource TodayIconButtonStyle}"
+                        Content="{Binding PinGlyph}"
+                        Command="{Binding TogglePinCommand}"
+                        ToolTip="{Binding PinActionLabel}"
+                        AutomationProperties.Name="{Binding PinActionLabel}" />
+            </Grid>
+        </Border>
+    </DataTemplate>
+
+    <DataTemplate x:Key="TodayTaskGroupTemplate">
+        <Border Style="{StaticResource TodayGroupPanelStyle}"
+                Visibility="{Binding HasItems, Converter={StaticResource TodayBooleanToVisibilityConverter}}">
+            <StackPanel>
+                <Button Style="{StaticResource TodayGroupHeaderButtonStyle}"
+                        Command="{Binding ToggleCommand}">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="24" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="{Binding Title}"
+                                       Style="{StaticResource TodayGroupTitleTextStyle}" />
+                            <TextBlock Text="{Binding Subtitle}"
+                                       Style="{StaticResource TodayGroupSubtitleTextStyle}" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding ItemCountText}"
+                                   VerticalAlignment="Center"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource ContentSecondaryBrush}"
+                                   Margin="8,0,10,0" />
+                        <TextBlock Grid.Column="2"
+                                   Text="{Binding ExpandGlyph}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   FontSize="18"
+                                   Foreground="{DynamicResource AccentBrush}" />
+                    </Grid>
+                </Button>
+
+                <ItemsControl ItemsSource="{Binding Items}"
+                              ItemTemplate="{StaticResource TodayTaskItemTemplate}"
+                              Visibility="{Binding IsExpanded, Converter={StaticResource TodayBooleanToVisibilityConverter}}" />
             </StackPanel>
-        </Grid>
+        </Border>
+    </DataTemplate>
+
+    <DataTemplate x:Key="TodaySelectedTaskTemplate">
+        <Border Style="{StaticResource TodayPanelStyle}">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="DETAILS"
+                               Style="{StaticResource TodayEyebrowTextStyle}" />
+                    <Border Grid.Column="1"
+                            Style="{StaticResource TodayChipBorderStyle}">
+                        <TextBlock Text="{Binding StatusLabel}"
+                                   FontSize="10"
+                                   Foreground="{DynamicResource AccentBrush}" />
+                    </Border>
+                </Grid>
+
+                <TextBlock Text="{Binding Title}"
+                           Style="{StaticResource CardTitleTextStyle}"
+                           TextWrapping="Wrap"
+                           Margin="0,16,0,0" />
+                <TextBlock Text="{Binding TimeLabel}"
+                           Style="{StaticResource TodayMetricValueTextStyle}"
+                           Margin="0,14,0,0" />
+                <TextBlock Text="{Binding StatusDescription}"
+                           Style="{StaticResource TodayTaskMetaTextStyle}"
+                           TextWrapping="Wrap" />
+
+                <Grid Margin="0,18,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="TIME SHAPE"
+                                   Style="{StaticResource TodayEyebrowTextStyle}" />
+                        <TextBlock Text="{Binding TimeShapeLabel}"
+                                   Style="{StaticResource TodayMetricLabelTextStyle}"
+                                   Foreground="{DynamicResource ContentPrimaryBrush}" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="PRIORITY"
+                                   Style="{StaticResource TodayEyebrowTextStyle}" />
+                        <TextBlock Text="{Binding PriorityLabel}"
+                                   Style="{StaticResource TodayMetricLabelTextStyle}"
+                                   Foreground="{DynamicResource ContentPrimaryBrush}" />
+                    </StackPanel>
+                </Grid>
+
+                <Border Margin="0,18,0,0"
+                        Padding="12"
+                        Background="{DynamicResource ShellBackgroundBrush}"
+                        CornerRadius="8"
+                        Visibility="{Binding IsNeedsReviewVisible, Converter={StaticResource TodayBooleanToVisibilityConverter}}">
+                    <TextBlock Text="RANGE 计划已结束 · 请记录 COMPLETED、PARTIAL 或 MISSED 结果"
+                               FontSize="12"
+                               Foreground="{DynamicResource ContentPrimaryBrush}"
+                               TextWrapping="Wrap" />
+                </Border>
+
+                <TextBlock Text="{Binding Notes}"
+                           Style="{StaticResource CardBodyTextStyle}"
+                           TextWrapping="Wrap"
+                           Margin="0,18,0,0" />
+
+                <StackPanel Orientation="Horizontal"
+                            Margin="0,20,0,0">
+                    <Button Content="{Binding CompletionActionLabel}"
+                            Command="{Binding ToggleCompletionCommand}"
+                            Style="{StaticResource TodayButtonStyle}"
+                            Margin="0,0,8,0" />
+                    <Button Content="{Binding PinActionLabel}"
+                            Command="{Binding TogglePinCommand}"
+                            Style="{StaticResource TodaySecondaryButtonStyle}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type today:TodayPageViewModel}">
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Grid Margin="{StaticResource PageContentMargin}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0"
+                      Margin="0,0,0,20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="TODAY"
+                                   Style="{StaticResource TodayEyebrowTextStyle}" />
+                        <TextBlock Text="今天"
+                                   Style="{StaticResource PageTitleTextStyle}"
+                                   Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding DateSummary}"
+                                   Style="{StaticResource TodayDateTextStyle}" />
+                        <TextBlock Text="{Binding Description}"
+                                   Style="{StaticResource TodayIntroTextStyle}"
+                                   MaxWidth="560" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Bottom">
+                        <Border Style="{StaticResource TodayChipBorderStyle}"
+                                VerticalAlignment="Center">
+                            <TextBlock Text="{Binding MockBadge}"
+                                       FontSize="10"
+                                       Foreground="{DynamicResource AccentBrush}" />
+                        </Border>
+                        <Button Content="QUICK ADD"
+                                Command="{Binding OpenQuickAddCommand}"
+                                Style="{StaticResource TodayButtonStyle}"
+                                Margin="10,0,0,0" />
+                    </StackPanel>
+                </Grid>
+
+                <Border Grid.Row="1"
+                        Style="{StaticResource TodayPanelStyle}"
+                        Visibility="{Binding IsQuickAddOpen, Converter={StaticResource TodayBooleanToVisibilityConverter}}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.ColumnSpan="2">
+                            <TextBlock Text="QUICK ADD"
+                                       Style="{StaticResource TodayEyebrowTextStyle}" />
+                            <TextBlock Text="P0 Mock 会把输入直接放入 ANYTIME；日期/时间解析留给 P2。"
+                                       Style="{StaticResource TodayTaskMetaTextStyle}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                        <TextBox Grid.Row="1"
+                                 Text="{Binding QuickAddText, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource TodayTextBoxStyle}"
+                                 Margin="0,14,10,0"
+                                 ToolTip="输入任务标题"
+                                 AutomationProperties.Name="Quick Add 任务标题">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter"
+                                            Command="{Binding AddQuickTaskCommand}" />
+                            </TextBox.InputBindings>
+                        </TextBox>
+                        <StackPanel Grid.Row="1"
+                                    Grid.Column="1"
+                                    Orientation="Horizontal"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,14,0,0">
+                            <Button Content="添加到今天"
+                                    Command="{Binding AddQuickTaskCommand}"
+                                    Style="{StaticResource TodayButtonStyle}"
+                                    Margin="0,0,8,0" />
+                            <Button Content="取消"
+                                    Command="{Binding CancelQuickAddCommand}"
+                                    Style="{StaticResource TodaySecondaryButtonStyle}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="2"
+                      Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.15*" />
+                        <ColumnDefinition Width="0.85*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Style="{StaticResource TodayPrimaryPanelStyle}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="PRIMARY FOCUS"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource SidebarPrimaryBrush}" />
+                            <TextBlock Grid.Row="1"
+                                       Text="{Binding PrimaryTask.Title}"
+                                       FontSize="22"
+                                       FontWeight="SemiBold"
+                                       Foreground="{DynamicResource SidebarPrimaryBrush}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,13,0,0" />
+                            <StackPanel Grid.Row="2"
+                                        Orientation="Horizontal"
+                                        Margin="0,14,0,0">
+                                <TextBlock Text="{Binding PrimaryTask.TimeLabel}"
+                                           FontSize="14"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource SidebarPrimaryBrush}" />
+                                <TextBlock Text=" · "
+                                           FontSize="14"
+                                           Foreground="{DynamicResource SidebarSecondaryBrush}" />
+                                <TextBlock Text="{Binding PrimaryTask.StatusLabel}"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource SidebarSecondaryBrush}" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="3"
+                                        Orientation="Horizontal"
+                                        Margin="0,22,0,0">
+                                <Button Content="{Binding PrimaryTask.CompletionActionLabel}"
+                                        Command="{Binding PrimaryTask.ToggleCompletionCommand}"
+                                        Style="{StaticResource TodayHeroLightButtonStyle}"
+                                        Margin="0,0,8,0" />
+                                <Button Content="查看详情"
+                                        Command="{Binding PrimaryTask.SelectCommand}"
+                                        Style="{StaticResource TodayHeroOutlineButtonStyle}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Column="1"
+                            Style="{StaticResource TodayPanelStyle}">
+                        <StackPanel>
+                            <TextBlock Text="REVIEW QUEUE"
+                                       Style="{StaticResource TodayEyebrowTextStyle}" />
+                            <TextBlock Text="{Binding NeedsReviewText}"
+                                       Style="{StaticResource CardTitleTextStyle}"
+                                       Margin="0,12,0,0" />
+                            <TextBlock Text="{Binding NeedsReviewDescription}"
+                                       Style="{StaticResource CardBodyTextStyle}"
+                                       TextWrapping="Wrap" />
+                            <Border Margin="0,14,0,0"
+                                    Padding="12"
+                                    Background="{DynamicResource ShellBackgroundBrush}"
+                                    CornerRadius="8">
+                                <StackPanel>
+                                    <TextBlock Text="TODAY PLAN"
+                                               Style="{StaticResource TodayEyebrowTextStyle}" />
+                                    <TextBlock Text="{Binding PlanSummary}"
+                                               Style="{StaticResource TodayMetricValueTextStyle}"
+                                               Margin="0,5,0,0" />
+                                </StackPanel>
+                            </Border>
+                            <Button Content="查看待复盘"
+                                    Command="{Binding OpenNeedsReviewCommand}"
+                                    Style="{StaticResource TodaySecondaryButtonStyle}"
+                                    Margin="0,16,0,0" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <Grid Grid.Row="3">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.4*" />
+                        <ColumnDefinition Width="0.9*" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="PLAN"
+                                       Style="{StaticResource TodayEyebrowTextStyle}" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding PlanSummary}"
+                                       FontSize="11"
+                                       Foreground="{DynamicResource ContentSecondaryBrush}" />
+                        </Grid>
+                        <ItemsControl ItemsSource="{Binding Groups}"
+                                      ItemTemplate="{StaticResource TodayTaskGroupTemplate}" />
+                    </StackPanel>
+
+                    <ContentControl Grid.Column="1"
+                                    Content="{Binding SelectedTask}"
+                                    ContentTemplate="{StaticResource TodaySelectedTaskTemplate}"
+                                    Margin="16,0,0,0"
+                                    VerticalAlignment="Top" />
+                </Grid>
+
+                <Border Grid.Row="4"
+                        Style="{StaticResource TodayPanelStyle}"
+                        Margin="0,4,0,0"
+                        Padding="14">
+                    <TextBlock Text="{Binding InteractionMessage}"
+                               FontSize="12"
+                               Foreground="{DynamicResource ContentSecondaryBrush}"
+                               TextWrapping="Wrap" />
+                </Border>
+            </Grid>
+        </ScrollViewer>
     </DataTemplate>
 </ResourceDictionary>
