@@ -240,6 +240,55 @@ public sealed class TaskApplicationBoundaryTests
         Assert.Empty(readContext.ChangeTracker.Entries<TaskEntity>());
     }
 
+    [Fact]
+    public async SystemTask QueryWithoutPlanDateReadsAllPlannedDatesFromSqlite()
+    {
+        using var database = new SqliteTestDatabase();
+        database.Migrate();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var tasks = new[]
+        {
+            TaskAggregate.Create(
+                TaskId(1),
+                "更早日期",
+                TimeSpec.Anytime(TestValues.PlanDate.PlusDays(-1)),
+                TestValues.CreatedAt),
+            TaskAggregate.Create(
+                TaskId(2),
+                "计划日期",
+                TimeSpec.At(TestValues.PlanDate, new LocalTime(9, 0)),
+                TestValues.CreatedAt),
+            TaskAggregate.Create(
+                TaskId(3),
+                "未来日期",
+                TimeSpec.Anytime(TestValues.PlanDate.PlusDays(1)),
+                TestValues.CreatedAt)
+        };
+
+        using (var context = database.CreateContext())
+        {
+            var repository = new TaskRepository(context);
+            foreach (var task in tasks)
+            {
+                await repository.AddAsync(task, cancellationToken);
+            }
+        }
+
+        using var readContext = database.CreateContext();
+        var query = new TaskQueryService(readContext);
+        var all = await ReadAllAsync(query.ListAsync(new TaskQuery(), cancellationToken));
+
+        Assert.Equal(3, all.Count);
+        Assert.All(all, snapshot => Assert.IsType<TaskSnapshot>(snapshot));
+        Assert.Empty(readContext.ChangeTracker.Entries<TaskEntity>());
+
+        var explicitDate = await ReadAllAsync(
+            query.ListAsync(new TaskQuery(TestValues.PlanDate), cancellationToken));
+
+        Assert.Equal(new[] { TaskId(2) }, explicitDate.Select(snapshot => snapshot.Id));
+        Assert.Empty(readContext.ChangeTracker.Entries<TaskEntity>());
+    }
+
     private static TaskApplicationService CreateApplication(
         ReminNoteDbContext context,
         TestClock clock) =>

@@ -37,9 +37,15 @@ public sealed class TaskQueryService : ITaskQueryService
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        var entities = await dbContext.Tasks
-            .AsNoTracking()
-            .Where(task => task.LocalDate == query.PlanDate)
+        // A null PlanDate is an explicit "all planned dates" read used by the
+        // Today read model; only a concrete date narrows the result set.
+        var queryable = dbContext.Tasks.AsNoTracking();
+        if (query.PlanDate is { } planDate)
+        {
+            queryable = queryable.Where(task => task.LocalDate == planDate);
+        }
+
+        var entities = await queryable
             .OrderBy(task => task.TimeType)
             .ThenBy(task => task.TimePoint)
             .ThenBy(task => task.RangeStart)
