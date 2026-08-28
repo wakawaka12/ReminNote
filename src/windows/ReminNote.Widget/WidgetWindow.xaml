@@ -393,7 +393,7 @@
                             ToolTip="{Binding AlertTriggerLabel}" />
                 </Grid>
             </Border>
-            <Border Grid.RowSpan="3"
+            <Border Grid.Row="1"
                     Panel.ZIndex="10"
                     Style="{StaticResource WidgetAlertOverlayStyle}"
                     Visibility="{Binding IsAlert, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -447,7 +447,7 @@
                     </StackPanel>
                 </Grid>
             </Border>
-            <Border Grid.RowSpan="3"
+            <Border Grid.Row="1"
                     Panel.ZIndex="20"
                     Style="{StaticResource WidgetQuickAddOverlayStyle}"
                     Visibility="{Binding IsQuickAddOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -490,7 +490,7 @@
                                Visibility="{Binding HasQuickAddFeedback, Converter={StaticResource BooleanToVisibilityConverter}}" />
                 </StackPanel>
             </Border>
-            <Border Grid.RowSpan="3"
+            <Border Grid.Row="1"
                     Panel.ZIndex="30"
                     Style="{StaticResource WidgetDrawerOverlayStyle}"
                     Visibility="{Binding IsReminderDrawerOpen, Converter={StaticResource BooleanToVisibilityConverter}}">

@@ -22,6 +22,16 @@
   <ItemGroup>
     <Compile Include="../../src/windows/ReminNote.Widget/ViewModels/WidgetViewModel.cs"
              Link="WidgetViewModel.cs" />
+    <Compile Include="../../src/windows/ReminNote.Widget/Startup/WidgetSingleInstanceCoordinator.cs"
+             Link="WidgetSingleInstanceCoordinator.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/Startup/SingleInstanceCoordinator.cs"
+             Link="SingleInstanceCoordinator.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/Features/Today/TodayPageViewModel.cs"
+             Link="TodayPageViewModel.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/Features/Today/TodayMockDataService.cs"
+             Link="TodayMockDataService.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/ViewModels/ShellPageViewModel.cs"
+             Link="ShellPageViewModel.cs" />
     <Compile Include="../../src/windows/ReminNote.Windows/Resources/Localization/UiText.cs"
              Link="Resources/Localization/UiText.cs" />
     <EmbeddedResource Include="../../src/windows/ReminNote.Windows/Resources/Localization/UiText.resx"

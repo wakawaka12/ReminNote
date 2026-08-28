@@ -73,6 +73,7 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 
 - Compact：主任务/最近一集、当前时间和完成/WATCHED 主操作仍可见；Upcoming 队列、长 Summary 和次要操作收起；内容不重叠、不被裁切到无法辨认；
 - 窗口高度不足时，正文区域出现可用的纵向滚动，滚轮/触控板可以看到位于下方的内容；顶部主信息、底部触发栏和焦点控件不被窗口圆角裁切；
+- Quick Add 打开时，输入框和“添加”按钮完整位于正文面板内，不被底部触发栏覆盖；调整高度或滚动正文后仍可输入、添加和关闭；
 - Standard：Upcoming 队列、Summary 和次要操作恢复；
 - Expanded：窗口可继续放宽，主信息保持稳定且显示宽屏布局标识；
 - TODAY 与 ANIME 三档尺寸均能正常切换。
@@ -82,6 +83,7 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 - 任一尺寸下按钮或主信息不可点击；
 - 文本、卡片重叠或窗口内容溢出；
 - 鼠标滚轮/触控板无法滚动正文，或滚动后关键内容仍被裁切；
+- Quick Add 输入框/添加按钮下半部被 footer 遮挡，或滚动后无法回到面板继续操作；
 - 调整尺寸导致异常、黑屏或页面状态丢失。
 
 ## Test 3 — Widget 状态 Mock
@@ -190,7 +192,8 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 预期：
 
 - 不新增 SQLite、Token、网络缓存、生产配置或用户内容文件；
-- 代码变更只位于 `src/windows/ReminNote.Widget/**` 与 `docs/slices/P0-06-*`；
+- 代码变更只位于本次 P0 UI 范围内的 `src/windows/ReminNote.Widget/**`、`src/windows/ReminNote.Windows/{App.xaml.cs,MainWindow.xaml,MainWindow.xaml.cs,Features/Today/**,Features/Anime/**,Startup/**}`、相关测试与 `docs/slices/P0-06-*` / P0-07 验收说明；
+- `ReminNote.Core`、SQLite/Infrastructure、Agent IPC 与 `reviews/` / `second-review/` 审查记录未被修改；
 - `ReminNote.sln`、现有 `ReminNote.Windows`、公共 Design System、集中包版本、脚本、CI 和根级活文档未被修改。
 
 失败：
@@ -199,10 +202,28 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 - 发现授权范围外文件被修改；
 - Widget 依赖 Agent IPC、Reminder Scheduler 或真实业务服务才能启动。
 
+## 补充回归 — Main App / Widget 单实例与并行启动
+
+1. 先启动 Release Main App，再用第二个终端启动同一个 Main App（可直接运行 `src/windows/ReminNote.Windows/bin/Release/net10.0-windows/ReminNote.Windows.exe`）。
+2. 观察第二次启动的退出码和桌面窗口；在第一次窗口中切换到 ANIME 或打开一个 Mock 面板后再重复启动，确认状态没有被第二个进程重置。
+3. 关闭 Main App，先启动 Release Widget，再启动 Main App；随后再启动一次 Widget。
+
+预期：
+
+- Main App 第二次启动不创建第二个窗口，进程以 0 退出并唤起已有 Main 窗口；已有页面/Mock 状态保持不变；
+- Widget 与 Main App 可以同时运行；Widget 只与同身份的 Widget 实例互斥，不阻塞 Main App；
+- Widget 第二次启动不创建第二个 Widget 窗口，并以 0 退出后唤起已有 Widget；
+- 关闭主窗口后 `scripts/run.ps1 -Configuration Release` 的前台进程退出码为 0；直接 EXE 启动与脚本启动行为一致；
+
+失败：
+
+- 第二次 Main App/Widget 启动出现重复窗口、悬挂不退出、退出码非 0 或没有唤起已有窗口；
+- 先启动 Widget 导致 Main App 无法启动，或两个应用共享同一个互斥锁；
+
 ## Known Limitations
 
 - `LOCKED` / `TEMP_INTERACTIVE` / `UNLOCKED` / `ALERT` 是可视化 Mock，当前不实现真正的点击穿透、输入拦截或系统级锁定；
 - Quick Add、Task、Anime、Reminder 操作都是内存反馈，关闭进程后丢失；
 - 面板不会因全局点击自动关闭，避免误关闭 Quick Add 输入框；关闭通过对应面板的 `×`、底部 toggle 或明确操作按钮完成；
-- Widget 尚未加入 Solution，也未由 Agent 托管；
+- Widget 已作为独立项目登记到 Solution，但仍未由 Agent 托管；Main App / Widget 的启动互斥仅用于本地 UI 生命周期，不代表 Agent IPC 或生产 Single Writer；
 - 当前没有像素快照测试，视觉层级仍需要 Windows 桌面人工验收。

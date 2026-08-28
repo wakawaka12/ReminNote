@@ -574,7 +574,8 @@
                             Margin="0,2,0,12"
                             Style="{StaticResource AnimeDetailsCardStyle}"
                             Background="{DynamicResource AnimeLavenderBrush}"
-                            BorderBrush="#DDD7FF">
+                            BorderBrush="#DDD7FF"
+                            AutomationProperties.Name="{x:Static local:UiText.AnimeSelectedAnime}">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -584,6 +585,11 @@
                                 <TextBlock Text="{x:Static local:UiText.AnimeSelectedAnime}"
                                            Style="{StaticResource AnimeEyebrowTextStyle}"
                                            Foreground="{DynamicResource AnimeInkBrush}" />
+                                <TextBlock Text="{Binding InteractionStatus}"
+                                           Margin="0,4,0,0"
+                                           Style="{StaticResource AnimeMetaTextStyle}"
+                                           TextWrapping="Wrap"
+                                           AutomationProperties.LiveSetting="Polite" />
                                 <TextBlock Text="{Binding SelectedEntryTitle}"
                                            Margin="0,5,0,0"
                                            FontSize="19"

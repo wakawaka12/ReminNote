@@ -48,6 +48,8 @@ public sealed class AnimePageViewModel : ShellPageViewModel
         SelectSection(AllSectionKey);
     }
 
+    public event Action<AnimeMockEntry>? SelectedAnimeChanged;
+
     public IReadOnlyList<AnimeSectionItem> Sections { get; }
 
     public ObservableCollection<AnimeMockEntry> VisibleEntries { get; }
@@ -91,6 +93,10 @@ public sealed class AnimePageViewModel : ShellPageViewModel
                 OnPropertyChanged(nameof(SelectedEntryDescription));
                 OnPropertyChanged(nameof(SelectedEntryStatus));
                 OnPropertyChanged(nameof(SelectedEntryProgress));
+                if (value is not null)
+                {
+                    SelectedAnimeChanged?.Invoke(value);
+                }
             }
         }
     }
