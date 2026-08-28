@@ -31,11 +31,10 @@ jobs:
         shell: pwsh
         run: ./scripts/verify-p0-07.ps1
 
-      - name: Restore
-        run: dotnet restore ReminNote.sln --locked-mode
+      - name: Restore and Release build
+        shell: pwsh
+        run: ./scripts/build.ps1 -Configuration Release
 
-      - name: Build
-        run: dotnet build ReminNote.sln --configuration Release --no-restore
-
-      - name: Test
-        run: dotnet test ReminNote.sln --configuration Release --no-build --no-restore
+      - name: Real tests and P0-07
+        shell: pwsh
+        run: ./scripts/test.ps1 -Configuration Release
