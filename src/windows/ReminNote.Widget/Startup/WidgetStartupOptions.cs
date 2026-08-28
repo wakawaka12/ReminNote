@@ -17,7 +17,7 @@ public static class WidgetStartupOptions
     {
         ArgumentNullException.ThrowIfNull(args);
 
-        var repositoryRoot = currentDirectory ?? Directory.GetCurrentDirectory();
+        string? repositoryRoot = null;
         for (var index = 0; index < args.Count; index++)
         {
             if (!string.Equals(args[index], "--repo-root", StringComparison.OrdinalIgnoreCase))
@@ -31,6 +31,11 @@ public static class WidgetStartupOptions
             }
 
             repositoryRoot = args[index];
+        }
+
+        if (repositoryRoot is null)
+        {
+            throw new ArgumentException("Widget 正式启动必须提供 --repo-root 路径。", nameof(args));
         }
 
         return ReminNoteDatabase.ValidateRepositoryRoot(repositoryRoot);

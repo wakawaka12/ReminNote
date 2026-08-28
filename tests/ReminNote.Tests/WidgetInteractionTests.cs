@@ -269,7 +269,7 @@ public sealed class WidgetInteractionTests
         Assert.Throws<ArgumentException>(() =>
             WidgetStartupOptions.ResolveRepositoryRoot(["--repo-root"], repositoryRoot));
         Assert.Throws<ArgumentException>(() =>
-            WidgetStartupOptions.ResolveRepositoryRoot([], Path.GetTempPath()));
+            WidgetStartupOptions.ResolveRepositoryRoot([], repositoryRoot));
     }
 
     private static string FindRepositoryRoot()
