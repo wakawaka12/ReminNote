@@ -34,6 +34,48 @@
 
 当前实现注意：P1 自动化测试使用 `:memory:` 数据库，证明 migration、repository 和 application/query 代码路径；它不证明 P0 WPF Mock 已经成为真实 Task UI，也不替代下面要求的 `.devdata` 人工数据安全检查。
 
+## P1 真实 CRUD 验收入口
+
+P1 已合入一个仅供开发验收的命令行入口：`tools/ReminNote.P1ManualHarness`。它必须显式接收仓库根目录，启动每个命令前应用真实 migration，并只使用该根目录下的 `.devdata/reminnote.sqlite`；它没有 purge 命令。先构建：
+
+```powershell
+./scripts/build.ps1 -Configuration Release
+$harness = (Resolve-Path './tools/ReminNote.P1ManualHarness/bin/Release/net10.0/ReminNote.P1ManualHarness.exe').Path
+$root = (Get-Location).Path
+& $harness --repo-root $root schema
+```
+
+预期只看到 `tasks`、`__EFMigrationsHistory` 和 `__EFMigrationsLock`。确认当前 `.devdata` 没有需要保留的数据后，才执行下面的写入命令；标题建议使用本次验收专用值：
+
+```powershell
+& $harness --repo-root $root create 'P1验收-跨午夜' '2026-08-28' RANGE '23:00' '01:00'
+& $harness --repo-root $root list '2026-08-28'
+```
+
+从 Create 输出复制 UUID v7 ID，再执行：
+
+```powershell
+& $harness --repo-root $root update '<ID>' 'P1验收-已更新' '2026-08-28' RANGE '22:00' '00:30'
+& $harness --repo-root $root result '<ID>' PARTIAL '人工验收备注'
+& $harness --repo-root $root list '2026-08-28'
+& $harness --repo-root $root delete '<ID>'
+& $harness --repo-root $root list '2026-08-28'
+```
+
+预期：跨午夜项仍归属计划日 `2026-08-28`；更新保持 ID；PARTIAL、记录时间和备注可读回；删除后列表为空。命令返回非零或输出“执行失败”即失败。该入口不是 P0 UI，也不代表已实现 P2 TODAY/Widget 体验。
+
+### Test 6 的 harness 输入失败检查
+
+在确认已有验收数据没有被修改的前提下，执行以下命令，验证失败不会写入：
+
+```powershell
+& $harness --repo-root $root create 'P1验收-非法空范围' '2026-08-28' RANGE '14:00' '14:00'
+& $harness --repo-root $root create 'P1验收-非法时间参数' '2026-08-28' TIME
+& $harness --repo-root $root result '0191f6a4-3b25-4c12-8d34-56789abcde01' COMPLETED
+```
+
+预期：三条命令均返回非零并报告输入/领域错误；随后用 `list` 确认没有新增非法行，其他合法 Task 不受影响。不要对未知仓库根目录运行 harness；它会要求根目录同时包含 Git 元数据和 `ReminNote.sln`。
+
 失败：
 
 - 任何命令失败、窗口无法启动、出现未处理异常/XAML 错误；

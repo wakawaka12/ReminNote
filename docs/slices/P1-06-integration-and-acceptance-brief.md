@@ -61,8 +61,8 @@
 当前集成分支已合入 P1-00 至 P1-04 实现和 P1-05 验收材料。已执行并通过：
 
 - `dotnet restore ReminNote.sln --locked-mode`；
-- `dotnet build ReminNote.sln --configuration Release --no-restore`，7 个项目，0 警告、0 错误；
+- `dotnet build ReminNote.sln --configuration Release --no-restore`，8 个项目，0 警告、0 错误；
 - `scripts/test.ps1 -Configuration Release`，61/61 测试通过；
 - `scripts/verify-p0-07.ps1`，213 个资源键、7 个锁定项目和 P0 标记检查通过。
 
-自动化证据使用临时 SQLite，尚未替代用户对真实 `.devdata/reminnote.sqlite` 的手动备份、migration、重启和数据安全验收。当前 P1 也没有新增用户可操作的真实 CRUD UI；手动 CRUD 入口应以测试/harness 或后续 UI Slice 的明确报告为准，不得把 P0 Mock Quick Add 当作真实持久化入口。
+自动化证据使用临时 SQLite，尚未替代用户对真实 `.devdata/reminnote.sqlite` 的手动备份、migration、重启和数据安全验收。已合入开发验收入口 `tools/ReminNote.P1ManualHarness`，可对显式指定的仓库根目录执行真实 schema/CRUD；当前仍没有把该路径接入 P0 WPF UI，不得把 P0 Mock Quick Add 当作真实持久化入口。
