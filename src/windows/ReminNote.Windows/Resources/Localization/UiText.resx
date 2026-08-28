@@ -8,9 +8,9 @@
   <data name="Shell.WindowTitle"><value>ReminNote</value></data>
   <data name="Shell.BrandName"><value>ReminNote</value></data>
   <data name="Shell.BrandSubtitle"><value>个人提醒与记录</value></data>
-  <data name="Shell.StageLabel"><value>P0 · 本地 Mock</value></data>
-  <data name="Shell.HeaderSubtitle"><value>本地优先 · TODAY / ANIME Mock · 状态仅在本次运行有效</value></data>
-  <data name="Shell.Footer"><value>P0 Mock 已启动 · 业务数据尚未接入 · 所有状态仅在本次运行有效</value></data>
+  <data name="Shell.StageLabel"><value>P2 LIVE · TODAY 本地持久化 Task / ANIME 本地 Mock</value></data>
+  <data name="Shell.HeaderSubtitle"><value>本地优先 · TODAY 使用本地持久化 Task · ANIME 仍为本地 Mock</value></data>
+  <data name="Shell.Footer"><value>P2 正式入口已启动 · TODAY Task 持久化于本地 SQLite · ANIME 仍为本地 Mock</value></data>
   <data name="Shell.Navigation"><value>主导航</value></data>
   <data name="Shell.PageNavigation"><value>页面导航</value></data>
   <data name="Shell.HeaderRegion"><value>页面标题区域</value></data>

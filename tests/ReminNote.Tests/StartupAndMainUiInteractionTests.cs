@@ -1,6 +1,7 @@
 using ReminNote.Widget.Startup;
 using ReminNote.Widget.ViewModels;
 using ReminNote.Windows.Features.Today;
+using ReminNote.Windows.Resources.Localization;
 using ReminNote.Windows.Startup;
 using System.Diagnostics;
 
@@ -8,6 +9,32 @@ namespace ReminNote.Tests;
 
 public sealed class StartupAndMainUiInteractionTests
 {
+    [Fact]
+    public void FormalLiveShellCopySeparatesPersistentTodayFromMockAnime()
+    {
+        var shellCopy = new[]
+        {
+            UiText.ShellStageLabel,
+            UiText.ShellHeaderSubtitle,
+            UiText.ShellFooter
+        };
+
+        Assert.Contains("TODAY 本地持久化 Task", UiText.ShellStageLabel, StringComparison.Ordinal);
+        Assert.Contains("ANIME 本地 Mock", UiText.ShellStageLabel, StringComparison.Ordinal);
+        Assert.Contains("TODAY 使用本地持久化 Task", UiText.ShellHeaderSubtitle, StringComparison.Ordinal);
+        Assert.Contains("ANIME 仍为本地 Mock", UiText.ShellHeaderSubtitle, StringComparison.Ordinal);
+        Assert.Contains("TODAY Task 持久化于本地 SQLite", UiText.ShellFooter, StringComparison.Ordinal);
+        Assert.Contains("ANIME 仍为本地 Mock", UiText.ShellFooter, StringComparison.Ordinal);
+
+        foreach (var copy in shellCopy)
+        {
+            Assert.DoesNotContain("P0", copy, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("进程内", copy, StringComparison.Ordinal);
+            Assert.DoesNotContain("业务数据尚未接入", copy, StringComparison.Ordinal);
+            Assert.DoesNotContain("状态仅在本次运行有效", copy, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public void MainAndWidgetUseDifferentLocalActivationIdentities()
     {
