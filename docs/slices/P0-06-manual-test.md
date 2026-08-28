@@ -67,10 +67,12 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 2. 观察 TODAY 和 ANIME 主卡片，再分别点击两个页签。
 3. 将宽度调回约 500 DIP（Standard）。
 4. 将宽度调到约 680 DIP（Expanded）。
+5. 在接近最小高度时，将鼠标移到 TODAY / ANIME 正文区域滚动滚轮或使用触控板上下滚动；再用 Tab 检查正文内的操作控件仍可聚焦。
 
 预期：
 
 - Compact：主任务/最近一集、当前时间和完成/WATCHED 主操作仍可见；Upcoming 队列、长 Summary 和次要操作收起；内容不重叠、不被裁切到无法辨认；
+- 窗口高度不足时，正文区域出现可用的纵向滚动，滚轮/触控板可以看到位于下方的内容；顶部主信息、底部触发栏和焦点控件不被窗口圆角裁切；
 - Standard：Upcoming 队列、Summary 和次要操作恢复；
 - Expanded：窗口可继续放宽，主信息保持稳定且显示宽屏布局标识；
 - TODAY 与 ANIME 三档尺寸均能正常切换。
@@ -79,26 +81,28 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 
 - 任一尺寸下按钮或主信息不可点击；
 - 文本、卡片重叠或窗口内容溢出；
+- 鼠标滚轮/触控板无法滚动正文，或滚动后关键内容仍被裁切；
 - 调整尺寸导致异常、黑屏或页面状态丢失。
 
 ## Test 3 — Widget 状态 Mock
 
 1. 点击顶部 `◆ LOCKED` 状态芯片。
 2. 重复点击观察状态依次变为 `TEMP`、`UNLOCKED`、`LOCKED`。
-3. 点击底部“模拟提醒”，观察 `ALERT` 状态。
-4. 在 Alert 面板中点击“已处理”。
+3. 点击底部“模拟提醒”，观察 `ALERT` 状态；确认 Alert 面板右上角有可操作的 `×`，且底部“模拟提醒”具有再次触发即关闭的 toggle 语义。
+4. 在 Alert 面板中点击右上角 `×` 或“已处理”。
 
 预期：
 
 - 状态芯片按顺序显示 `LOCKED → TEMP → UNLOCKED → LOCKED`；
 - 手动模拟提醒后显示明显的高优先级 Alert Overlay 和 `ALERT` 芯片；
 - Alert 保持当前页面，不自动在 TODAY / ANIME 间跳转；
-- 点击“已处理”后恢复模拟前的状态。
+- 点击关闭入口后恢复模拟前的状态；Alert 打开时不会与 Quick Add / Reminder Drawer 叠层。
 
 失败：
 
 - 状态标签不变化或窗口崩溃；
 - Alert 无 Overlay、无法关闭或自动切页；
+- Alert 没有清晰的关闭入口，或能与其他面板同时覆盖；
 - 产生真实通知、后台进程、网络请求或持久化数据。
 
 ## Test 4 — TODAY Mock 操作
@@ -139,11 +143,12 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 1. 点击底部 `QUICK ADD`。
 2. 在输入框输入 `明天 18:00 买东西 #生活`。
 3. 点击“添加”。
-4. 再次点击 `QUICK ADD` 关闭面板。
+4. 点击 Quick Add 面板右上角 `×` 关闭；再次点击底部 `QUICK ADD` 打开，再次点击底部按钮关闭。
 
 预期：
 
 - Quick Add 面板在 Widget 内联展开；
+- 面板右上角始终有不被内容遮挡的可操作 `×`；底部 `QUICK ADD` 按钮可 toggle 打开/关闭；
 - 输入为空时“添加”不可执行；
 - 输入后点击“添加”显示“已加入 Mock 队列”，输入框清空；
 - 关闭面板后回到原页面；数据只保留在当前进程内。
@@ -151,25 +156,29 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 失败：
 
 - 面板不展开、输入框不可用或添加按钮在空输入时仍执行；
+- Quick Add 没有可操作关闭入口，或关闭入口被自身内容遮挡；
 - 发生真实解析、任务创建、数据库写入或网络访问。
 
 ## Test 7 — Reminder Drawer 与 Alert
 
 1. 点击底部 `REMINDERS · 2`。
 2. 确认抽屉展示两个最近提醒条目。
-3. 点击右上角 `×` 关闭抽屉。
+3. 点击右上角 `×` 关闭抽屉；再次点击底部 `REMINDERS · 2` 打开，再次点击该底部按钮关闭。
 4. 再打开抽屉，点击“标记当前提醒已读 (Mock)”。
+5. 分别打开 Quick Add、Reminder Drawer，再点击底部“模拟提醒”，确认只显示 Alert；从 Alert 点击“打开提醒”后确认 Alert 关闭且只显示 Reminder Drawer。
 
 预期：
 
 - 右侧轻量 Reminder Drawer 覆盖当前 Widget 内容；
 - 两条条目分别展示 Task 与 Anime 提醒语义；
 - `×` 可关闭抽屉；
+- 底部 `REMINDERS · 2` 具有 toggle 关闭语义；Quick Add、Reminder Drawer、Alert 不会同时打开或互相覆盖；
 - 标记操作关闭抽屉并显示 Mock 反馈，不写入 ReminderInstance。
 
 失败：
 
 - 抽屉无法打开/关闭、内容溢出或导致主窗口崩溃；
+- 底部触发按钮无法关闭对应面板，或出现多个面板同时叠层；
 - 标记操作修改真实提醒历史或删除提醒规则。
 
 ## Test 8 — 数据与所有权边界
@@ -194,5 +203,6 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 
 - `LOCKED` / `TEMP_INTERACTIVE` / `UNLOCKED` / `ALERT` 是可视化 Mock，当前不实现真正的点击穿透、输入拦截或系统级锁定；
 - Quick Add、Task、Anime、Reminder 操作都是内存反馈，关闭进程后丢失；
+- 面板不会因全局点击自动关闭，避免误关闭 Quick Add 输入框；关闭通过对应面板的 `×`、底部 toggle 或明确操作按钮完成；
 - Widget 尚未加入 Solution，也未由 Agent 托管；
 - 当前没有像素快照测试，视觉层级仍需要 Windows 桌面人工验收。

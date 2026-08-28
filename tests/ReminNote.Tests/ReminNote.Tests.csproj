@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
@@ -16,5 +17,16 @@
   <ItemGroup>
     <ProjectReference Include="../../src/windows/ReminNote.Core/ReminNote.Core.csproj" />
     <ProjectReference Include="../../src/windows/ReminNote.Infrastructure/ReminNote.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../../src/windows/ReminNote.Widget/ViewModels/WidgetViewModel.cs"
+             Link="WidgetViewModel.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/Resources/Localization/UiText.cs"
+             Link="Resources/Localization/UiText.cs" />
+    <EmbeddedResource Include="../../src/windows/ReminNote.Windows/Resources/Localization/UiText.resx"
+                      Link="Resources/Localization/UiText.resx">
+      <LogicalName>ReminNote.Windows.Resources.Localization.UiText.resources</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 </Project>

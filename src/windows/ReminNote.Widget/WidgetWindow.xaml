@@ -13,8 +13,12 @@
         ResizeMode="CanResizeWithGrip"
         AllowsTransparency="True"
         Background="Transparent"
+        UseLayoutRounding="True"
         SizeChanged="OnWindowSizeChanged">
-    <Border Style="{StaticResource WidgetWindowSurfaceStyle}">
+    <Border x:Name="WindowSurface"
+            Style="{StaticResource WidgetWindowSurfaceStyle}"
+            ClipToBounds="True"
+            SnapsToDevicePixels="True">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -96,7 +100,15 @@
                                 AutomationProperties.Name="{x:Static local:UiText.WidgetAnimeTab}" />
                     </StackPanel>
                 </Grid>
-                <Grid Grid.Row="1">
+                <ScrollViewer Grid.Row="1"
+                              x:Name="ContentScrollViewer"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              CanContentScroll="True"
+                              PanningMode="VerticalOnly"
+                              Focusable="False"
+                              KeyboardNavigation.IsTabStop="False">
+                    <Grid>
                     <Grid x:Name="TodayPage"
                           Visibility="{Binding IsTodayActive, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <Grid.RowDefinitions>
@@ -334,9 +346,11 @@
                                     AutomationProperties.Name="{x:Static local:UiText.WidgetScheduleTask}" />
                         </Grid>
                     </Grid>
-                </Grid>
+                    </Grid>
+                </ScrollViewer>
             </Grid>
             <Border Grid.Row="2"
+                    Panel.ZIndex="40"
                     Style="{StaticResource WidgetFooterSurfaceStyle}">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -357,23 +371,26 @@
                                    Visibility="{Binding HasReminderFeedback, Converter={StaticResource BooleanToVisibilityConverter}}" />
                     </StackPanel>
                     <Button Grid.Column="1"
-                            Content="{x:Static local:UiText.WidgetQuickAdd}"
+                            Content="{Binding QuickAddTriggerLabel}"
                             Command="{Binding ToggleQuickAddCommand}"
                             Style="{StaticResource WidgetFooterButtonStyle}"
-                            AutomationProperties.Name="{x:Static local:UiText.WidgetQuickAdd}" />
+                            AutomationProperties.Name="{Binding QuickAddTriggerLabel}"
+                            ToolTip="{Binding QuickAddTriggerLabel}" />
                     <Button Grid.Column="2"
-                            Content="{x:Static local:UiText.WidgetReminders}"
+                            Content="{Binding ReminderTriggerLabel}"
                             Command="{Binding OpenReminderDrawerCommand}"
                             Style="{StaticResource WidgetFooterButtonStyle}"
                             Margin="4,0,0,0"
-                            AutomationProperties.Name="{x:Static local:UiText.WidgetReminders}" />
+                            AutomationProperties.Name="{Binding ReminderTriggerLabel}"
+                            ToolTip="{Binding ReminderTriggerLabel}" />
                     <Button Grid.Column="3"
-                            Content="{x:Static local:UiText.WidgetSimulateReminder}"
+                            Content="{Binding AlertTriggerLabel}"
                             Command="{Binding SimulateAlertCommand}"
                             Style="{StaticResource WidgetFooterButtonStyle}"
                             Margin="4,0,0,0"
                             Visibility="{Binding IsNotCompact, Converter={StaticResource BooleanToVisibilityConverter}}"
-                            AutomationProperties.Name="{x:Static local:UiText.WidgetSimulateReminder}" />
+                            AutomationProperties.Name="{Binding AlertTriggerLabel}"
+                            ToolTip="{Binding AlertTriggerLabel}" />
                 </Grid>
             </Border>
             <Border Grid.RowSpan="3"
@@ -386,16 +403,25 @@
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="!"
-                                   Style="{StaticResource WidgetAlertIconTextStyle}" />
-                        <StackPanel Margin="10,0,0,0">
-                            <TextBlock Text="{x:Static local:UiText.WidgetHighPriority}"
-                                       Style="{StaticResource WidgetAlertEyebrowTextStyle}" />
-                            <TextBlock Text="{x:Static local:UiText.WidgetAlertTitle}"
-                                       Style="{StaticResource WidgetAlertTitleTextStyle}" />
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right"
+                                Content="×"
+                                Command="{Binding DismissAlertCommand}"
+                                Style="{StaticResource WidgetCloseButtonStyle}"
+                                ToolTip="{x:Static local:UiText.WidgetDismissAlert}"
+                                AutomationProperties.Name="{x:Static local:UiText.WidgetDismissAlert}"
+                                AutomationProperties.HelpText="{x:Static local:UiText.WidgetDismissAlert}" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="!"
+                                       Style="{StaticResource WidgetAlertIconTextStyle}" />
+                            <StackPanel Margin="10,0,0,0">
+                                <TextBlock Text="{x:Static local:UiText.WidgetHighPriority}"
+                                           Style="{StaticResource WidgetAlertEyebrowTextStyle}" />
+                                <TextBlock Text="{x:Static local:UiText.WidgetAlertTitle}"
+                                           Style="{StaticResource WidgetAlertTitleTextStyle}" />
+                            </StackPanel>
                         </StackPanel>
-                    </StackPanel>
+                    </DockPanel>
                     <StackPanel Grid.Row="1"
                                 VerticalAlignment="Center"
                                 Margin="0,18,0,18">
@@ -426,11 +452,22 @@
                     Style="{StaticResource WidgetQuickAddOverlayStyle}"
                     Visibility="{Binding IsQuickAddOpen, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <StackPanel>
-                    <TextBlock Text="{x:Static local:UiText.WidgetQuickAddHeading}"
-                               Style="{StaticResource WidgetCardEyebrowTextStyle}" />
-                    <TextBlock Text="{x:Static local:UiText.WidgetQuickAddDescription}"
-                               Margin="0,3,0,10"
-                               Style="{StaticResource WidgetAlertBodyTextStyle}" />
+                    <DockPanel LastChildFill="True">
+                        <Button DockPanel.Dock="Right"
+                                Content="×"
+                                Command="{Binding CloseQuickAddCommand}"
+                                Style="{StaticResource WidgetCloseButtonStyle}"
+                                ToolTip="{x:Static local:UiText.WidgetClose}"
+                                AutomationProperties.Name="{x:Static local:UiText.WidgetClose}"
+                                AutomationProperties.HelpText="{x:Static local:UiText.WidgetClose}" />
+                        <StackPanel>
+                            <TextBlock Text="{x:Static local:UiText.WidgetQuickAddHeading}"
+                                       Style="{StaticResource WidgetCardEyebrowTextStyle}" />
+                            <TextBlock Text="{x:Static local:UiText.WidgetQuickAddDescription}"
+                                       Margin="0,3,0,10"
+                                       Style="{StaticResource WidgetAlertBodyTextStyle}" />
+                        </StackPanel>
+                    </DockPanel>
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />

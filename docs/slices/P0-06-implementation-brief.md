@@ -50,6 +50,7 @@
 - Widget 启动后默认显示 TODAY，能切换到 ANIME 并返回；
 - Compact / Standard / Expanded 窗口宽度下均保持可辨认的主信息与操作；
 - 可手动验证锁定状态切换、任务 / 动画 Mock 操作、Quick Add、Reminder Drawer 与 Alert Overlay；
+- Widget 正文在小窗口高度下支持滚轮/触控板纵向滚动；Quick Add、Reminder Drawer、Alert 状态互斥；每个可打开面板都有面板内关闭入口，底部触发按钮具备 toggle 关闭语义；
 - Alert 不会自动把页面从 TODAY 切到 ANIME；
 - Release 构建无新增警告，locked restore 能通过；
 - 不创建 SQLite、Token、网络缓存或生产配置文件；
