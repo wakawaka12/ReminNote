@@ -75,7 +75,7 @@ public sealed class TaskAggregateTests
 
         task.RecordResult(TaskResult.PARTIAL, TestValues.ChangedAt, "做到一半");
 
-        Assert.Equal(TaskResult.PARTIAL, task.Result);
+        Assert.Equal((TaskResult?)TaskResult.PARTIAL, task.Result);
         Assert.Equal("做到一半", task.ResultNote);
         Assert.NotNull(task.ResultRecord);
         Assert.Equal(TestValues.ChangedAt, task.ResultRecord!.RecordedAt);
