@@ -15,5 +15,6 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/windows/ReminNote.Core/ReminNote.Core.csproj" />
+    <ProjectReference Include="../../src/windows/ReminNote.Infrastructure/ReminNote.Infrastructure.csproj" />
   </ItemGroup>
 </Project>
