@@ -461,6 +461,7 @@
                         Style="{StaticResource TodayCheckButtonStyle}"
                         Content="{Binding CompletionGlyph}"
                         Command="{Binding ToggleCompletionCommand}"
+                        IsEnabled="{Binding IsCompletionActionEnabled}"
                         ToolTip="{Binding CompletionActionLabel}"
                         AutomationProperties.Name="{Binding CompletionActionLabel}"
                         AutomationProperties.HelpText="{Binding AutomationHelpText}" />
@@ -630,12 +631,37 @@
                             Command="{Binding ToggleCompletionCommand}"
                             Style="{StaticResource TodayButtonStyle}"
                             Margin="0,0,8,0"
+                            IsEnabled="{Binding IsCompletionActionEnabled}"
                             AutomationProperties.Name="{Binding CompletionActionLabel}" />
                     <Button Content="{Binding PinActionLabel}"
                             Command="{Binding TogglePinCommand}"
                             Style="{StaticResource TodaySecondaryButtonStyle}"
                             AutomationProperties.Name="{Binding PinActionLabel}" />
                 </StackPanel>
+
+                <StackPanel Orientation="Horizontal"
+                            Margin="0,10,0,0"
+                            Visibility="{Binding IsNeedsReviewVisible, Converter={StaticResource TodayBooleanToVisibilityConverter}}">
+                    <Button Content="{Binding RecordPartialActionLabel}"
+                            Command="{Binding RecordPartialCommand}"
+                            Style="{StaticResource TodaySecondaryButtonStyle}"
+                            Margin="0,0,8,0"
+                            AutomationProperties.Name="{Binding RecordPartialActionLabel}"
+                            AutomationProperties.HelpText="为已结束的 RANGE Task 记录部分完成结果" />
+                    <Button Content="{Binding RecordMissedActionLabel}"
+                            Command="{Binding RecordMissedCommand}"
+                            Style="{StaticResource TodaySecondaryButtonStyle}"
+                            AutomationProperties.Name="{Binding RecordMissedActionLabel}"
+                            AutomationProperties.HelpText="为已结束的 RANGE Task 记录未完成结果" />
+                </StackPanel>
+
+                <Button Content="{Binding ContinueActionLabel}"
+                        Command="{Binding ContinueCommand}"
+                        Style="{StaticResource TodaySecondaryButtonStyle}"
+                        Margin="0,10,0,0"
+                        Visibility="{Binding CanContinue, Converter={StaticResource TodayBooleanToVisibilityConverter}}"
+                        AutomationProperties.Name="{Binding ContinueActionLabel}"
+                        AutomationProperties.HelpText="从 PARTIAL 结果创建新的继续 Task" />
             </StackPanel>
         </Border>
     </DataTemplate>
@@ -676,11 +702,18 @@
                                 Orientation="Horizontal"
                                 VerticalAlignment="Bottom">
                         <Border Style="{StaticResource TodayChipBorderStyle}"
-                                VerticalAlignment="Center">
+                                VerticalAlignment="Center"
+                                Visibility="{Binding IsMock, Converter={StaticResource TodayBooleanToVisibilityConverter}}">
                             <TextBlock Text="{Binding MockBadge}"
                                        FontSize="10"
                                        Foreground="{DynamicResource AccentBrush}" />
                         </Border>
+                        <Button Content="刷新 TODAY"
+                                Command="{Binding RefreshCommand}"
+                                Style="{StaticResource TodaySecondaryButtonStyle}"
+                                Margin="10,0,0,0"
+                                AutomationProperties.Name="刷新 TODAY"
+                                AutomationProperties.HelpText="重新读取本地 Task 查询结果" />
                         <Button Content="{x:Static local:UiText.TodayQuickAdd}"
                                 Command="{Binding OpenQuickAddCommand}"
                                 Style="{StaticResource TodayButtonStyle}"
@@ -704,7 +737,7 @@
                         <StackPanel Grid.ColumnSpan="2">
                             <TextBlock Text="{x:Static local:UiText.TodayQuickAdd}"
                                        Style="{StaticResource TodayEyebrowTextStyle}" />
-                            <TextBlock Text="{x:Static local:UiText.TodayQuickAddDescription}"
+                            <TextBlock Text="{Binding QuickAddDescription}"
                                        Style="{StaticResource TodayTaskMetaTextStyle}"
                                        TextWrapping="Wrap" />
                             <Border Margin="0,10,0,0"
