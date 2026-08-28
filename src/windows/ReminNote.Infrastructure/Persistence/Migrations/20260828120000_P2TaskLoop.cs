@@ -265,6 +265,15 @@ public partial class P2TaskLoop : Migration
             column: "related_task_id");
 
         migrationBuilder.Sql("""
+            CREATE TRIGGER tasks_delete_continuation_history
+            BEFORE DELETE ON tasks
+            BEGIN
+                DELETE FROM task_history
+                WHERE related_task_id = OLD.id;
+            END;
+            """);
+
+        migrationBuilder.Sql("""
             INSERT INTO app_settings (id, workday_boundary_minutes, updated_at)
             VALUES (1, 0, '1970-01-01T00:00:00.000000000Z');
             """);
@@ -289,6 +298,7 @@ public partial class P2TaskLoop : Migration
         migrationBuilder.Sql("""
             DROP TRIGGER IF EXISTS tasks_continuation_requires_partial_insert;
             DROP TRIGGER IF EXISTS tasks_continuation_requires_partial_update;
+            DROP TRIGGER IF EXISTS tasks_delete_continuation_history;
             """);
         migrationBuilder.DropTable(name: "app_settings");
         migrationBuilder.DropTable(name: "task_history");

@@ -12,7 +12,7 @@
 - 继续关系收紧为 `Task.CreateContinuation`：只有当前结果为 `PARTIAL` 且时间形状为 `RANGE` 的源任务可以产生新的 UUID v7 Task；应用服务同时写入 `Continued` 历史快照。
 - `TaskHistoryRecord` 改为带校验的应用边界对象，限制 Task ID、快照 ID、事件类型、时间顺序和 continuation 元数据；`TaskHistoryEntity` 在读写边界重新通过 Core 校验。
 - `TaskRepository` 的新增、更新、删除均拥有显式事务；新增/更新可把 Task 与历史快照作为一个 unit of work 写入，失败时回滚并清空 ChangeTracker，避免半写和失败实体残留。
-- `task_history` 保存结果、旧计划、排序、继续关系和 P1 导入快照；外键、形状、结果、时间、排序和 continuation 检查约束与索引均落到 SQLite。
+- `task_history` 保存结果、旧计划、排序、继续关系和 P1 导入快照；外键、形状、结果、时间、排序和 continuation 检查约束与索引均落到 SQLite。硬删除 continuation 源时，SQLite trigger 先移除会因 `related_task_id` 非空而失效的 `Continued` 事件，再由可空外键清理子任务快照关系并保留子任务后续历史。
 - P1 `InitialTaskSchema` 到 `P2TaskLoop` 使用 forward migration：重建 `tasks` 以加入字段/约束，保留 ID、标题、计划和结果；已有结果各回填一个 `ImportedResult`；默认写入单例 `app_settings`；migration `Down` 可恢复 P1 表形状。
 - `AppSettingsRepository` 持久化 00:00–23:59、整分钟的工作日边界；`TaskWorkspace` 只接受含 `.git` 与 `ReminNote.sln` 的仓库根目录，固定使用 `.devdata/reminnote.sqlite`，初始化成功前拒绝正常读写。
 - `CrossProcessTaskWriteGate` 使用同名本地内核 Semaphore 覆盖完整应用读-改-写；由于 application lease 跨越 `await`，Semaphore 可由后续 continuation 安全释放，避免 Windows Mutex 的线程归属问题；超时抛出 busy，取消令牌可中断等待。没有加入 Agent、Named Pipe、IPC、WAL、Change Journal 或 Reminder/Anime/Sync。
@@ -26,8 +26,8 @@
 以下命令均在 Windows、.NET 10.0.100 SDK、Release 配置下执行：
 
 1. Core 与 Infrastructure Release 构建：通过，0 warning / 0 error。
-2. 临时隔离 xUnit v3 executable（仅加载 Core、Infrastructure、P2 边界测试以及不依赖 UI 的既有 Core/SQLite/application 测试）：77/77 通过。
-3. P2 边界测试包含：P1 长标题与 PARTIAL RANGE 升级、`ImportedResult` 回填、升级失败回滚、降级恢复 P1 表形状、Task+history 原子回滚、历史事件顺序、继续关系、负排序拒绝与稳定排序、工作日设置、显式开发数据库路径、TaskWorkspace 初始化和跨进程写门。
+2. 临时隔离 xUnit v3 executable（仅加载 Core、Infrastructure、P2 边界测试以及不依赖 UI 的既有 Core/SQLite/application 测试）：82/82 通过（含本次新增删除边界、历史快照完整性、脏历史读边界和修复 migration 幂等/回滚测试）。
+3. P2 边界测试包含：P1 长标题与 PARTIAL RANGE 升级、`ImportedResult` 回填、升级失败回滚、降级恢复 P1 表形状、Task+history 原子回滚、历史事件顺序、继续关系、负排序拒绝与稳定排序、工作日设置、显式开发数据库路径、TaskWorkspace 初始化、跨进程写门、continuation 源删除后的历史保留和 P2 修复 migration 回滚。
 4. EF 运行时模型与 `ReminNoteDbContextModelSnapshot` 差异检查：`differences=0`。
 5. 临时 SQLite 文件实测：升级后的表为 `__EFMigrationsHistory`、`__EFMigrationsLock`、`app_settings`、`task_history`、`tasks`；P1 Task ID/标题/结果保留，历史为 `ImportedResult`；降级后 `tasks` 恢复为 P1 列集合。
 6. `./scripts/build.ps1 -Configuration Release`：locked restore 成功；Core、Infrastructure、Bootstrap、Agent、P1 harness 已构建，随后在既有 `src/windows/ReminNote.Widget/ViewModels/WidgetViewModel.cs` 处失败。
@@ -55,6 +55,6 @@
 ## 已知限制与后续边界
 
 - 本 Slice 的数据库写入保护是同机本地 Semaphore；它不是 P2.5 Agent single writer，也不提供跨机器同步、版本冲突检测或 Change Journal。
-- P2 仍使用硬删除；删除 Task 会按外键清理其历史，continuation/related 的可空外键会被置空，不提供 Trash 或审计保留策略。
+- P2 仍使用硬删除；删除 Task 会按外键清理其自身历史；若删除 continuation 源，相关 `Continued` 事件会被 trigger 删除以满足历史表约束，子任务及其后续历史保留且可空源外键置空，不提供 Trash 或完整审计保留策略。
 - P1 超长标题为兼容性保留例外；新建和改名仍由 Core 拒绝超过 500 字符。SQLite 约束负责非空，长度规则由当前写入应用边界负责。
 - Main/Widget 的真实双宿主接线、刷新和 UI 手工验收依赖总成窗口完成既有 UI 改动；本 Slice 仅提供可复用的应用/query/workspace 边界。

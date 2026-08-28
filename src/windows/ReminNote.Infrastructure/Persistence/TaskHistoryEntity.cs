@@ -104,6 +104,11 @@ public sealed class TaskHistoryEntity
 
             resultRecord = TaskResultRecord.Create(result, recordedAt, ResultNote);
         }
+        else if (ResultRecordedAt is not null || ResultNote is not null)
+        {
+            throw new InvalidOperationException(
+                "A stored Task history without a result cannot have result metadata.");
+        }
 
         var snapshot = TaskAggregate.Rehydrate(
                 ReminNote.Core.Tasks.TaskId.From(TaskId),

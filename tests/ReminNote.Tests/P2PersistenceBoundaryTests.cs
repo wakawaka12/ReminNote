@@ -288,6 +288,67 @@ public sealed class P2PersistenceBoundaryTests
     }
 
     [Fact]
+    public async SystemTask DeletingContinuationSourceRemovesInvalidatedHistoryAndKeepsChildHistory()
+    {
+        using var database = new SqliteTestDatabase();
+        database.Migrate();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var source = TaskAggregate.Create(
+            TestValues.TaskId(),
+            "继续源任务",
+            TimeSpec.Range(PlanDate, new LocalTime(14, 0), new LocalTime(16, 0)),
+            TestValues.CreatedAt);
+        source.RecordResult(TaskResult.PARTIAL, TestValues.ChangedAt, "继续");
+        var child = TaskAggregate.CreateContinuation(
+            source,
+            "继续中的任务",
+            TimeSpec.Anytime(PlanDate),
+            TestValues.ChangedAt);
+        var continuationHistory = new TaskHistoryRecord(
+            child.Id,
+            TaskHistoryKind.Continued,
+            TestValues.ChangedAt,
+            child.ToSnapshot(),
+            source.Id);
+
+        using (var context = database.CreateContext())
+        {
+            var repository = new TaskRepository(context);
+            await repository.AddAsync(source, cancellationToken);
+            await repository.AddAsync(child, continuationHistory, cancellationToken);
+        }
+
+        var childResultAt = TestValues.ChangedAt.Plus(Duration.FromMinutes(5));
+        using (var context = database.CreateContext())
+        {
+            await CreateApplication(context, new TestClock(childResultAt)).RecordResultAsync(
+                new RecordTaskResultCommand(child.Id, TaskResult.COMPLETED),
+                cancellationToken);
+        }
+
+        using (var context = database.CreateContext())
+        {
+            Assert.True(await new TaskRepository(context).DeleteAsync(source.Id, cancellationToken));
+        }
+
+        using (var context = database.CreateContext())
+        {
+            var childAfterDelete = await new TaskRepository(context).FindAsync(child.Id, cancellationToken);
+            var history = await ReadAllAsync(new TaskHistoryQueryService(context).ListAsync(
+                child.Id,
+                cancellationToken));
+
+            Assert.NotNull(childAfterDelete);
+            Assert.Null(childAfterDelete!.ContinuedFromTaskId);
+            Assert.Equal(TaskResult.COMPLETED, childAfterDelete.Result);
+            var resultHistory = Assert.Single(history);
+            Assert.Equal(TaskHistoryKind.ResultRecorded, resultHistory.Kind);
+            Assert.Null(resultHistory.Snapshot.ContinuedFromTaskId);
+            Assert.Equal(1, ReadTaskCount(database.Connection));
+        }
+    }
+
+    [Fact]
     public async SystemTask RepositoryRollsBackTaskAndHistoryTogetherWhenForeignKeyValidationFails()
     {
         using var database = new SqliteTestDatabase();
@@ -575,6 +636,152 @@ public sealed class P2PersistenceBoundaryTests
                 task.ToSnapshot(),
                 other.Id),
             "task.history.related_task.unexpected");
+    }
+
+    [Fact]
+    public async SystemTask RepositoryRejectsHistorySnapshotThatDoesNotMatchThePersistedTask()
+    {
+        using var database = new SqliteTestDatabase();
+        database.Migrate();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var task = TaskAggregate.Create(
+            TestValues.TaskId(),
+            "当前任务",
+            TimeSpec.Anytime(PlanDate),
+            TestValues.CreatedAt);
+        var source = TaskAggregate.Create(
+            TestValues.AnotherTaskId(),
+            "已存在的源任务",
+            TimeSpec.Anytime(PlanDate),
+            TestValues.CreatedAt);
+
+        using (var context = database.CreateContext())
+        {
+            var repository = new TaskRepository(context);
+            await repository.AddAsync(task, cancellationToken);
+            await repository.AddAsync(source, cancellationToken);
+        }
+
+        var mismatchedSnapshot = TaskAggregate.Rehydrate(
+                task.Id,
+                task.Title,
+                task.TimeSpec,
+                task.CreatedAt,
+                TestValues.ChangedAt,
+                task.ResultRecord,
+                task.SortOrder,
+                source.Id)
+            .ToSnapshot();
+        var invalidHistory = new TaskHistoryRecord(
+            task.Id,
+            TaskHistoryKind.Continued,
+            TestValues.ChangedAt,
+            mismatchedSnapshot,
+            source.Id);
+
+        using (var context = database.CreateContext())
+        {
+            var exception = await Assert.ThrowsAsync<DomainValidationException>(async () =>
+                await new TaskRepository(context).UpdateAsync(
+                    task,
+                    invalidHistory,
+                    cancellationToken));
+
+            Assert.Contains(exception.Errors, error => error.Code == "task.history.snapshot_mismatch");
+            Assert.Empty(context.ChangeTracker.Entries());
+        }
+
+        using (var context = database.CreateContext())
+        {
+            var persisted = await new TaskRepository(context).FindAsync(task.Id, cancellationToken);
+            var history = await new TaskHistoryQueryService(context).ListAsync(
+                task.Id,
+                cancellationToken)
+                .ToListAsync(cancellationToken);
+
+            Assert.NotNull(persisted);
+            Assert.Null(persisted!.ContinuedFromTaskId);
+            Assert.Empty(history);
+        }
+    }
+
+    [Fact]
+    public void HistoryEntityRejectsResultMetadataWithoutAResult()
+    {
+        var entity = new TaskHistoryEntity
+        {
+            TaskId = TestValues.TaskId().Value,
+            Kind = TaskHistoryKind.ResultRecorded,
+            OccurredAt = TestValues.ChangedAt,
+            Title = "非法历史",
+            TimeType = TaskTimeType.ANYTIME,
+            LocalDate = PlanDate,
+            ResultRecordedAt = TestValues.ChangedAt,
+            ResultNote = "残留结果元数据",
+            CreatedAt = TestValues.CreatedAt,
+            UpdatedAt = TestValues.ChangedAt
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => entity.ToRecord());
+
+        Assert.Contains("without a result", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ContinuationDeleteMigrationRepairsAnAlreadyUpgradedP2DatabaseIdempotently()
+    {
+        using var database = new SqliteTestDatabase();
+        database.Migrate();
+
+        ExecuteNonQuery(
+            database.Connection,
+            "DROP TRIGGER IF EXISTS tasks_delete_continuation_history");
+        ExecuteNonQuery(
+            database.Connection,
+            "DELETE FROM __EFMigrationsHistory WHERE MigrationId = '20260828130000_P2ContinuationDeleteBoundary'");
+
+        database.Migrate();
+        Assert.Equal(
+            1,
+            ReadScalarInt(
+                database.Connection,
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = 'tasks_delete_continuation_history'"));
+
+        database.Migrate();
+        Assert.Equal(
+            1,
+            ReadScalarInt(
+                database.Connection,
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = 'tasks_delete_continuation_history'"));
+    }
+
+    [Fact]
+    public void RollingBackContinuationDeleteRepairKeepsTheP2DeleteBoundary()
+    {
+        using var database = new SqliteTestDatabase();
+        database.Migrate();
+
+        using (var context = database.CreateContext())
+        {
+            context.Database.Migrate("20260828120000_P2TaskLoop");
+        }
+
+        Assert.Equal(
+            1,
+            ReadScalarInt(
+                database.Connection,
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = 'tasks_delete_continuation_history'"));
+
+        using (var context = database.CreateContext())
+        {
+            context.Database.Migrate();
+        }
+
+        Assert.Equal(
+            1,
+            ReadScalarInt(
+                database.Connection,
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = 'tasks_delete_continuation_history'"));
     }
 
     private static TaskApplicationService CreateApplication(

@@ -169,6 +169,15 @@ public sealed class TaskRepository : ITaskRepository
                 nameof(history)));
         }
 
+        if (history.Kind != TaskHistoryKind.PlanChanged &&
+            history.Snapshot != task.ToSnapshot())
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.history.snapshot_mismatch",
+                "Task history snapshot must match the persisted task for this history kind.",
+                nameof(history)));
+        }
+
         return TaskHistoryEntity.FromRecord(history);
     }
 }
