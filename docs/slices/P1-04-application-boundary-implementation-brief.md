@@ -2,7 +2,7 @@
 
 - 阶段：P1 Real Task domain + SQLite persistence
 - 窗口：P1-04 Application boundary
-- 性质：应用服务、查询和写入边界说明；不代表公共 API 已在当前 checkout 实现
+- 性质：已完成实现的应用服务、查询和写入边界记录
 - 依据：主计划 Application service style、Single Writer 迁移约束、P1 阶段预报告
 
 ## 目标
@@ -37,7 +37,7 @@
 
 ## 手动验收入口要求
 
-当前仓库只有 P0 WPF Mock，尚没有可执行的 P1 CRUD 入口。P1-06 必须在集成报告中记录实际使用的入口（最小 Task UI、受控验证 harness 或其他已合入的应用入口）及其启动方式。未记录前，不能把 P0 TODAY 的 Quick Add 当作本测试的 Create。
+当前仓库的 `scripts/run.ps1` 仍只启动 P0 WPF Mock，尚没有用户可操作的 P1 CRUD UI。P1-06 必须在集成报告中记录实际使用的入口（受控测试、harness 或后续最小 Task UI）及其启动方式；不能把 P0 TODAY 的 Quick Add 当作本测试的 Create。
 
 ## 失败判定
 
@@ -46,3 +46,9 @@
 - 读取返回 EF entity、数据库异常或内部堆栈作为用户文案；
 - P0 Mock 反馈声称“已保存”，但没有真实数据库证据；
 - P1 引入 Agent/IPC/Reminder/Anime/Sync 逻辑，或形成无法迁移到 P2.5 的双写入口。
+
+## 当前实现证据
+
+实现位于 `src/windows/ReminNote.Infrastructure/Application/TaskApplicationService.cs` 和 `TaskQueryService.cs`。应用服务使用注入的 Noda Time `IClock`，通过 Core aggregate 完成 Create、Update、RecordResult 和 Delete，再经 `ITaskRepository` 持久化；更新和记录结果先在 rehydrated copy 上校验，失败不会污染 repository 返回的对象。查询服务使用 EF `AsNoTracking`，按 ID 或计划日期返回 `TaskSnapshot`，并按时间形状、时间值和 ID 稳定排序，不向上层泄露 EF entity。
+
+该边界仍是 P1 本地写入适配，未引入 DI、Agent IPC、Named Pipe 或生产 UI 接线；后续 P2.5 可将同一 application boundary 路由到 Agent single writer。`tests/ReminNote.Tests/TaskApplicationBoundaryTests.cs` 已覆盖 Create、Update、RecordResult、Delete、缺失 ID、按计划日查询、稳定排序和 no-tracking 结果；集成测试总数为 61 项。

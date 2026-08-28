@@ -19,7 +19,7 @@
 6. Infrastructure 使用 SQLite + EF Core，采用真实 migrations；禁止把删除数据库重建作为正常升级策略。
 7. 新依赖必须记录用途、许可证、维护性和安全影响；中央包版本、lock 文件和 Solution 登记由主线串行处理。
 8. Core 使用 Noda Time 3.3.3；Infrastructure 使用 EF Core 10.0.11、SQLite provider 10.0.11 和同版本 Design tooling；UUID v7 使用 .NET 10 内置 `Guid.CreateVersion7()`。
-9. P1 测试使用 xUnit.net v3 4.0.0、`xunit.runner.visualstudio` 4.0.0 与 `Microsoft.NET.Test.Sdk` 18.9.0，通过 `dotnet test`/VSTest 运行。
+9. P1 测试使用 xUnit.net v3 4.0.0、`xunit.runner.visualstudio` 4.0.0 与 `Microsoft.NET.Test.Sdk` 18.9.0；当前 .NET 10/Microsoft Testing Platform 配置由 `scripts/test.ps1` 直接运行构建后的测试 executable，避免旧 VSTest “未发现测试”假通过。
 
 ## P1 工作边界
 

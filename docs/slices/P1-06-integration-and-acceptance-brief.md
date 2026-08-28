@@ -2,7 +2,7 @@
 
 - 阶段：P1 Real Task domain + SQLite persistence
 - 窗口：P1-06 Integration and acceptance
-- 性质：串行集成窗口的验收 brief；不授权本 P1-05 窗口修改公共代码
+- 性质：串行集成窗口的验收 brief 与当前状态记录
 - 前置：P1-01 至 P1-05 交付，P1-00 决策已冻结
 
 ## 目标
@@ -55,3 +55,14 @@
 ## 不通过条件
 
 窗口崩溃、未处理异常、真实库路径不明确、删库被当作常规升级、非法数据进入数据库、重启丢数据、失败后仍可写入、越界文件改动，或仅以 P0 Mock/空 `dotnet test` 结果代替 P1 证据，均不得宣告 P1 通过。
+
+## 当前集成证据
+
+当前集成分支已合入 P1-00 至 P1-04 实现和 P1-05 验收材料。已执行并通过：
+
+- `dotnet restore ReminNote.sln --locked-mode`；
+- `dotnet build ReminNote.sln --configuration Release --no-restore`，7 个项目，0 警告、0 错误；
+- `scripts/test.ps1 -Configuration Release`，61/61 测试通过；
+- `scripts/verify-p0-07.ps1`，213 个资源键、7 个锁定项目和 P0 标记检查通过。
+
+自动化证据使用临时 SQLite，尚未替代用户对真实 `.devdata/reminnote.sqlite` 的手动备份、migration、重启和数据安全验收。当前 P1 也没有新增用户可操作的真实 CRUD UI；手动 CRUD 入口应以测试/harness 或后续 UI Slice 的明确报告为准，不得把 P0 Mock Quick Add 当作真实持久化入口。

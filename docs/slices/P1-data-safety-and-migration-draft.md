@@ -1,6 +1,6 @@
 # P1 开发数据安全与 migration / 升级 / 回滚草案
 
-- 状态：草案，供 P1-02/P1-06 集成核对
+- 状态：P1 集成核对稿；长期产品恢复策略仍属于后续阶段
 - 数据范围：仅 P1 Task 开发数据
 - 不适用：生产用户数据、Reminder/Anime/Sync、P2.5 Agent 迁移和 P2.75 完整恢复系统
 
@@ -43,7 +43,7 @@ P1-06 必须证明最终启动入口：
 4. 迁移失败时停止正常写入/启动，并给出恢复提示；
 5. P0 Mock 展示保留，但不得把内存 Mock 当作数据库成功证据。
 
-当前 checkout 仍是 P0 基线，现有 `run.ps1` 只启动 P0 WPF Mock；在 P1-06 记录真实入口和输出前，本草案的启动命令不能被误写成 P1 已实现证据。
+当前 `run.ps1` 仍启动 P0 WPF Mock；P1 的 Core、SQLite 和 application boundary 已合入，但尚未把真实 CRUD 接入 P0 UI。该启动命令不能被误写成真实 Task CRUD 已经具备用户入口的证据。
 
 ## Migration 原则
 
@@ -120,3 +120,7 @@ P1 从第一天使用真实 migration。修改实体或 schema 时，必须创�
 - [ ] 日志和报告不含标题、笔记、Token、Authorization header 或个人数据。
 - [ ] schema 清单没有 Reminder、Anime、Sync 表。
 - [ ] 未修改 `reviews/`、`second-review/`，未提交数据库/Token/生产配置。
+
+## P1 实际 schema 证据
+
+当前 migration 为 `20260828025922_InitialTaskSchema`，只创建 `tasks` 及 EF Core 自身的 `__EFMigrationsHistory`、`__EFMigrationsLock`。自动化测试已验证 migration 幂等、合法 Task round-trip 和数据库约束拒绝 8 类非法 raw INSERT；测试使用 `:memory:`，不会触碰 `.devdata`。真实开发库仍固定为 `<仓库根目录>/.devdata/reminnote.sqlite`，应用层入口为显式传入 repository root 的 `ReminNoteDatabase` 工具。

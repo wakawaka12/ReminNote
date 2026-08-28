@@ -2,7 +2,7 @@
 
 ## 状态与前提
 
-本文件是 P1-05 准备的验收稿，须在 P1-06 集成完成后执行。当前 checkout 仍是 P0 基线：`scripts/run.ps1` 启动的是 P0 WPF Mock，当前没有真实 P1 CRUD 入口或 SQLite 数据库。P1-06 必须在执行前补充实际 CRUD 入口；不得使用 P0 TODAY 的 Quick Add 代替真实 Task Create。
+本文件是 P1-05 准备、P1-06 集成后校对的验收稿。当前已合入真实 P1 Core、SQLite migration、repository 和 application/query boundary，但 `scripts/run.ps1` 仍启动 P0 WPF Mock，尚未把真实 CRUD 接入用户界面。不得使用 P0 TODAY 的 Quick Add 代替真实 Task Create；在真实 CRUD UI 尚未接入前，Test 2–6 的入口只能使用报告中明确记录的受控测试/harness。
 
 环境：
 
@@ -31,6 +31,8 @@
 - P1 集成后的启动路径能执行真实 migration/数据库检查，并仍保留 P0 Mock 展示行为；
 - 开发数据库只解析到 `.devdata/reminnote.sqlite`；
 - 不读取生产数据库、Token、生产 Widget 配置或网络数据。
+
+当前实现注意：P1 自动化测试使用 `:memory:` 数据库，证明 migration、repository 和 application/query 代码路径；它不证明 P0 WPF Mock 已经成为真实 Task UI，也不替代下面要求的 `.devdata` 人工数据安全检查。
 
 失败：
 

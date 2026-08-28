@@ -57,3 +57,9 @@
 ## 交付证据
 
 交付测试项目路径、测试总数/通过数、关键场景名称、migration/CRUD 夹具路径策略、Core 边界检查和完整命令输出。若当前 checkout 仍未合入测试项目，应明确记录“当前仓库只有 P0 基线，尚无 P1 业务测试”，不可伪造结果。
+
+## 当前实现与验证证据
+
+测试项目为 `tests/ReminNote.Tests/ReminNote.Tests.csproj`，引用 Core 和 Infrastructure，依赖使用中央锁定版本。持久化夹具仅使用独立 `:memory:` SQLite 连接，不创建 `.devdata` 文件，不读取网络、Token 或生产路径。
+
+集成分支当前通过既定 `scripts/test.ps1 -Configuration Release`：xUnit v3 executable 共 61 个测试，0 失败、0 跳过；其中包含 47 个 Core 领域测试、11 个 SQLite persistence 执行项和 3 个 application/query boundary 场景。由于当前 .NET 10/Microsoft Testing Platform 配置，测试脚本直接运行构建后的测试 executable，并检查其非零退出码；不能用旧 VSTest 的“未发现测试”输出替代测试证据。

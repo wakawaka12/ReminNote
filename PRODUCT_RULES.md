@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-当前执行 P0-07 P0 polish / accessibility / i18n / CI stabilization。本阶段在已完成的 WPF 应用壳、TODAY、ANIME 和 Widget Mock 上收敛稳定资源键、简体中文默认显示、键盘焦点、UI Automation 标记和构建验证；不接入真实任务、数据库、提醒、网络或生产数据。
+P0 已完成并通过用户确认；当前执行 P1 Task core、SQLite persistence、application boundary 和集成验收。本阶段保留已完成的 WPF/TODAY/ANIME/Widget Mock 展示，不把 P0 Mock Quick Add 当作真实持久化入口；真实 Task UI、提醒、Agent IPC、网络和 P2 TODAY/Widget 体验仍不在 P1。
 
 ## 已冻结的核心边界
 
@@ -36,4 +36,5 @@
 - Shell、TODAY、ANIME 和 Widget 的用户可见文案必须通过稳定资源键或资源格式化边界提供，默认显示简体中文；本 Slice 不实现运行时语言切换。
 - 可交互控件必须保留可见键盘焦点，并为关键按钮、输入框、页面区域提供 `AutomationProperties.Name` 或 `HelpText`。
 - P0 Mock 仍只使用进程内示例数据；P0-07 不引入数据库、网络、IPC、提醒调度、真实国际化切换或 P1+ 功能。
-- `scripts/verify-p0-07.ps1` 是 `dotnet test` 之外的静态/配置门禁；当前没有测试项目时不得把空测试结果描述为业务测试覆盖。
+- P1 的真实 Task 写入经过 application boundary 和 Infrastructure SQLite；P0 Mock 仍只使用进程内示例数据。
+- `scripts/verify-p0-07.ps1` 是 `scripts/test.ps1` 之外的静态/配置门禁；P1 业务测试必须以真实 xUnit v3 executable 的非零退出码检查为证据。

@@ -7,7 +7,7 @@
 ./scripts/test.ps1 -Configuration Release
 ```
 
-重点验证：NuGet locked restore、WPF XAML 编译、Host 依赖组合、MVVM 类型可解析、项目引用边界和零警告构建。当前没有业务逻辑，因此不建立大规模 UI 快照测试。
+重点验证：NuGet locked restore、WPF XAML 编译、Host 依赖组合、MVVM 类型可解析、项目引用边界、P1 Core/SQLite/application 测试和零警告构建。P0 UI 仍以手动可访问性验收为主，不建立大规模 UI 快照测试。
 
 ## P0-02 手动验证
 
@@ -46,7 +46,7 @@
 ./scripts/verify-p0-07.ps1
 ```
 
-该门禁验证稳定资源键、默认资源非空、Widget 解决方案登记、项目 lock 文件、当前 UI 的 AutomationProperties 标记和开发数据清理边界。当前仓库没有测试项目，`dotnet test` 成功不代表存在业务测试覆盖。
+该门禁验证稳定资源键、默认资源非空、Widget 解决方案登记、项目 lock 文件、当前 UI 的 AutomationProperties 标记和开发数据清理边界。P1 业务测试由 `scripts/test.ps1` 直接运行构建后的 xUnit v3 executable；不能以旧 `dotnet test` 的零发现结果替代真实测试执行证据。
 
 ## P0-03 Design System 手动验证
 

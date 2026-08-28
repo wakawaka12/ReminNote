@@ -2,7 +2,7 @@
 
 - 阶段：P1 Real Task domain + SQLite persistence
 - 窗口：P1-01 Task Core
-- 性质：P1-05 文档窗口预先整理的实施与验收边界；不是代码已完成证明
+- 性质：已完成实现的契约与验收记录
 - 依据：`ReminNote_MASTER_DEVELOPMENT_PLAN.md` 的 Task domain/P1 章节，以及 P1 阶段预报告
 
 ## 目标
@@ -68,3 +68,9 @@ P1-03 至少应覆盖以下样例，并将实际测试项目/命名记录在集�
 ## 交付证据
 
 P1-01 交付给 P1-06 的证据应包括：Core 变更文件清单、公共类型最终名称/命名空间、领域不变量测试结果、未冻结契约清单，以及 Core 依赖检查结果。没有这些证据时，不得在 P1 报告中声称时间语义已通过验收。
+
+## 当前实现证据
+
+实现已合入 `ReminNote.Core`。公开契约位于 `Tasks/TaskId.cs`、`Tasks/TaskTimeType.cs`、`Tasks/TimeSpec.cs`、`Tasks/TaskResult.cs`、`Tasks/Task.cs`、`Time/TimeAbstractions.cs` 和 `Application/TaskApplicationContracts.cs`；Core 仅新增 Noda Time 依赖。
+
+已冻结的细节包括：UUID v7、`RangeEnd == RangeStart` 拒绝、`RangeEnd < RangeStart` 推导跨午夜、`PARTIAL` 仅允许 RANGE、空结果不自动变为 `MISSED`，以及 `RecordedAt` 仅代表记录动作时间。`tests/ReminNote.Tests/TaskIdTests.cs`、`TimeSpecTests.cs`、`TaskResultTests.cs` 和 `TaskAggregateTests.cs` 覆盖这些规则及失败后的状态不变性。

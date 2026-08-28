@@ -2,7 +2,7 @@
 
 - 阶段：P1 Real Task domain + SQLite persistence
 - 窗口：P1-02 Persistence
-- 性质：持久化实现边界与验收说明；本文件本身不引入 schema 或 migration
+- 性质：已完成实现的持久化边界与验收记录
 - 依据：主计划 Migration policy、Task persistence model、P1 阶段预报告和已冻结的 P1-00 决策
 
 ## 目标
@@ -63,3 +63,13 @@ P1 的开发数据在兼容边界前可以按明确记录重置，但这只用�
 ## 交付证据
 
 应交付 migration 文件清单、DbContext/映射位置、数据库约束说明、空库到当前库的命令输出、CRUD 与重启保留测试结果、失败场景结果，以及确认没有越界表/文件/路径的检查结果。没有 P1-00 冻结后的实际路径证据时，不得把其他目录下的临时 SQLite 文件当作 P1 验收库。
+
+## 当前实现与验证证据
+
+实现位于 `src/windows/ReminNote.Infrastructure/Persistence/`，包括 `ReminNoteDbContext`、设计时 factory、`ReminNoteDatabase`、`TaskEntity`/配置和 `TaskRepository`。真实 migration 为 `20260828025922_InitialTaskSchema`，文件为 `Persistence/Migrations/20260828025922_InitialTaskSchema.cs`、对应 Designer 和 model snapshot；`Up` 只创建 `tasks`，`Down` 只删除 `tasks`。
+
+`tasks` 保存 UUID v7、标题、TaskTimeType、本地日期、时间点/范围、结果、记录时间、记录备注、CreatedAt 和 UpdatedAt。LocalDate 使用 `uuuu-MM-dd`，LocalTime 使用纳秒日值，Instant 使用固定 9 位 UTC 文本；没有重复的跨午夜布尔列。数据库约束覆盖 UUID v7、标题非空、时间形状和值域、结果元数据、结果时间顺序、PARTIAL 只能用于 RANGE 及 aggregate 时间顺序。
+
+`tests/ReminNote.Tests/TaskPersistenceTests.cs` 和 `SqliteTestDatabase.cs` 使用每测试独立且保持连接的 `:memory:` SQLite，验证 migration 幂等、schema 白名单、跨午夜/结果 round-trip、跨 DbContext CRUD，以及 8 类绕过应用层的非法 raw INSERT。当前不把 `.devdata` 作为自动化测试数据库。
+
+真实开发库的写入入口为显式 `ReminNoteDatabase.CreateDevelopmentContext(repositoryRoot)`；P1 不自动 purge，也不把删除数据库当作正常升级。`Down` 删除 `tasks` 是破坏性操作，真实开发数据必须先备份并停止写入。
