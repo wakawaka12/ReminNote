@@ -3,7 +3,7 @@
 - 阶段：P2 Real TODAY / Widget task loop
 - 日期：2026-08-28
 - 验收代码基线：`d6edc0e`（验收开始时本地 `codex/p0-integration` 指向同一提交；本窗口 worktree 为 detached HEAD）
-- 状态：Release 构建、全量自动化测试、P0-07 门禁和真实空 `.devdata` schema 双次启动已通过；Main/Widget GUI、真实已有数据升级和跨午夜时序仍待用户执行
+- 状态：首轮 Release 构建、160/160 自动化测试、P0-07 门禁和真实空 `.devdata` schema 双次启动已通过；排序修复后总成复跑为 162/162，且已完成条件性排序 UIA；正常桌面 GUI、真实已有数据升级和跨午夜时序仍待用户执行
 - 写入边界：本 Slice 只新增本文件、阶段报告，并追加 `docs/reports/P2-总成接管记录-2026-08-28.md`；不修改源码、测试、根级活文档或 `reviews/`、`second-review/`
 
 ## 目标
@@ -43,12 +43,13 @@
 ## 自动化与真实库证据
 
 - `scripts/build.ps1 -Configuration Release`：退出码 0；还原和 8 个项目构建成功，输出无 warning/error。
-- `scripts/test.ps1 -Configuration Release`：退出码 0；xUnit v3 executable 实际 **160/160**，Errors 0、Failed 0、Skipped 0、Not Run 0。
+- `scripts/test.ps1 -Configuration Release`：首轮 xUnit v3 executable 实际 **160/160**；排序修复后总成重新执行为 **162/162**，Errors 0、Failed 0、Skipped 0、Not Run 0。
 - `scripts/verify-p0-07.ps1`：退出码 0；`213` 个资源键、`7` 个锁定项目、`1` 个测试项目及 Shell/TODAY/ANIME/Widget 标记通过。
 - `git diff --check`：退出码 0；无 whitespace errors。
 - 两次 `P1ManualHarness schema --repo-root <当前仓库根目录>` 均退出码 0，表集合均为 `__EFMigrationsHistory`、`__EFMigrationsLock`、`app_settings`、`task_history`、`tasks`。
 - 第二次后只读核对：`integrity_check=ok`、`foreign_key_check` 行数为 0；migration history 为 `20260828025922_InitialTaskSchema`、`20260828120000_P2TaskLoop`、`20260828130000_P2ContinuationDeleteBoundary`；业务行数为 `app_settings=1`、`task_history=0`、`tasks=0`。
 - 两次 schema 的 SQLite 主文件 SHA256 不同，因此本 Slice 不把“字节哈希相同”当作幂等条件；以两次退出码、同一 migration history、同一表集合和只读完整性检查作为证据。当前库为空，不能由此宣称已有 P1 数据的真实升级保留已通过。
+- 排序修复提交为 `8a86a002e3148ff58570aeba4971fc3f462ea283`：修复同日期同分组默认 `sort_order=0` 的 `0↔0` no-op，并新增回归测试；重复排序值先按当前可见顺序归一化后交换，同时保留跨日期、跨分组及已有结果保护。总成修复后 Release build 为 8 个项目、0 warning/0 error，P0-07 为 `213 resource keys/7 locked projects/1 test project`，`git diff --check` 通过。
 
 ## 人工验收（待用户执行）
 
@@ -110,7 +111,17 @@ Start-Process -FilePath $widget -WorkingDirectory $repo -ArgumentList @('--repo-
 
 ## 风险与后续边界
 
-- Main/Widget 双宿主 GUI、重启、RANGE/跨午夜和真实已有 P1 数据升级尚未由本窗口人工执行；这些是当前 P2 的人工验收风险。
+- 本窗口初始未能人工点击 Main/Widget；后续独立窗口已完成条件性 UI smoke 和排序修复后二次 UIA，但正常桌面 GUI 签字、重启/完整点击、RANGE/跨午夜和真实已有 P1 数据升级仍待用户执行。
 - P2 的 `CrossProcessTaskWriteGate` 是本机命名 Semaphore，Widget 的 live Snooze/Reschedule 只显示“请在 Main TODAY 编辑计划”，不伪造改期；P2.5 仍需 Agent 命令串行化、冲突检测和 Change Journal。
 - 现有 Main/Widget 单实例激活管道只负责宿主激活，不是 P2.5 业务 IPC；当前没有 Agent Task 命令通道。
 - P2 继续使用硬删除；没有 Trash、完整删除审计、Reminder、Sync 或 Anime 网络能力。
+
+## P2-05 最终补充：排序修复后二次条件性验收（2026-08-28）
+
+独立窗口基于当前 Release Main，显式使用 `--repo-root D:\Anime`，并在启动子进程时补齐 `WINDIR=C:\WINDOWS`。Main TODAY 同日期同分组默认 `sort_order=0` 无法交换的产品缺陷已由 `8a86a002e3148ff58570aeba4971fc3f462ea283` 修复并配套回归测试：根因是旧实现把 `0↔0` 写回后由应用层判定为 no-op；现在重复排序值先按当前同日期同分组可见顺序归一化，再执行交换，并保留跨日期、跨分组和已有结果保护。
+
+本次排序修复验证仅追加两条带明显前缀的 Task：`P2_FINAL_SMOKE SORT_FIX2_C`、`P2_FINAL_SMOKE SORT_FIX2_D`。选中 C 点击“下移”后，UI 顺序为 D→C；只读 SQLite 确认 C/D `sort_order=4/3`，并存在 `task_history.kind=3` 的 `SortOrderChanged` 历史。重新选中 C 点击“上移”后，UI 顺序为 C→D；最终 C/D `sort_order=3/4`，排序历史仍存在。已有结果的 Task 无改期/排序按钮，跨日期/跨分组保护通过；Main 正常关闭，工作树及 `reviews/`、`second-review/` 无变化。
+
+此前一次反向操作未重新选中 C，导致 UI Automation 实际选中 D；这是测试选中状态问题，不是产品失败。以上属于依赖子进程环境修正的条件性 UI smoke，不是用户正常桌面签字。默认 Codex exec 环境的 `WINDIR` 限制仍需区分；跨午夜 `00:30`、用户正常桌面完整点击/重启和真实已有 P1 数据 forward migration 仍待用户执行。
+
+本次仅追加上述两条 `P2_FINAL_SMOKE` Task，未清空、删除或覆盖 `D:\Anime\.devdata\reminnote.sqlite`；当前真实库只读检查为 `integrity_check=ok`、`foreign_key_check` 行数 0、3 条 migration。P2 实现、自动化门禁和条件性 UI smoke 已完成，但不扩张 P2.5 边界：Reminder、Agent 业务 IPC、Sync 等仍未实现。
