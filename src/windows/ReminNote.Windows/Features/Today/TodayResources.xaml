@@ -917,6 +917,7 @@
                                         Command="{Binding PrimaryTask.ToggleCompletionCommand}"
                                         Style="{StaticResource TodayHeroLightButtonStyle}"
                                         Margin="0,0,8,0"
+                                        IsEnabled="{Binding PrimaryTask.IsCompletionActionEnabled}"
                                         AutomationProperties.Name="{Binding PrimaryTask.CompletionActionLabel}" />
                                 <Button Content="{x:Static local:UiText.CommonViewDetails}"
                                         Command="{Binding PrimaryTask.SelectCommand}"
