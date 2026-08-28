@@ -8,7 +8,7 @@ public sealed class TaskResultTests
     [InlineData(TaskResult.COMPLETED)]
     [InlineData(TaskResult.MISSED)]
     [InlineData(TaskResult.PARTIAL)]
-    public void Result_record_accepts_each_frozen_result_value(TaskResult result)
+    public void ResultRecordAcceptsEachFrozenResultValue(TaskResult result)
     {
         var record = TaskResultRecord.Create(result, TestValues.CreatedAt, "已记录");
 
@@ -18,7 +18,7 @@ public sealed class TaskResultTests
     }
 
     [Fact]
-    public void Result_record_normalizes_blank_note_to_null_without_changing_content()
+    public void ResultRecordNormalizesBlankNoteToNullWithoutChangingContent()
     {
         var blank = TaskResultRecord.Create(TaskResult.COMPLETED, TestValues.CreatedAt, "  ");
         var note = TaskResultRecord.Create(TaskResult.COMPLETED, TestValues.CreatedAt, "  note  ");
@@ -28,7 +28,7 @@ public sealed class TaskResultTests
     }
 
     [Fact]
-    public void Result_record_rejects_unknown_result_values()
+    public void ResultRecordRejectsUnknownResultValues()
     {
         TestValues.AssertValidationCode(
             () => TaskResultRecord.Create((TaskResult)99, TestValues.CreatedAt),
@@ -36,7 +36,7 @@ public sealed class TaskResultTests
     }
 
     [Fact]
-    public void Result_record_equality_includes_result_timestamp_and_note()
+    public void ResultRecordEqualityIncludesResultTimestampAndNote()
     {
         var first = TaskResultRecord.Create(TaskResult.COMPLETED, TestValues.CreatedAt, "note");
         var same = TaskResultRecord.Create(TaskResult.COMPLETED, TestValues.CreatedAt, "note");

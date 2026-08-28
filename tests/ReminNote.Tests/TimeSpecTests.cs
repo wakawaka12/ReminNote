@@ -25,13 +25,12 @@ public sealed class TimeSpecTests
             { TaskTimeType.TIME, TestValues.Afternoon, null, new LocalTime(17, 0) },
             { TaskTimeType.RANGE, null, new LocalTime(14, 0), null },
             { TaskTimeType.RANGE, null, null, new LocalTime(17, 0) },
-            { TaskTimeType.RANGE, TestValues.Afternoon, new LocalTime(14, 0), new LocalTime(17, 0) },
-            { TaskTimeType.RANGE, null, new LocalTime(14, 0), new LocalTime(17, 0) }
+            { TaskTimeType.RANGE, TestValues.Afternoon, new LocalTime(14, 0), new LocalTime(17, 0) }
         };
 
     [Theory]
     [MemberData(nameof(LegalShapes))]
-    public void Create_accepts_only_legal_time_shape_column_combinations(
+    public void CreateAcceptsOnlyLegalTimeShapeColumnCombinations(
         TaskTimeType type,
         LocalTime? timePoint,
         LocalTime? rangeStart,
@@ -45,7 +44,7 @@ public sealed class TimeSpecTests
 
     [Theory]
     [MemberData(nameof(InvalidShapes))]
-    public void Create_rejects_mixed_or_missing_columns_deterministically(
+    public void CreateRejectsMixedOrMissingColumnsDeterministically(
         TaskTimeType type,
         LocalTime? timePoint,
         LocalTime? rangeStart,
@@ -57,7 +56,7 @@ public sealed class TimeSpecTests
     }
 
     [Fact]
-    public void Create_rejects_unknown_time_type_deterministically()
+    public void CreateRejectsUnknownTimeTypeDeterministically()
     {
         TestValues.AssertValidationCode(
             () => TimeSpec.Create((TaskTimeType)99, TestValues.PlanDate, null, null, null),
@@ -65,7 +64,7 @@ public sealed class TimeSpecTests
     }
 
     [Fact]
-    public void Anytime_spec_owns_only_its_plan_date()
+    public void AnytimeSpecOwnsOnlyItsPlanDate()
     {
         var spec = TimeSpec.Anytime(TestValues.PlanDate);
 
@@ -75,7 +74,7 @@ public sealed class TimeSpecTests
     }
 
     [Fact]
-    public void Time_point_spec_preserves_local_date_and_local_time()
+    public void TimePointSpecPreservesLocalDateAndLocalTime()
     {
         var time = new LocalTime(14, 30, 15);
         var spec = TimeSpec.At(TestValues.PlanDate, time);
@@ -87,7 +86,7 @@ public sealed class TimeSpecTests
     }
 
     [Fact]
-    public void Same_day_range_has_same_end_date_and_positive_duration()
+    public void SameDayRangeHasSameEndDateAndPositiveDuration()
     {
         var spec = TimeSpec.Range(TestValues.PlanDate, new LocalTime(14, 0), new LocalTime(17, 0));
 
@@ -99,7 +98,7 @@ public sealed class TimeSpecTests
     }
 
     [Fact]
-    public void Cross_midnight_range_derives_next_end_date_and_keeps_plan_date_owner()
+    public void CrossMidnightRangeDerivesNextEndDateAndKeepsPlanDateOwner()
     {
         var spec = TimeSpec.Range(TestValues.PlanDate, new LocalTime(23, 0), new LocalTime(1, 0));
 
@@ -112,7 +111,7 @@ public sealed class TimeSpecTests
     }
 
     [Fact]
-    public void Range_rejects_equal_start_and_end_instead_of_creating_zero_duration()
+    public void RangeRejectsEqualStartAndEndInsteadOfCreatingZeroDuration()
     {
         TestValues.AssertValidationCode(
             () => TimeSpec.Range(TestValues.PlanDate, TestValues.Afternoon, TestValues.Afternoon),
@@ -120,7 +119,7 @@ public sealed class TimeSpecTests
     }
 
     [Fact]
-    public void Time_specs_use_structural_value_equality()
+    public void TimeSpecsUseStructuralValueEquality()
     {
         Assert.Equal(
             TimeSpec.Anytime(TestValues.PlanDate),

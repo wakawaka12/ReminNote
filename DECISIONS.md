@@ -103,6 +103,6 @@
 
 - 日期：2026-08-28
 - 状态：已接受
-- 决策：P1 测试项目使用 xUnit.net v3 4.0.0、`xunit.runner.visualstudio` 4.0.0 和 `Microsoft.NET.Test.Sdk` 18.9.0，通过现有 `dotnet test`/VSTest 流程运行；测试项目以 `net10.0` 为目标并引用 Core/Infrastructure。
+- 决策：P1 测试项目使用 xUnit.net v3 4.0.0、`xunit.runner.visualstudio` 4.0.0 和 `Microsoft.NET.Test.Sdk` 18.9.0；测试项目以 `net10.0` 为目标并引用 Core/Infrastructure，主路径通过 `global.json` 的 Microsoft Testing Platform runner 运行，保留 VSTest 包以兼容旧版 IDE/runner。
 - 原因：xUnit.net v2 已停止功能开发，xUnit.net v3 是当前稳定主线；VSTest 适配保留 CLI、CI 和 IDE 的现有运行路径。上述包均采用 Apache-2.0 或 MIT 许可，并由中央包管理统一版本。
 - 限制：P1 不引入大规模测试框架、UI 快照或假业务测试；测试聚焦领域不变量、持久化约束和 CRUD 数据路径。

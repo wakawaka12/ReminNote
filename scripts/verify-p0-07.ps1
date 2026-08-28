@@ -62,17 +62,19 @@ Assert-Condition ($widgetWindow.Contains('Binding ActivePageTitle, Mode=OneWay')
 Assert-Condition ($widgetWindow.Contains('Binding ActivePageSubtitle, Mode=OneWay')) 'Widget page subtitle binding must remain one-way because ActivePageSubtitle is read-only.'
 Assert-Condition ($animeResources.Contains('Binding ProgressValue, Mode=OneWay')) 'ANIME progress binding must remain one-way because ProgressValue is read-only.'
 
-$lockFiles = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'src') -Filter 'packages.lock.json' -Recurse -File)
-$projects = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'src') -Filter '*.csproj' -Recurse -File)
+$projectSearchRoots = @(
+    (Join-Path $repositoryRoot 'src'),
+    (Join-Path $repositoryRoot 'tests')
+) | Where-Object { Test-Path -LiteralPath $_ }
+$lockFiles = @($projectSearchRoots | ForEach-Object { Get-ChildItem -LiteralPath $_ -Filter 'packages.lock.json' -Recurse -File })
+$projects = @($projectSearchRoots | ForEach-Object { Get-ChildItem -LiteralPath $_ -Filter '*.csproj' -Recurse -File })
 Assert-Condition ($lockFiles.Count -eq $projects.Count) "each project must have a packages.lock.json ($($projects.Count) projects, $($lockFiles.Count) lock files)."
 
 $cleanScript = Read-Text 'scripts/clean.ps1'
 Assert-Condition ($cleanScript.Contains("Join-Path `$repositoryRoot '.devdata'")) 'clean.ps1 must keep development data purge explicit and scoped.'
 Assert-Condition ($cleanScript.Contains('Production data is never targeted by default.')) 'clean.ps1 must document its data-safety boundary.'
 
-$testProjects = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'src') -Filter '*Tests.csproj' -Recurse -File)
-if ($testProjects.Count -eq 0) {
-    Write-Output 'P0-07 note: no test project is currently present; this gate validates resources, configuration, solution membership, and accessibility markers.'
-}
+$testProjects = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot 'tests') -Filter '*Tests.csproj' -Recurse -File -ErrorAction SilentlyContinue)
+Assert-Condition ($testProjects.Count -gt 0) 'P1 requires at least one real test project under tests/.'
 
-Write-Output "P0-07 verification passed: $($keyMatches.Count) resource keys, $($projects.Count) locked projects, and Shell/TODAY/ANIME/Widget UI markers checked."
+Write-Output "P0-07 verification passed: $($keyMatches.Count) resource keys, $($projects.Count) locked projects, $($testProjects.Count) test projects, and Shell/TODAY/ANIME/Widget UI markers checked."

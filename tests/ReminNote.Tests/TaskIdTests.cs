@@ -5,7 +5,7 @@ namespace ReminNote.Tests;
 public sealed class TaskIdTests
 {
     [Fact]
-    public void New_creates_uuid_v7_identity()
+    public void NewCreatesUuidV7Identity()
     {
         var taskId = TaskId.New();
 
@@ -13,7 +13,7 @@ public sealed class TaskIdTests
     }
 
     [Fact]
-    public void From_and_parse_preserve_uuid_v7_identity()
+    public void FromAndParsePreserveUuidV7Identity()
     {
         var guid = Guid.CreateVersion7();
 
@@ -25,7 +25,7 @@ public sealed class TaskIdTests
     }
 
     [Fact]
-    public void TryParse_returns_false_for_null_empty_and_non_uuid_v7_values()
+    public void TryParseReturnsFalseForNullEmptyAndNonUuidV7Values()
     {
         Assert.False(TaskId.TryParse(null, out _));
         Assert.False(TaskId.TryParse(string.Empty, out _));
@@ -34,7 +34,7 @@ public sealed class TaskIdTests
     }
 
     [Fact]
-    public void From_rejects_empty_and_non_uuid_v7_values_with_stable_codes()
+    public void FromRejectsEmptyAndNonUuidV7ValuesWithStableCodes()
     {
         TestValues.AssertValidationCode(
             () => TaskId.From(Guid.Empty),
@@ -46,7 +46,7 @@ public sealed class TaskIdTests
     }
 
     [Fact]
-    public void Parse_distinguishes_format_and_uuid_version_failures()
+    public void ParseDistinguishesFormatAndUuidVersionFailures()
     {
         TestValues.AssertValidationCode(
             () => TaskId.Parse("not-a-guid"),
@@ -58,7 +58,7 @@ public sealed class TaskIdTests
     }
 
     [Fact]
-    public void Task_id_equality_is_value_based()
+    public void TaskIdEqualityIsValueBased()
     {
         var first = TestValues.TaskId();
         var same = TaskId.Parse(first.ToString());

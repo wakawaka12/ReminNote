@@ -2,11 +2,17 @@
     [CmdletBinding()]
     param()
 
-    $standardDotNetPath = Join-Path ${env:ProgramFiles} 'dotnet\dotnet.exe'
-    if (Test-Path -LiteralPath $standardDotNetPath) {
-        $standardSdkList = & $standardDotNetPath --list-sdks 2>$null
-        if ($standardSdkList -match '^10\.') {
-            return $standardDotNetPath
+    $standardDotNetPaths = @(
+        if ($env:ProgramW6432) { Join-Path $env:ProgramW6432 'dotnet\dotnet.exe' }
+        if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'dotnet\dotnet.exe' }
+    ) | Where-Object { $_ } | Select-Object -Unique
+
+    foreach ($standardDotNetPath in $standardDotNetPaths) {
+        if (Test-Path -LiteralPath $standardDotNetPath) {
+            $standardSdkList = & $standardDotNetPath --list-sdks 2>$null
+            if ($standardSdkList -match '^10\.') {
+                return $standardDotNetPath
+            }
         }
     }
 

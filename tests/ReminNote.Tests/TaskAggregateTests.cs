@@ -5,7 +5,7 @@ namespace ReminNote.Tests;
 public sealed class TaskAggregateTests
 {
     [Fact]
-    public void Create_assigns_uuid_v7_and_starts_without_a_result()
+    public void CreateAssignsUuidV7AndStartsWithoutAResult()
     {
         var task = ReminNote.Core.Tasks.Task.Create(
             "  整理测试夹具  ",
@@ -21,7 +21,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Create_and_rehydrate_preserve_stable_identity_and_snapshot_values()
+    public void CreateAndRehydratePreserveStableIdentityAndSnapshotValues()
     {
         var id = TestValues.TaskId();
         var timeSpec = TimeSpec.At(TestValues.PlanDate, TestValues.Afternoon);
@@ -46,7 +46,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Rename_trims_title_and_updates_changed_timestamp()
+    public void RenameTrimsTitleAndUpdatesChangedTimestamp()
     {
         var task = CreateTask();
 
@@ -57,7 +57,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Change_time_replaces_the_planned_shape_and_updates_changed_timestamp()
+    public void ChangeTimeReplacesThePlannedShapeAndUpdatesChangedTimestamp()
     {
         var task = CreateTask();
         var replacement = TimeSpec.Range(TestValues.PlanDate, new LocalTime(23, 0), new LocalTime(1, 0));
@@ -69,7 +69,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Record_result_persists_result_note_and_recorded_at()
+    public void RecordResultPersistsResultNoteAndRecordedAt()
     {
         var task = CreateTask(TimeSpec.Range(TestValues.PlanDate, new LocalTime(23, 0), new LocalTime(1, 0)));
 
@@ -83,7 +83,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Record_result_rejects_unknown_result_values_before_mutating_the_task()
+    public void RecordResultRejectsUnknownResultValuesBeforeMutatingTheTask()
     {
         var task = CreateTask();
 
@@ -98,7 +98,7 @@ public sealed class TaskAggregateTests
     [Theory]
     [InlineData(TaskResult.COMPLETED)]
     [InlineData(TaskResult.MISSED)]
-    public void Any_time_and_time_tasks_accept_completed_or_missed_results(TaskResult result)
+    public void AnyTimeAndTimeTasksAcceptCompletedOrMissedResults(TaskResult result)
     {
         var anytime = CreateTask(TimeSpec.Anytime(TestValues.PlanDate));
         var time = CreateTask(TimeSpec.At(TestValues.PlanDate, TestValues.Afternoon));
@@ -111,7 +111,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Partial_result_is_rejected_for_non_range_tasks()
+    public void PartialResultIsRejectedForNonRangeTasks()
     {
         var anytime = CreateTask(TimeSpec.Anytime(TestValues.PlanDate));
 
@@ -123,7 +123,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Rehydrate_and_change_time_reject_partial_results_for_non_range_tasks()
+    public void RehydrateAndChangeTimeRejectPartialResultsForNonRangeTasks()
     {
         var partial = TaskResultRecord.Create(TaskResult.PARTIAL, TestValues.ChangedAt);
 
@@ -149,7 +149,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Rename_before_creation_is_rejected_without_mutating_any_task_state()
+    public void RenameBeforeCreationIsRejectedWithoutMutatingAnyTaskState()
     {
         var task = CreateTask();
         var originalTitle = task.Title;
@@ -168,7 +168,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Invalid_titles_are_rejected_without_mutating_the_task()
+    public void InvalidTitlesAreRejectedWithoutMutatingTheTask()
     {
         var task = CreateTask();
 
@@ -181,7 +181,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Record_result_before_creation_is_rejected_without_mutating_any_task_state()
+    public void RecordResultBeforeCreationIsRejectedWithoutMutatingAnyTaskState()
     {
         var task = CreateTask();
         var originalTitle = task.Title;
@@ -200,7 +200,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Change_time_before_creation_is_rejected_without_mutating_the_task()
+    public void ChangeTimeBeforeCreationIsRejectedWithoutMutatingTheTask()
     {
         var task = CreateTask();
         var originalTimeSpec = task.TimeSpec;
@@ -219,7 +219,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void Rehydrate_rejects_updated_at_before_created_at()
+    public void RehydrateRejectsUpdatedAtBeforeCreatedAt()
     {
         TestValues.AssertValidationCode(
             () => ReminNote.Core.Tasks.Task.Rehydrate(
