@@ -147,6 +147,53 @@ public sealed class TaskPersistenceTests
         }
     }
 
+    [Fact]
+    public async SystemTask RecordedTaskKeepsOriginalTimeWhenChangeTimeFailsBeforeRepositoryUpdate()
+    {
+        using var database = new SqliteTestDatabase();
+        database.Migrate();
+        var id = TestValues.AnotherTaskId();
+        var originalTime = TimeSpec.Range(TestValues.PlanDate, new LocalTime(23, 0), new LocalTime(1, 0));
+
+        var task = ReminNote.Core.Tasks.Task.Create(
+            id,
+            "持久化改期保护",
+            originalTime,
+            TestValues.CreatedAt);
+        task.RecordResult(TaskResult.PARTIAL, TestValues.ChangedAt, "保留原计划");
+
+        using (var writeContext = database.CreateContext())
+        {
+            await new TaskRepository(writeContext).AddAsync(task, TestContext.Current.CancellationToken);
+        }
+
+        using (var updateContext = database.CreateContext())
+        {
+            var repository = new TaskRepository(updateContext);
+            var stored = await repository.FindAsync(id, TestContext.Current.CancellationToken);
+
+            Assert.NotNull(stored);
+            TestValues.AssertValidationCode(
+                () => stored!.ChangeTime(
+                    TimeSpec.Anytime(TestValues.PlanDate.PlusDays(1)),
+                    TestValues.ChangedAt.Plus(Duration.FromMinutes(1))),
+                "task.time_spec.changed_after_result");
+        }
+
+        using (var readContext = database.CreateContext())
+        {
+            var persisted = await new TaskRepository(readContext).FindAsync(
+                id,
+                TestContext.Current.CancellationToken);
+
+            Assert.NotNull(persisted);
+            Assert.Equal(originalTime, persisted!.TimeSpec);
+            Assert.Equal(TaskResult.PARTIAL, persisted.Result);
+            Assert.Equal("保留原计划", persisted.ResultNote);
+            Assert.Equal(TestValues.ChangedAt, persisted.UpdatedAt);
+        }
+    }
+
     [Theory]
     [MemberData(nameof(InvalidRawRows))]
     public void RawInsertIsRejectedByTheNamedSchemaConstraint(

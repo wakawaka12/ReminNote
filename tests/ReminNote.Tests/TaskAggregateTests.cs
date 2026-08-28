@@ -69,6 +69,27 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
+    public void ChangeTimeAfterResultIsRejectedWithoutChangingAggregateState()
+    {
+        var task = CreateTask(TimeSpec.Range(TestValues.PlanDate, new LocalTime(14, 0), new LocalTime(16, 0)));
+        task.RecordResult(TaskResult.COMPLETED, TestValues.ChangedAt, "已完成");
+        var before = task.ToSnapshot();
+
+        TestValues.AssertValidationCode(
+            () => task.ChangeTime(TimeSpec.Anytime(TestValues.PlanDate.PlusDays(1)), TestValues.ChangedAt.Plus(Duration.FromMinutes(1))),
+            "task.time_spec.changed_after_result");
+
+        Assert.Equal(before, task.ToSnapshot());
+
+        task.Rename("结果后可改名", TestValues.ChangedAt.Plus(Duration.FromMinutes(2)));
+
+        Assert.Equal("结果后可改名", task.Title);
+        Assert.Equal(before.TimeSpec, task.TimeSpec);
+        Assert.Equal(before.ResultRecord, task.ResultRecord);
+        Assert.Equal(TestValues.ChangedAt.Plus(Duration.FromMinutes(2)), task.UpdatedAt);
+    }
+
+    [Fact]
     public void RecordResultPersistsResultNoteAndRecordedAt()
     {
         var task = CreateTask(TimeSpec.Range(TestValues.PlanDate, new LocalTime(23, 0), new LocalTime(1, 0)));
@@ -123,7 +144,7 @@ public sealed class TaskAggregateTests
     }
 
     [Fact]
-    public void RehydrateAndChangeTimeRejectPartialResultsForNonRangeTasks()
+    public void RehydrateRejectsPartialResultsForNonRangeTasksAndRecordedTasksCannotChangeTime()
     {
         var partial = TaskResultRecord.Create(TaskResult.PARTIAL, TestValues.ChangedAt);
 
@@ -142,7 +163,7 @@ public sealed class TaskAggregateTests
 
         TestValues.AssertValidationCode(
             () => rangeTask.ChangeTime(TimeSpec.Anytime(TestValues.PlanDate), TestValues.ChangedAt),
-            "task.result.partial_requires_range");
+            "task.time_spec.changed_after_result");
 
         Assert.Equal(TaskTimeType.RANGE, rangeTask.TimeSpec.Type);
         Assert.Equal((TaskResult?)TaskResult.PARTIAL, rangeTask.Result);

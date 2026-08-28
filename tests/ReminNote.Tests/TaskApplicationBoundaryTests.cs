@@ -1,3 +1,4 @@
+using ReminNote.Core;
 using ReminNote.Core.Application;
 using ReminNote.Core.Tasks;
 using ReminNote.Infrastructure.Application;
@@ -83,6 +84,69 @@ public sealed class TaskApplicationBoundaryTests
         using (var context = database.CreateContext())
         {
             Assert.Null(await new TaskQueryService(context).FindAsync(created.Id, cancellationToken));
+        }
+    }
+
+    [Fact]
+    public async SystemTask ApplicationUpdatePassesThroughChangedAfterResultAndLeavesDatabaseRowUnchanged()
+    {
+        using var database = new SqliteTestDatabase();
+        database.Migrate();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var clock = new TestClock(TestValues.CreatedAt);
+        TaskSnapshot created;
+
+        using (var context = database.CreateContext())
+        {
+            var application = CreateApplication(context, clock);
+            created = await application.CreateAsync(
+                new CreateTaskCommand(
+                    "结果后不可改期",
+                    TimeSpec.Range(TestValues.PlanDate, new LocalTime(14, 0), new LocalTime(16, 0))),
+                cancellationToken);
+        }
+
+        clock.Current = TestValues.ChangedAt;
+        TaskSnapshot recorded;
+        using (var context = database.CreateContext())
+        {
+            recorded = (await CreateApplication(context, clock).RecordResultAsync(
+                new RecordTaskResultCommand(created.Id, TaskResult.COMPLETED, "已记录"),
+                cancellationToken))!;
+        }
+
+        clock.Current = TestValues.ChangedAt.Plus(Duration.FromSeconds(30));
+        TaskSnapshot renamed;
+        using (var context = database.CreateContext())
+        {
+            renamed = (await CreateApplication(context, clock).UpdateAsync(
+                new UpdateTaskCommand(created.Id, "结果后可改名", recorded.TimeSpec),
+                cancellationToken))!;
+        }
+
+        Assert.Equal("结果后可改名", renamed.Title);
+        Assert.Equal(recorded.TimeSpec, renamed.TimeSpec);
+        Assert.Equal(recorded.ResultRecord, renamed.ResultRecord);
+
+        var exception = await Assert.ThrowsAsync<DomainValidationException>(async () =>
+        {
+            clock.Current = TestValues.ChangedAt.Plus(Duration.FromMinutes(1));
+            using var context = database.CreateContext();
+            await CreateApplication(context, clock).UpdateAsync(
+                new UpdateTaskCommand(
+                    created.Id,
+                    "不应写入的新标题",
+                    TimeSpec.At(TestValues.PlanDate.PlusDays(1), new LocalTime(9, 0))),
+                cancellationToken);
+        });
+
+        Assert.Contains(exception.Errors, error => error.Code == "task.time_spec.changed_after_result");
+
+        using (var context = database.CreateContext())
+        {
+            var persisted = await new TaskQueryService(context).FindAsync(created.Id, cancellationToken);
+
+            Assert.Equal(renamed, persisted);
         }
     }
 

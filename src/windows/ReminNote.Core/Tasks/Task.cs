@@ -125,6 +125,14 @@ public sealed class Task
                 nameof(timeSpec)));
         }
 
+        if (ResultRecord is not null)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.time_spec.changed_after_result",
+                "A task with a recorded result cannot change its planned time.",
+                nameof(timeSpec)));
+        }
+
         ValidateResult(timeSpec, ResultRecord);
         ValidateChangedAt(changedAt);
         TimeSpec = timeSpec;

@@ -59,7 +59,10 @@ public sealed class TaskApplicationService : ITaskApplicationService
         var updatedTask = CopyOf(storedTask);
         var changedAt = clock.GetCurrentInstant();
         updatedTask.Rename(command.Title, changedAt);
-        updatedTask.ChangeTime(command.TimeSpec, changedAt);
+        if (updatedTask.TimeSpec != command.TimeSpec)
+        {
+            updatedTask.ChangeTime(command.TimeSpec, changedAt);
+        }
 
         await taskRepository.UpdateAsync(updatedTask, cancellationToken).ConfigureAwait(false);
         return updatedTask.ToSnapshot();

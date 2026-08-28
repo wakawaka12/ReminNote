@@ -43,6 +43,7 @@ P1-00 已由主线冻结开发数据库与数据安全决策：开发数据库�
 | 结果语义 | RANGE 结束且未确认结果时为 `AWAITING RESULT`，不能自动改成 `MISSED`。 |
 | 记录时间 | `RecordedAt` 只表示用户在 ReminNote 记录结果的时间，不得展示为现实世界完成时间。 |
 | 历史 | 已发生计划的编辑不能抹除历史；未来计划的日期/时间编辑不能凭空制造失败历史。 |
+| 已有结果的改期 | Task 已有 `ResultRecord` 时，`ChangeTime` 必须以 `task.time_spec.changed_after_result` 拒绝，且失败前后聚合状态不变；`Rename` 不受此限制。 |
 
 具体的标题长度、可选字段集合、`RangeStart == RangeEnd` 是否允许等尚未在当前仓库中冻结的契约，必须由 P1-01 以领域测试和决策记录明确；本说明不擅自替产品拍板。
 
@@ -73,4 +74,4 @@ P1-01 交付给 P1-06 的证据应包括：Core 变更文件清单、公共类�
 
 实现已合入 `ReminNote.Core`。公开契约位于 `Tasks/TaskId.cs`、`Tasks/TaskTimeType.cs`、`Tasks/TimeSpec.cs`、`Tasks/TaskResult.cs`、`Tasks/Task.cs`、`Time/TimeAbstractions.cs` 和 `Application/TaskApplicationContracts.cs`；Core 仅新增 Noda Time 依赖。
 
-已冻结的细节包括：UUID v7、`RangeEnd == RangeStart` 拒绝、`RangeEnd < RangeStart` 推导跨午夜、`PARTIAL` 仅允许 RANGE、空结果不自动变为 `MISSED`，以及 `RecordedAt` 仅代表记录动作时间。`tests/ReminNote.Tests/TaskIdTests.cs`、`TimeSpecTests.cs`、`TaskResultTests.cs` 和 `TaskAggregateTests.cs` 覆盖这些规则及失败后的状态不变性。
+已冻结的细节包括：UUID v7、`RangeEnd == RangeStart` 拒绝、`RangeEnd < RangeStart` 推导跨午夜、`PARTIAL` 仅允许 RANGE、空结果不自动变为 `MISSED`、`RecordedAt` 仅代表记录动作时间，以及已有结果的 Task 禁止改期。`tests/ReminNote.Tests/TaskIdTests.cs`、`TimeSpecTests.cs`、`TaskResultTests.cs` 和 `TaskAggregateTests.cs` 覆盖这些规则及失败后的状态不变性。无结果但已过去的任务改期判断留到 P2，由时区与时钟规则共同定义。

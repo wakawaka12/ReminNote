@@ -106,3 +106,11 @@
 - 决策：P1 测试项目使用 xUnit.net v3 4.0.0、`xunit.runner.visualstudio` 4.0.0 和 `Microsoft.NET.Test.Sdk` 18.9.0；测试项目以 `net10.0` 为目标并引用 Core/Infrastructure，主路径通过 `global.json` 的 Microsoft Testing Platform runner 运行，保留 VSTest 包以兼容旧版 IDE/runner。
 - 原因：xUnit.net v2 已停止功能开发，xUnit.net v3 是当前稳定主线；VSTest 适配保留 CLI、CI 和 IDE 的现有运行路径。上述包均采用 Apache-2.0 或 MIT 许可，并由中央包管理统一版本。
 - 限制：P1 不引入大规模测试框架、UI 快照或假业务测试；测试聚焦领域不变量、持久化约束和 CRUD 数据路径。
+
+## ADR-0015：P1 明确未冻结契约与已记录结果的时间保护
+
+- 日期：2026-08-28
+- 状态：已接受
+- 决策：P1 当前明确记录以下仍未冻结的契约：`Task` 标题上限待定、删除采用硬删除、当前无并发版本，以及结果重录采用覆盖式更新。已有 `ResultRecord` 的 Task 禁止通过 `ChangeTime` 修改计划时间，并以稳定错误码 `task.time_spec.changed_after_result` 报告；`Rename` 不受该限制。应用层只透传该领域异常，失败不写入数据库。
+- 原因：已有结果属于历史事实，改写计划时间会使历史语义含混；稳定错误码让上层可识别失败，同时不把 UI 文案下沉到 Core。
+- 结果：P1 不根据当前时钟或时区判断“无结果但已过去”的任务是否可以改期；该判断留到 P2，届时结合用户时区与时钟规则定义。P1 不因此引入历史计划模型、并发控制或其他未来 Slice 实现。
