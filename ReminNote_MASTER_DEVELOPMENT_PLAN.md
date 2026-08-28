@@ -3029,6 +3029,29 @@ The user can realistically manage daily tasks locally.
 
 No real Reminder system yet.
 
+## Deferred UI polish — lightweight frosted detail dialog
+
+The Main App Anime detail dialog should later be refined into a low-distraction,
+lightweight overlay that visually floats above the current page instead of
+looking like a separate default desktop window.
+
+Desired direction:
+
+- translucent/frosted surface with restrained shadow and the existing ReminNote
+  accent system;
+- visually quiet chrome, clear hierarchy, and no duplicated border/corner lines;
+- preserve the current modal ownership, keyboard focus, close/cancel behavior,
+  DPI scaling, resizing limits, and content scrolling;
+- respect Windows reduced-transparency/high-contrast settings with an opaque,
+  accessible fallback;
+- keep the change presentation-only: no new persistence, networking, Anime
+  provider, or domain semantics.
+
+This is a deferred P2/P3 visual-polish item, not a P1/P0 acceptance blocker.
+Manual acceptance must confirm that the dialog remains readable, does not
+silently lose focus, does not cover or trap the parent window unexpectedly, and
+can be opened/closed repeatedly at compact, standard, and high-DPI sizes.
+
 ---
 
 # P2.5 — Bootstrap + Agent + IPC + Single Writer migration
