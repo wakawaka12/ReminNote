@@ -15,9 +15,12 @@ public sealed class Task
         TimeSpec timeSpec,
         Instant createdAt,
         Instant updatedAt,
-        TaskResultRecord? resultRecord)
+        TaskResultRecord? resultRecord,
+        int sortOrder,
+        TaskId? continuedFromTaskId,
+        bool enforceTitleLength)
     {
-        ValidateTitle(title);
+        ValidateTitle(title, enforceTitleLength);
         if (timeSpec is null)
         {
             throw new DomainValidationException(new DomainValidationError(
@@ -57,12 +60,30 @@ public sealed class Task
                 nameof(updatedAt)));
         }
 
+        if (sortOrder < 0)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.sort_order.invalid",
+                "Task sort order cannot be negative.",
+                nameof(sortOrder)));
+        }
+
+        if (continuedFromTaskId == id)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.continuation.self_reference",
+                "A task cannot continue itself.",
+                nameof(continuedFromTaskId)));
+        }
+
         Id = id;
         Title = title.Trim();
         TimeSpec = timeSpec;
         CreatedAt = createdAt;
         UpdatedAt = updatedAt;
         ResultRecord = resultRecord;
+        SortOrder = sortOrder;
+        ContinuedFromTaskId = continuedFromTaskId;
     }
 
     public TaskId Id { get; }
@@ -86,13 +107,72 @@ public sealed class Task
     public Instant? RecordedAt => ResultRecord?.RecordedAt;
 
     /// <summary>
+    /// Persistent ordering within the same Today date/group. It never changes
+    /// the planning time or moves a task between groups.
+    /// </summary>
+    public int SortOrder { get; private set; }
+
+    public TaskId? ContinuedFromTaskId { get; }
+
+    /// <summary>
     /// Creates a new task with a UUID v7 identity.
     /// </summary>
-    public static Task Create(string title, TimeSpec timeSpec, Instant createdAt) =>
-        Create(TaskId.New(), title, timeSpec, createdAt);
+    public static Task Create(
+        string title,
+        TimeSpec timeSpec,
+        Instant createdAt,
+        int sortOrder = 0) =>
+        Create(TaskId.New(), title, timeSpec, createdAt, sortOrder);
 
-    public static Task Create(TaskId id, string title, TimeSpec timeSpec, Instant createdAt) =>
-        new(id, title, timeSpec, createdAt, createdAt, resultRecord: null);
+    public static Task Create(
+        TaskId id,
+        string title,
+        TimeSpec timeSpec,
+        Instant createdAt,
+        int sortOrder = 0) =>
+        new(
+            id,
+            title,
+            timeSpec,
+            createdAt,
+            createdAt,
+            resultRecord: null,
+            sortOrder,
+            continuedFromTaskId: null,
+            enforceTitleLength: true);
+
+    /// <summary>
+    /// Creates the only supported kind of continuation: a new plan sourced
+    /// from a RANGE task whose current result is PARTIAL.
+    /// </summary>
+    public static Task CreateContinuation(
+        Task source,
+        string title,
+        TimeSpec timeSpec,
+        Instant createdAt,
+        int sortOrder = 0)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        if (source.Result != TaskResult.PARTIAL || source.TimeSpec is not TimeRangeSpec)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.continuation.requires_partial",
+                "Only a RANGE task with a PARTIAL result can continue.",
+                nameof(source)));
+        }
+
+        return new(
+            TaskId.New(),
+            title,
+            timeSpec,
+            createdAt,
+            createdAt,
+            resultRecord: null,
+            sortOrder,
+            source.Id,
+            enforceTitleLength: true);
+    }
 
     /// <summary>
     /// Rehydrates an aggregate without changing the stored identity or
@@ -104,14 +184,40 @@ public sealed class Task
         TimeSpec timeSpec,
         Instant createdAt,
         Instant updatedAt,
-        TaskResultRecord? resultRecord) =>
-        new(id, title, timeSpec, createdAt, updatedAt, resultRecord);
+        TaskResultRecord? resultRecord,
+        int sortOrder = 0,
+        TaskId? continuedFromTaskId = null) =>
+        new(
+            id,
+            title,
+            timeSpec,
+            createdAt,
+            updatedAt,
+            resultRecord,
+            sortOrder,
+            continuedFromTaskId,
+            // P1 did not have a title-length rule. Rehydration therefore
+            // preserves legacy titles, while every new/renamed value still
+            // enforces the current 500-character limit.
+            enforceTitleLength: false);
 
     public void Rename(string title, Instant changedAt)
     {
-        ValidateTitle(title);
+        // P1 had no title-length rule. A legacy title may therefore be
+        // longer than 500 characters; keeping that exact value is not a new
+        // title write and must remain possible for later plan/result changes.
+        // Any genuinely new or changed title still follows the P2 limit.
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            ValidateTitle(title);
+        }
+
+        var normalizedTitle = title.Trim();
+        var isUnchangedLegacyTitle = normalizedTitle.Length > 500 &&
+            string.Equals(normalizedTitle, Title, StringComparison.Ordinal);
+        ValidateTitle(title, enforceLength: !isUnchangedLegacyTitle);
         ValidateChangedAt(changedAt);
-        Title = title.Trim();
+        Title = normalizedTitle;
         Touch(changedAt);
     }
 
@@ -151,21 +257,46 @@ public sealed class Task
         Touch(recordedAt);
     }
 
+    public void SetSortOrder(int sortOrder, Instant changedAt)
+    {
+        if (sortOrder < 0)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.sort_order.invalid",
+                "Task sort order cannot be negative.",
+                nameof(sortOrder)));
+        }
+
+        ValidateChangedAt(changedAt);
+        SortOrder = sortOrder;
+        Touch(changedAt);
+    }
+
     public TaskSnapshot ToSnapshot() => new(
         Id,
         Title,
         TimeSpec,
         ResultRecord,
         CreatedAt,
-        UpdatedAt);
+        UpdatedAt,
+        SortOrder,
+        ContinuedFromTaskId);
 
-    private static void ValidateTitle(string title)
+    private static void ValidateTitle(string title, bool enforceLength = true)
     {
         if (string.IsNullOrWhiteSpace(title))
         {
             throw new DomainValidationException(new DomainValidationError(
                 "task.title.required",
                 "Task title is required.",
+                nameof(title)));
+        }
+
+        if (enforceLength && title.Trim().Length > 500)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.title.too_long",
+                "Task title cannot exceed 500 characters.",
                 nameof(title)));
         }
     }
@@ -224,7 +355,9 @@ public sealed record TaskSnapshot(
     TimeSpec TimeSpec,
     TaskResultRecord? ResultRecord,
     Instant CreatedAt,
-    Instant UpdatedAt)
+    Instant UpdatedAt,
+    int SortOrder = 0,
+    TaskId? ContinuedFromTaskId = null)
 {
     public TaskTimeType TimeType => TimeSpec.Type;
 

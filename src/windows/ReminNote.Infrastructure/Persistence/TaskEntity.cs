@@ -36,6 +36,10 @@ public sealed class TaskEntity
 
     public Instant UpdatedAt { get; set; }
 
+    public int SortOrder { get; set; }
+
+    public Guid? ContinuedFromTaskId { get; set; }
+
     public static TaskEntity FromDomain(TaskAggregate task)
     {
         ArgumentNullException.ThrowIfNull(task);
@@ -50,7 +54,9 @@ public sealed class TaskEntity
             UpdatedAt = task.UpdatedAt,
             Result = task.Result,
             ResultRecordedAt = task.ResultRecord?.RecordedAt,
-            ResultNote = task.ResultRecord?.Note
+            ResultNote = task.ResultRecord?.Note,
+            SortOrder = task.SortOrder,
+            ContinuedFromTaskId = task.ContinuedFromTaskId?.Value
         };
 
         switch (task.TimeSpec)
@@ -88,6 +94,8 @@ public sealed class TaskEntity
         ResultNote = updated.ResultNote;
         CreatedAt = updated.CreatedAt;
         UpdatedAt = updated.UpdatedAt;
+        SortOrder = updated.SortOrder;
+        ContinuedFromTaskId = updated.ContinuedFromTaskId;
     }
 
     public TaskAggregate ToDomain()
@@ -117,6 +125,10 @@ public sealed class TaskEntity
             timeSpec,
             CreatedAt,
             UpdatedAt,
-            resultRecord);
+            resultRecord,
+            SortOrder,
+            ContinuedFromTaskId is { } continuedFromTaskId
+                ? TaskId.From(continuedFromTaskId)
+                : null);
     }
 }

@@ -14,10 +14,27 @@ public static class ReminNoteDatabase
 
     public static string GetDevelopmentDatabasePath(string repositoryRoot)
     {
+        var root = ValidateRepositoryRoot(repositoryRoot);
+        return Path.Combine(root, ".devdata", "reminnote.sqlite");
+    }
+
+    public static string ValidateRepositoryRoot(string repositoryRoot)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(repositoryRoot);
 
         var root = Path.GetFullPath(repositoryRoot);
-        return Path.Combine(root, ".devdata", "reminnote.sqlite");
+        var hasGitMetadata = Directory.Exists(Path.Combine(root, ".git")) ||
+            File.Exists(Path.Combine(root, ".git"));
+        if (!Directory.Exists(root) ||
+            !hasGitMetadata ||
+            !File.Exists(Path.Combine(root, "ReminNote.sln")))
+        {
+            throw new ArgumentException(
+                $"Repository root must contain .git and ReminNote.sln: {root}",
+                nameof(repositoryRoot));
+        }
+
+        return root;
     }
 
     public static string CreateDevelopmentConnectionString(string repositoryRoot)

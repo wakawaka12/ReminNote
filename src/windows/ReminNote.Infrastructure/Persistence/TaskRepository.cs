@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using ReminNote.Core;
 using ReminNote.Core.Application;
 using ReminNote.Core.Tasks;
 
@@ -32,52 +33,142 @@ public sealed class TaskRepository : ITaskRepository
         return entity?.ToDomain();
     }
 
+    public ValueTask AddAsync(
+        TaskAggregate task,
+        CancellationToken cancellationToken = default) =>
+        AddAsync(task, history: null, cancellationToken: cancellationToken);
+
     public async ValueTask AddAsync(
         TaskAggregate task,
+        TaskHistoryRecord? history,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(task);
+        var taskEntity = TaskEntity.FromDomain(task);
+        var historyEntity = CreateHistoryEntity(task, history);
 
-        await dbContext.Tasks
-            .AddAsync(TaskEntity.FromDomain(task), cancellationToken)
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await dbContext.Tasks
+                .AddAsync(taskEntity, cancellationToken)
+                .ConfigureAwait(false);
+            if (historyEntity is not null)
+            {
+                await dbContext.TaskHistory
+                    .AddAsync(historyEntity, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // The transaction is disposed below and rolls back if commit did
+            // not complete. Clear tracked state as well, so a caller that
+            // reuses this unit of work cannot accidentally save a failed
+            // aggregate on a later call.
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
     }
+
+    public ValueTask UpdateAsync(
+        TaskAggregate task,
+        CancellationToken cancellationToken = default) =>
+        UpdateAsync(task, history: null, cancellationToken: cancellationToken);
 
     public async ValueTask UpdateAsync(
         TaskAggregate task,
+        TaskHistoryRecord? history,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(task);
+        var historyEntity = CreateHistoryEntity(task, history);
 
-        var entity = await dbContext.Tasks
-            .SingleOrDefaultAsync(storedTask => storedTask.Id == task.Id.Value, cancellationToken)
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        if (entity is null)
+        try
         {
-            throw new KeyNotFoundException($"Task '{task.Id}' does not exist.");
-        }
+            var entity = await dbContext.Tasks
+                .SingleOrDefaultAsync(storedTask => storedTask.Id == task.Id.Value, cancellationToken)
+                .ConfigureAwait(false);
 
-        entity.Apply(task);
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            if (entity is null)
+            {
+                throw new KeyNotFoundException($"Task '{task.Id}' does not exist.");
+            }
+
+            entity.Apply(task);
+            if (historyEntity is not null)
+            {
+                await dbContext.TaskHistory
+                    .AddAsync(historyEntity, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
     }
 
     public async ValueTask<bool> DeleteAsync(
         TaskId id,
         CancellationToken cancellationToken = default)
     {
-        var entity = await dbContext.Tasks
-            .SingleOrDefaultAsync(task => task.Id == id.Value, cancellationToken)
+        await using var transaction = await dbContext.Database
+            .BeginTransactionAsync(cancellationToken)
             .ConfigureAwait(false);
-
-        if (entity is null)
+        try
         {
-            return false;
+            var entity = await dbContext.Tasks
+                .SingleOrDefaultAsync(task => task.Id == id.Value, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (entity is null)
+            {
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return false;
+            }
+
+            dbContext.Tasks.Remove(entity);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            dbContext.ChangeTracker.Clear();
+            throw;
+        }
+    }
+
+    private static TaskHistoryEntity? CreateHistoryEntity(
+        TaskAggregate task,
+        TaskHistoryRecord? history)
+    {
+        if (history is null)
+        {
+            return null;
         }
 
-        dbContext.Tasks.Remove(entity);
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        return true;
+        if (history.TaskId != task.Id)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.history.task_id_mismatch",
+                "Task history must belong to the persisted task.",
+                nameof(history)));
+        }
+
+        return TaskHistoryEntity.FromRecord(history);
     }
 }

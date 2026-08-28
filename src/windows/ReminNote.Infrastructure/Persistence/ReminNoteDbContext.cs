@@ -25,6 +25,10 @@ public sealed class ReminNoteDbContext : DbContext
 
     public DbSet<TaskEntity> Tasks => Set<TaskEntity>();
 
+    public DbSet<TaskHistoryEntity> TaskHistory => Set<TaskHistoryEntity>();
+
+    public DbSet<AppSettingsEntity> AppSettings => Set<AppSettingsEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ReminNoteDbContext).Assembly);

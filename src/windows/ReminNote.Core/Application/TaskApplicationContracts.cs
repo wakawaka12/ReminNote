@@ -12,14 +12,28 @@ public interface ITaskRepository
 {
     ValueTask<DomainTask?> FindAsync(TaskId id, CancellationToken cancellationToken = default);
 
-    ValueTask AddAsync(DomainTask task, CancellationToken cancellationToken = default);
+    ValueTask AddAsync(
+        DomainTask task,
+        CancellationToken cancellationToken = default);
 
-    ValueTask UpdateAsync(DomainTask task, CancellationToken cancellationToken = default);
+    ValueTask AddAsync(
+        DomainTask task,
+        TaskHistoryRecord? history,
+        CancellationToken cancellationToken = default);
+
+    ValueTask UpdateAsync(
+        DomainTask task,
+        CancellationToken cancellationToken = default);
+
+    ValueTask UpdateAsync(
+        DomainTask task,
+        TaskHistoryRecord? history,
+        CancellationToken cancellationToken = default);
 
     ValueTask<bool> DeleteAsync(TaskId id, CancellationToken cancellationToken = default);
 }
 
-public sealed record TaskQuery(LocalDate PlanDate);
+public sealed record TaskQuery(LocalDate? PlanDate = null);
 
 public interface ITaskQueryService
 {
@@ -27,6 +41,106 @@ public interface ITaskQueryService
 
     IAsyncEnumerable<TaskSnapshot> ListAsync(
         TaskQuery query,
+        CancellationToken cancellationToken = default);
+}
+
+public enum TaskHistoryKind
+{
+    ResultRecorded,
+    PlanChanged,
+    Continued,
+    SortOrderChanged,
+    ImportedResult
+}
+
+/// <summary>
+/// An immutable Task snapshot captured at a meaningful P2 change boundary.
+/// For PlanChanged the snapshot is the old plan; for ResultRecorded it is the
+/// new recorded result. This keeps both facts queryable without overwriting
+/// the current Task row.
+/// </summary>
+public sealed record TaskHistoryRecord
+{
+    public TaskHistoryRecord(
+        TaskId taskId,
+        TaskHistoryKind kind,
+        Instant occurredAt,
+        TaskSnapshot snapshot,
+        TaskId? relatedTaskId = null)
+    {
+        _ = TaskId.From(taskId.Value);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        _ = TaskId.From(snapshot.Id.Value);
+
+        if (taskId != snapshot.Id)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.history.task_id_mismatch",
+                "Task history must identify the same task as its snapshot.",
+                nameof(taskId)));
+        }
+
+        if (!Enum.IsDefined(kind))
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.history.kind.invalid",
+                "Task history kind is not supported.",
+                nameof(kind)));
+        }
+
+        if (occurredAt < snapshot.CreatedAt)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.history.occurred_at.before_created_at",
+                "Task history cannot occur before task creation.",
+                nameof(occurredAt)));
+        }
+
+        if (kind == TaskHistoryKind.Continued)
+        {
+            if (relatedTaskId is not { } relatedId || snapshot.ContinuedFromTaskId != relatedId)
+            {
+                throw new DomainValidationException(new DomainValidationError(
+                    "task.history.continuation_relation.invalid",
+                    "A continuation history entry must point to its source task.",
+                    nameof(relatedTaskId)));
+            }
+        }
+        else if (relatedTaskId is not null)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "task.history.related_task.unexpected",
+                "Only continuation history may reference a related task.",
+                nameof(relatedTaskId)));
+        }
+
+        if (relatedTaskId is { } validRelatedId)
+        {
+            _ = TaskId.From(validRelatedId.Value);
+        }
+
+        TaskId = taskId;
+        Kind = kind;
+        OccurredAt = occurredAt;
+        Snapshot = snapshot;
+        RelatedTaskId = relatedTaskId;
+    }
+
+    public TaskId TaskId { get; }
+
+    public TaskHistoryKind Kind { get; }
+
+    public Instant OccurredAt { get; }
+
+    public TaskSnapshot Snapshot { get; }
+
+    public TaskId? RelatedTaskId { get; }
+}
+
+public interface ITaskHistoryQueryService
+{
+    IAsyncEnumerable<TaskHistoryRecord> ListAsync(
+        TaskId taskId,
         CancellationToken cancellationToken = default);
 }
 
@@ -38,6 +152,43 @@ public sealed record RecordTaskResultCommand(
     TaskId TaskId,
     TaskResult Result,
     string? Note = null);
+
+public sealed record ReorderTaskCommand(TaskId TaskId, int SortOrder);
+
+public sealed record ContinueTaskCommand(
+    TaskId SourceTaskId,
+    string Title,
+    TimeSpec TimeSpec);
+
+public interface ITaskWriteGate
+{
+    IDisposable Enter(CancellationToken cancellationToken = default);
+}
+
+public sealed class TaskWriteGateBusyException : InvalidOperationException
+{
+    public TaskWriteGateBusyException()
+        : base("Task write gate is busy.")
+    {
+    }
+
+    public const string Code = "task.write_gate.busy";
+}
+
+public sealed class NoopTaskWriteGate : ITaskWriteGate
+{
+    public IDisposable Enter(CancellationToken cancellationToken = default) =>
+        NoopLease.Instance;
+
+    private sealed class NoopLease : IDisposable
+    {
+        public static readonly NoopLease Instance = new();
+
+        public void Dispose()
+        {
+        }
+    }
+}
 
 /// <summary>
 /// Explicit application boundary for Task CRUD and result recording. A
@@ -60,5 +211,13 @@ public interface ITaskApplicationService
 
     ValueTask<bool> DeleteAsync(
         TaskId taskId,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<TaskSnapshot?> ReorderAsync(
+        ReorderTaskCommand command,
+        CancellationToken cancellationToken = default);
+
+    ValueTask<TaskSnapshot?> ContinueAsync(
+        ContinueTaskCommand command,
         CancellationToken cancellationToken = default);
 }

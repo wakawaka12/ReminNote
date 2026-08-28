@@ -35,6 +35,12 @@ internal sealed class SqliteTestDatabase : IDisposable
         context.Database.Migrate();
     }
 
+    public void MigrateToInitial()
+    {
+        using var context = CreateContext();
+        context.Database.Migrate("20260828025922_InitialTaskSchema");
+    }
+
     public void Dispose()
     {
         Connection.Dispose();
