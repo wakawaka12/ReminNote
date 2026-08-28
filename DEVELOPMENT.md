@@ -35,13 +35,15 @@ SDK 版本由 `global.json` 固定到 .NET 10.0.100，并允许同一 LTS 小版
 
 P1 已在独立项目边界引入 Noda Time 3.3.3、EF Core/SQLite 10.0.11 和 xUnit v3 测试依赖；Core 仍不引用 EF Core、WPF、Windows API 或 Serilog。版本由 `Directory.Packages.props` 和各项目 lock 文件统一管理。
 
+P2 继续复用现有依赖，不新增 NuGet。Main 和 Widget 的真实 Task 写入必须经过同一 application service；`TaskWorkspace` 固定使用已验证仓库根目录下的 `.devdata/reminnote.sqlite`。完整本地读改写由命名跨进程 `Semaphore(1, 1)` 保护，超时失败且不覆盖原数据；P2.5 再迁移到 Agent/IPC 单写者。
+
 ## 数据安全
 
 Codex 和开发运行默认使用 `.devdata/`。不得读取生产数据库、真实 Token 或生产 Widget 配置来完成普通开发测试。`clean.ps1` 默认只清理 `src` 下的 `bin/obj`，只有显式传入 `-PurgeDevData` 才会清空开发数据。
 
 ## Git 规则
 
-允许本地编辑和验证；未经用户明确要求，不 commit、push、tag、release、rebase 或 force-push。
+允许本地编辑和验证；每完成一个可独立验收的大模块，必须创建一个说明完整的本地 Git commit，记录范围、验证证据和剩余风险。未经用户明确要求，不 push、tag、release、rebase 或 force-push。提交只表示本地检查点，不表示已经发布到 GitHub。
 
 ## P0-03 Design System
 
@@ -60,3 +62,7 @@ run.ps1 会在当前启动进程缺少 WINDIR 但存在 SystemRoot 时使用进�
 ## 并行开发
 
 独立 Codex 任务必须使用独立 Git worktree，并遵守 docs/PARALLEL_DEVELOPMENT.md 的文件所有权。功能分支可以本地 commit，但不得自行 push 或合并；公共文件由集成分支统一修改。
+
+P2 的窗口所有权、依赖关系和串行集成顺序以 `docs/slices/P2-00-integration-and-contract-brief.md` 为准。
+
+P2 大模块提交检查点依次至少包括：P2-00 契约与公共基础设施、Today/Parser 与持久化 loop、Main TODAY、Widget、最终测试/人工验收/报告。每个检查点必须在对应 Slice 中写明实际构建与测试命令、结果、人工测试步骤和失败判定；不得把未完成模块混入“已完成”提交，也不得把本地 commit 描述为 GitHub 已更新。当前 Main 的正式 live 组合和真实 SQLite Today 端到端读取仍须总成窗口复核。

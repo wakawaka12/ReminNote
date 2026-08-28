@@ -42,7 +42,24 @@ Core 必须独立于 WPF、EF Core、Serilog 和 Windows API。Infrastructure �
 
 P2.5 完成后，Agent 是唯一业务写入者；Main App 通过 IPC 发命令并使用安全的只读查询路径。
 
-当前 Slice 不加入 SQLite、Reminder、IPC、Anime 网络或业务领域实现。
+## P2 本地 Task loop 边界
+
+P2 在 Agent 迁移前允许 Main 和 Widget 通过同一组
+`ITaskApplicationService`、`ITaskQueryService` 与 `ITodayQueryService` 访问开发
+SQLite。`TaskWorkspace` 为每个操作创建自己的 DbContext；ViewModel 只能经过
+这些应用/查询边界，不得直接访问 EF entity、DbContext、SQL 或数据库路径。
+
+完整本地读-改-写由命名跨进程 `Semaphore(1, 1)` 保护，名称为
+`Local\\ReminNote.P2.TaskWrite`；等待超时返回稳定的 busy 失败，不静默覆盖原数据。
+实现使用 Semaphore 而不是线程归属型 Mutex，是因为写租约会跨越 `await` 并可能由
+后续 continuation 线程释放；这不改变 P2 的跨进程写保护契约。该本地写门仍只是
+P2 临时边界，P2.5 必须替换为 Agent 命令串行化、版本/冲突控制和 Change Journal。
+
+P2 的持久化对象限于 `task_history`、单例 `app_settings`、`tasks.sort_order` 和
+`tasks.continued_from_task_id`；不加入 Reminder、Anime、Sync、WAL、Change Journal、
+Agent 或 IPC。Widget 正式入口已接入 `TaskWorkspace` 和短周期 Today 刷新；Main 的
+live Today ViewModel 与应用契约已在树中，但当前 `App.xaml.cs` 和 Today DI 仍注册
+P0 Mock 路径，尚未完成正式 Main 的 live 组合，这属于总成审查项而不是新的业务边界。
 
 ## P0-03 Design System
 

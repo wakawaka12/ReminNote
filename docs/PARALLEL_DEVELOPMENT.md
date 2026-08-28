@@ -6,6 +6,8 @@
 
 分支：codex/p0-integration
 
+P2 继续由该总成窗口承接；P2 的具体所有权以 `docs/slices/P2-00-integration-and-contract-brief.md` 为准。
+
 独占公共文件：
 
 - App.xaml 与 App.xaml.cs
@@ -59,3 +61,19 @@ Widget 项目先使用项目文件直接构建；由集成窗口统一加入 Sol
 - 完成后把提交哈希、改动文件、验证结果、限制和集成请求报告给集成窗口。
 - 集成窗口按 TODAY、ANIME、Widget 顺序审查和本地合并。
 - P0-07 必须在三个功能分支合并后串行执行。
+
+## P2 窗口覆盖
+
+P2-01 至 P2-05 的窗口、分支和文件所有权如下；它们覆盖本文件中历史 P0 功能窗口的对应范围：
+
+| 窗口 | 分支 | 允许修改 |
+|---|---|---|
+| P2-01 Today Read Model | `codex/p2-01-today` | `src/windows/ReminNote.Core/Today/**`、Today query service、新增 Today 测试 |
+| P2-02 Parser | `codex/p2-02-parser` | `src/windows/ReminNote.Core/Tasks/Parsing/**`、新增 Parser 测试 |
+| P2-03 Main TODAY | `codex/p2-03-main-today` | `src/windows/ReminNote.Windows/Features/Today/**`、新增 Main Today 测试 |
+| P2-04 Widget | `codex/p2-04-widget` | `src/windows/ReminNote.Widget/**`、新增 Widget 测试 |
+| P2-05 验证 | `codex/p2-05-verification` | 新增测试矩阵、`docs/slices/P2-05-*`、P2 阶段报告 |
+
+P2-01/P2-02 和 P2-03/P2-04 可分别并行。公共契约、Solution、包锁、项目引用、migration、DI、根脚本、`App.xaml.cs`、`MainWindow.*`、根级文档以及所有 merge/build/test/人工验收由 P2-00 总成窗口串行处理。所有窗口只做本地提交，不得 push、merge、rebase、tag 或发布；不得修改 `reviews/`、`second-review/`。
+
+当前合并树已包含 P2 持久化、Today、Parser、Main Today ViewModel、Widget 和 Widget lock 文件的模块提交；Widget live 组合已在 Widget App 中，Main live ViewModel 的正式 App/DI 接线仍属于 P2-00 总成审查，不得用独立 ViewModel 测试代替。

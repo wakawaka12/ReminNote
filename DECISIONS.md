@@ -114,3 +114,22 @@
 - 决策：P1 当前明确记录以下仍未冻结的契约：`Task` 标题上限待定、删除采用硬删除、当前无并发版本，以及结果重录采用覆盖式更新。已有 `ResultRecord` 的 Task 禁止通过 `ChangeTime` 修改计划时间，并以稳定错误码 `task.time_spec.changed_after_result` 报告；`Rename` 不受该限制。应用层只透传该领域异常，失败不写入数据库。
 - 原因：已有结果属于历史事实，改写计划时间会使历史语义含混；稳定错误码让上层可识别失败，同时不把 UI 文案下沉到 Core。
 - 结果：P1 不根据当前时钟或时区判断“无结果但已过去”的任务是否可以改期；该判断留到 P2，届时结合用户时区与时钟规则定义。P1 不因此引入历史计划模型、并发控制或其他未来 Slice 实现。
+
+## ADR-0016：P2 Today/Parser/历史与本地双宿主写入边界
+
+- 日期：2026-08-28
+- 状态：已接受；实现核对中
+- 决策：P2 采用逻辑工作日查询。默认工作日边界为 `00:00`，以分钟配置并持久化到单行 `app_settings`；默认时区为系统时区，测试通过 Noda Time provider 注入固定时区和时钟。Today 读取逻辑今天和未完成历史计划，RANGE 结束无结果保持 `AWAITING RESULT` 并进入 `NEEDS REVIEW`，不自动记录 `MISSED`。
+- 决策：Quick Add 使用纯函数确定性 Parser，支持相对/显式日期、`HH:mm` 和时间范围；P2 暂不实现标签/优先级，遇到未支持保留语法拒绝而不静默丢弃；标题最大 500 字符，超长拒绝。P1 已存在的超长标题在重 hydration 时保留，不因迁移被截断。
+- 决策：当前结果状态仍覆盖式保存，但每次结果和计划改期都追加不可变 `task_history` 快照；排序变化和继续关系也记录快照。未来/尚未开始任务可直接改期，过时无结果任务的显式改期保留旧计划快照；已有结果任务不可改时间；`PARTIAL` 仅允许 RANGE，并创建新 Task，以 `continued_from_task_id` 关联原任务。
+- 决策：P2 migration 只扩展 Task history、工作日设置、排序和继续关系，不创建 Reminder/Anime/Sync 表。Main 与 Widget 通过相同 application/query service 访问开发库；完整本地读改写由跨进程写门保护，不引入 Agent/IPC。当前实现使用命名 `Semaphore(1, 1)` 而非线程归属型 Mutex，以允许跨 `await` 的租约安全释放；超时失败保持原数据。轮询刷新替代 Change Journal；P2.5 仍必须迁移到 Agent 单写者、版本/冲突控制和 Change Journal。
+- 原因：在 Agent 迁移前完成真实本地 Task loop，同时保留计划/结果历史、不把提醒语义混入 Task，并防止 Main/Widget 两个宿主复用 P1 读改写路径时发生静默覆盖。
+- 结果：P2 的公共契约、migration、项目引用、DI 和 lock 文件由总成窗口串行处理；P2 不提前实现 Reminder、Anime、Sync、Agent、IPC、WAL 或产品级恢复中心。Main live ViewModel 与 Widget live 入口虽已合并，正式 Main 的 `App.xaml.cs`/Today DI 接线仍需总成复核。
+
+## ADR-0017：大模块使用可审查的本地提交检查点
+
+- 日期：2026-08-28
+- 状态：已接受
+- 决策：P2 每完成一个可独立验收的大模块就创建一个本地 Git commit。提交前必须同步 Slice/报告记录实现范围、实际构建与测试证据、人工验收步骤、失败判定和剩余风险；提交只代表当前工作树的本地检查点。除非用户另行明确授权，任何检查点都不自动 push、tag、release 或合并到远端。
+- 原因：让长周期 P2 开发具备可回溯、可审查的边界，同时保留用户对公开 GitHub 时间点的明确控制；“最终严格开源”是项目发布方向，不自动改变当前发布授权。
+- 结果：P2-00、Today/Parser/持久化、Main TODAY、Widget、最终验收分别形成可识别的本地提交；若某模块验证失败，不得伪装为完成提交，必须在记录中写明失败并继续修复或报告阻塞。

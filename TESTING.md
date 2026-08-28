@@ -40,6 +40,24 @@
 
 每个后续 Slice 都必须补充具体的启动、点击、输入、预期结果和失败判定。
 
+## P2 自动化与手工验收边界
+
+P2 必须自动化验证 Noda Time 时区/工作日边界、Today 状态和分组、RANGE 跨午夜、确定性 Parser、结果/计划历史、改期保护、继续关系、排序、迁移保留和本地写门失败保持不变。WPF 布局仍以人工验收为主，不以 P0 Mock 交互代替真实 SQLite 证据。
+
+已合并 Slice 的独立证据必须和整仓证据分开记录：持久化边界曾以隔离 xUnit executable 77/77 通过，Today 查询以隔离 executable 75/75 通过，Main Today ViewModel 的裁剪测试为 6/6，Widget Slice 的 Release executable 为 82/82。上述证据覆盖各自边界，不代表正式 Main/Widget 双宿主已经完成总成验收；整仓门禁仍需在当前 lock 文件和 App/DI 组合上复跑。
+
+标准整仓门禁：
+
+```powershell
+./scripts/build.ps1 -Configuration Release
+./scripts/test.ps1 -Configuration Release
+./scripts/verify-p0-07.ps1
+```
+
+P2 手工验收必须在同一仓库根目录分别启动 Main 和 Widget，确认二者使用同一个 `.devdata/reminnote.sqlite`：Main 创建/刷新后 Widget 在短轮询窗口内显示，Widget 的 DONE、RANGE 结果和 Quick Add 写入后 Main 能读回；必须检查重启保留、RANGE NEEDS REVIEW、跨午夜、Parser 非法输入、migration 不删库、未知路径不写入，以及 `reviews/`/`second-review/` 未被修改。Widget 的 `--repo-root` 路径必须通过 `.git` 与 `ReminNote.sln` 校验；当前 Main 正式组合仍为总成复核项，未接上 live `TaskWorkspace` 前不得报告该双宿主步骤通过。
+
+自动化或手工失败包括：未来任务进入 Today、已完成历史任务误显示、跨午夜换日丢失或换组、RANGE 自动变 `MISSED`、Parser 静默丢弃标签/优先级、结果或计划历史缺失、已有结果仍可改时间、继续关系错误、排序改写计划时间、写门超时静默覆盖、ViewModel 直写数据库、migration 删除原库、Main 仍以 Mock 作为 P2 真实入口，或审查材料被修改。
+
 ## P0-07 自动验证补充
 
 ```powershell
