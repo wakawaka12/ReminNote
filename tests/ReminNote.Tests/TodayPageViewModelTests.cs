@@ -177,6 +177,138 @@ public sealed class TodayPageViewModelTests
         Assert.Equal(1, store.TodayQueryCount);
     }
 
+    [Fact]
+    public async SystemTask RescheduleUpdatesPlanThroughTheParserAndKeepsTheTitle()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "早晨练习",
+            TimeSpec.At(Workday, new LocalTime(9, 0)),
+            "0191f6a4-3b25-7c12-8d34-56789abcde17"));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var task = FindTask(viewModel, "早晨练习");
+
+        task.RescheduleCommand.Execute(null);
+
+        Assert.True(viewModel.IsRescheduleOpen);
+        Assert.Equal("早晨练习", viewModel.RescheduleTaskTitle);
+        Assert.Equal("2026-08-28", viewModel.RescheduleDateText);
+        Assert.Equal("09:00", viewModel.RescheduleTimeText);
+
+        viewModel.RescheduleDateText = "今天";
+        viewModel.RescheduleTimeText = "20:00";
+        await viewModel.ConfirmRescheduleCommand.ExecuteAsync(null);
+
+        var update = Assert.Single(store.UpdatedCommands);
+        var rescheduled = Assert.IsType<TimePointSpec>(update.TimeSpec);
+        Assert.Equal(Workday, rescheduled.LocalDate);
+        Assert.Equal(new LocalTime(20, 0), rescheduled.TimePoint);
+        Assert.Equal("早晨练习", update.Title);
+        Assert.False(viewModel.IsRescheduleOpen);
+        Assert.Contains("已改期", viewModel.InteractionMessage, StringComparison.Ordinal);
+        var refreshed = FindTask(viewModel, "早晨练习");
+        Assert.Equal("20:00", refreshed.TimeLabel);
+        Assert.Equal(2, store.TodayQueryCount);
+    }
+
+    [Fact]
+    public async SystemTask RescheduleRejectsCompletedTasksAndInvalidParserInput()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "非法输入任务",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde18"));
+        store.Add(CreateSnapshot(
+            "已完成任务",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde19",
+            TaskResult.COMPLETED));
+        var viewModel = new TodayPageViewModel(store, store, store);
+
+        var completed = FindTask(viewModel, "已完成任务");
+        Assert.False(completed.IsPlanActionsVisible);
+        completed.RescheduleCommand.Execute(null);
+        Assert.False(viewModel.IsRescheduleOpen);
+        Assert.Empty(store.UpdatedCommands);
+
+        var target = FindTask(viewModel, "非法输入任务");
+        target.RescheduleCommand.Execute(null);
+        Assert.True(viewModel.IsRescheduleOpen);
+        Assert.Equal(string.Empty, viewModel.RescheduleTimeText);
+
+        viewModel.RescheduleDateText = string.Empty;
+        await viewModel.ConfirmRescheduleCommand.ExecuteAsync(null);
+        Assert.Contains("task.parser.empty", viewModel.InteractionMessage, StringComparison.Ordinal);
+
+        viewModel.RescheduleDateText = "#2026-08-28";
+        await viewModel.ConfirmRescheduleCommand.ExecuteAsync(null);
+
+        Assert.Empty(store.UpdatedCommands);
+        Assert.True(viewModel.IsRescheduleOpen);
+        Assert.Contains("task.parser.reserved_syntax", viewModel.InteractionMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async SystemTask ReorderSwapsPersistedSortOrderWithinSameDateAndGroup()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "第一项",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde20"));
+        store.Add(CreateSnapshot(
+            "第二项",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde21",
+            sortOrder: 1));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var anytimeGroup = viewModel.Groups.Single(group => group.Group == UiTodayTaskGroup.Anytime);
+        Assert.Equal(["第一项", "第二项"], anytimeGroup.Items.Select(task => task.Title).ToArray());
+
+        var second = anytimeGroup.Items[1];
+        await second.MoveUpCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, store.ReorderCommands.Count);
+        Assert.Equal(0, store.Snapshots.Single(task => task.Title == "第二项").SortOrder);
+        Assert.Equal(1, store.Snapshots.Single(task => task.Title == "第一项").SortOrder);
+        Assert.Equal(["第二项", "第一项"], anytimeGroup.Items.Select(task => task.Title).ToArray());
+        Assert.Contains("分组内顺序", viewModel.InteractionMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async SystemTask ReorderRefusesCrossDateNeighborsAndGroupBoundaries()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "两天前",
+            TimeSpec.Anytime(Workday.PlusDays(-2)),
+            "0191f6a4-3b25-7c12-8d34-56789abcde22"));
+        store.Add(CreateSnapshot(
+            "昨天",
+            TimeSpec.Anytime(Workday.PlusDays(-1)),
+            "0191f6a4-3b25-7c12-8d34-56789abcde23"));
+        store.Add(CreateSnapshot(
+            "今天唯一",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde24"));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var overdueGroup = viewModel.Groups.Single(group => group.Group == UiTodayTaskGroup.Overdue);
+
+        var yesterday = overdueGroup.Items.Single(task => task.Title == "昨天");
+        await yesterday.MoveUpCommand.ExecuteAsync(null);
+
+        Assert.Empty(store.ReorderCommands);
+        Assert.Contains("排序仅在同一计划日期和分组内生效", viewModel.InteractionMessage, StringComparison.Ordinal);
+
+        var anytimeGroup = viewModel.Groups.Single(group => group.Group == UiTodayTaskGroup.Anytime);
+        var onlyToday = Assert.Single(anytimeGroup.Items);
+        await onlyToday.MoveDownCommand.ExecuteAsync(null);
+
+        Assert.Empty(store.ReorderCommands);
+        Assert.Contains("分组边界", viewModel.InteractionMessage, StringComparison.Ordinal);
+    }
+
     private static TodayTaskViewModel FindTask(
         TodayPageViewModel viewModel,
         string title) =>
@@ -188,13 +320,19 @@ public sealed class TodayPageViewModelTests
         string title,
         TimeSpec timeSpec,
         string id,
-        TaskResult? result = null)
+        TaskResult? result = null,
+        int sortOrder = 0)
     {
         var task = DomainTask.Create(
             TestValues.TaskId(id),
             title,
             timeSpec,
             Now.Plus(Duration.FromMinutes(-30)));
+        if (sortOrder != 0)
+        {
+            task.SetSortOrder(sortOrder, Now);
+        }
+
         if (result is { } taskResult)
         {
             task.RecordResult(taskResult, Now.Plus(Duration.FromMinutes(-5)));
@@ -226,7 +364,11 @@ public sealed class TodayPageViewModelTests
 
         public List<CreateTaskCommand> CreatedCommands { get; } = [];
 
+        public List<UpdateTaskCommand> UpdatedCommands { get; } = [];
+
         public List<RecordTaskResultCommand> RecordCommands { get; } = [];
+
+        public List<ReorderTaskCommand> ReorderCommands { get; } = [];
 
         public List<ContinueTaskCommand> ContinueCommands { get; } = [];
 
@@ -248,7 +390,8 @@ public sealed class TodayPageViewModelTests
                 .Where(task => task.TimeSpec.LocalDate <= workday)
                 .Where(task => task.Result is null || task.TimeSpec.LocalDate == workday)
                 .Select(task => TodayTaskClassifier.Classify(task, workday, localNow))
-                .OrderBy(task => task.Task.Id.ToString(), StringComparer.Ordinal)
+                .OrderBy(task => task.Task.SortOrder)
+                .ThenBy(task => task.Task.Id.ToString(), StringComparer.Ordinal)
                 .ToArray();
             return ValueTask.FromResult(new TodayReadModel(workday, readModels));
         }
@@ -270,6 +413,7 @@ public sealed class TodayPageViewModelTests
             CancellationToken cancellationToken = default)
         {
             ThrowIfWriteBlocked(cancellationToken);
+            UpdatedCommands.Add(command);
             if (!tasks.TryGetValue(command.TaskId, out var stored))
             {
                 return ValueTask.FromResult<TaskSnapshot?>(null);
@@ -314,6 +458,7 @@ public sealed class TodayPageViewModelTests
             CancellationToken cancellationToken = default)
         {
             ThrowIfWriteBlocked(cancellationToken);
+            ReorderCommands.Add(command);
             if (!tasks.TryGetValue(command.TaskId, out var stored))
             {
                 return ValueTask.FromResult<TaskSnapshot?>(null);

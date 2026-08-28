@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NodaTime;
+using NodaTime.Text;
 using ReminNote.Core;
 using ReminNote.Core.Application;
 using ReminNote.Core.Tasks;
@@ -30,6 +31,11 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     private const string LiveWriteFailedMessage = "Task 写入失败 · 原有 TODAY 数据保持不变";
     private const string LiveContinueUnavailableMessage = "只有已记录 PARTIAL 结果的 RANGE Task 才能继续";
     private const string LivePinNotPersistedMessage = "置顶状态仅当前页面有效 · P2 尚未持久化 PIN";
+    private const string LiveRescheduleOpenedMessage = "改期面板已打开 · 支持今天、明天、后天、yyyy-MM-dd 和 HH:mm[-HH:mm]";
+    private const string LiveRescheduleCancelledMessage = "已取消改期 · 原计划保持不变";
+    private const string LiveRescheduleUnavailableMessage = "只有未记录结果的 Task 才能改期";
+    private const string LiveReorderBoundaryMessage = "已到达分组边界 · 没有可交换的相邻任务";
+    private const string LiveReorderCrossDateMessage = "排序仅在同一计划日期和分组内生效 · 跨日期请使用改期";
 
     private static readonly TodayGroupDefinition[] GroupDefinitions =
     [
@@ -54,6 +60,10 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     private string _weekdayLabel = string.Empty;
     private TodayTaskViewModel? _selectedTask;
     private LocalDate _currentWorkday;
+    private bool _isRescheduleOpen;
+    private string _rescheduleDateText = string.Empty;
+    private string _rescheduleTimeText = string.Empty;
+    private TodayTaskViewModel? _rescheduleTarget;
 
     public TodayPageViewModel()
         : this(new TodayMockDataService())
@@ -160,6 +170,26 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         set => SetProperty(ref _quickAddText, value);
     }
 
+    public bool IsRescheduleOpen
+    {
+        get => _isRescheduleOpen;
+        private set => SetProperty(ref _isRescheduleOpen, value);
+    }
+
+    public string RescheduleTaskTitle => _rescheduleTarget?.Title ?? string.Empty;
+
+    public string RescheduleDateText
+    {
+        get => _rescheduleDateText;
+        set => SetProperty(ref _rescheduleDateText, value);
+    }
+
+    public string RescheduleTimeText
+    {
+        get => _rescheduleTimeText;
+        set => SetProperty(ref _rescheduleTimeText, value);
+    }
+
     public string InteractionMessage
     {
         get => _interactionMessage;
@@ -175,6 +205,10 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     public IRelayCommand OpenNeedsReviewCommand { get; private set; } = null!;
 
     public IAsyncRelayCommand RefreshCommand { get; private set; } = null!;
+
+    public IAsyncRelayCommand ConfirmRescheduleCommand { get; private set; } = null!;
+
+    public IRelayCommand CancelRescheduleCommand { get; private set; } = null!;
 
     /// <summary>
     /// Loads the real Today read model. The no-argument constructor remains a
@@ -201,6 +235,8 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         AddQuickTaskCommand = new AsyncRelayCommand(AddQuickTaskAsync);
         OpenNeedsReviewCommand = new RelayCommand(OpenNeedsReview);
         RefreshCommand = new AsyncRelayCommand(RefreshFromCommandAsync);
+        ConfirmRescheduleCommand = new AsyncRelayCommand(ConfirmRescheduleAsync);
+        CancelRescheduleCommand = new RelayCommand(CancelReschedule);
     }
 
     private void LoadInitialReadModel()
@@ -290,7 +326,10 @@ public sealed class TodayPageViewModel : ShellPageViewModel
             ToggleTaskPin,
             RecordPartialResultAsync,
             RecordMissedResultAsync,
-            ContinueTaskAsync);
+            ContinueTaskAsync,
+            static _ => { },
+            static _ => System.Threading.Tasks.Task.CompletedTask,
+            static _ => System.Threading.Tasks.Task.CompletedTask);
 
     private TodayTaskViewModel CreateTask(TodayTaskReadModel task) =>
         new(
@@ -300,11 +339,15 @@ public sealed class TodayPageViewModel : ShellPageViewModel
             ToggleTaskPin,
             RecordPartialResultAsync,
             RecordMissedResultAsync,
-            ContinueTaskAsync);
+            ContinueTaskAsync,
+            OpenRescheduleFor,
+            MoveTaskUpAsync,
+            MoveTaskDownAsync);
 
     private void OpenQuickAdd()
     {
         IsQuickAddOpen = true;
+        IsRescheduleOpen = false;
         InteractionMessage = _isLive
             ? LiveQuickAddOpenedMessage
             : UiText.Get(UiText.TodayInteractionQuickAddOpenedKey);
@@ -327,10 +370,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel
             return;
         }
 
-        var logicalToday = _currentWorkday == default
-            ? new WorkdayService(DateTimeZoneProviders.Tzdb.GetSystemDefault(), LocalTime.Midnight)
-                .GetWorkday(_clock.GetCurrentInstant())
-            : _currentWorkday;
+        var logicalToday = ResolveLogicalToday();
         var parsed = TaskParser.Parse(QuickAddText, logicalToday);
         if (!parsed.IsSuccess)
         {
@@ -422,6 +462,234 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         NotifySummaryChanged();
         QuickTaskAdded?.Invoke(task);
     }
+
+    private LocalDate ResolveLogicalToday() => _currentWorkday == default
+        ? new WorkdayService(DateTimeZoneProviders.Tzdb.GetSystemDefault(), LocalTime.Midnight)
+            .GetWorkday(_clock.GetCurrentInstant())
+        : _currentWorkday;
+
+    private void OpenRescheduleFor(TodayTaskViewModel task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        if (!_isLive || task.DomainTaskId is null || task.IsCompleted)
+        {
+            if (_isLive)
+            {
+                InteractionMessage = LiveRescheduleUnavailableMessage;
+            }
+
+            return;
+        }
+
+        _rescheduleTarget = task;
+        RescheduleDateText = FormatRescheduleDate(task.PlanDate!.Value);
+        RescheduleTimeText = FormatRescheduleTime(task.LiveTimeSpec);
+        IsQuickAddOpen = false;
+        IsRescheduleOpen = true;
+        OnPropertyChanged(nameof(RescheduleTaskTitle));
+        InteractionMessage = LiveRescheduleOpenedMessage;
+    }
+
+    private async System.Threading.Tasks.Task ConfirmRescheduleAsync()
+    {
+        if (!_isLive)
+        {
+            IsRescheduleOpen = false;
+            return;
+        }
+
+        if (_rescheduleTarget is not { } target || target.DomainTaskId is not { } taskId)
+        {
+            IsRescheduleOpen = false;
+            return;
+        }
+
+        var datePart = RescheduleDateText.Trim();
+        var timePart = RescheduleTimeText.Trim();
+        if (datePart.Length == 0 && timePart.Length == 0)
+        {
+            InteractionMessage = "无法改期：task.parser.empty";
+            return;
+        }
+
+        var combined = timePart.Length == 0 ? datePart : $"{datePart} {timePart}";
+        var parsed = TaskParser.Parse($"{combined} 改期占位", ResolveLogicalToday());
+        if (!parsed.IsSuccess)
+        {
+            InteractionMessage = $"无法改期：{parsed.Errors[0].Code}";
+            return;
+        }
+
+        TaskSnapshot? updated;
+        try
+        {
+            updated = await _taskApplicationService!
+                .UpdateAsync(new UpdateTaskCommand(taskId, target.Title, parsed.Value!.TimeSpec))
+                .ConfigureAwait(true);
+        }
+        catch (DomainValidationException exception)
+        {
+            InteractionMessage = $"无法改期：{exception.Message}";
+            return;
+        }
+        catch (TaskWriteGateBusyException)
+        {
+            InteractionMessage = LiveWriteFailedMessage;
+            return;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            InteractionMessage = LiveWriteFailedMessage;
+            return;
+        }
+
+        if (updated is null)
+        {
+            InteractionMessage = "无法改期：Task 不存在，TODAY 数据未改变";
+            return;
+        }
+
+        CancelRescheduleCore();
+        try
+        {
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            InteractionMessage = LiveWriteRefreshFailedMessage;
+            return;
+        }
+
+        InteractionMessage = $"已改期「{updated.Title}」· 旧计划已保存到 task_history";
+    }
+
+    private void CancelReschedule()
+    {
+        CancelRescheduleCore();
+        InteractionMessage = _isLive
+            ? LiveRescheduleCancelledMessage
+            : UiText.Get(UiText.TodayInteractionLoadedKey);
+    }
+
+    private void CancelRescheduleCore()
+    {
+        _rescheduleTarget = null;
+        RescheduleDateText = string.Empty;
+        RescheduleTimeText = string.Empty;
+        IsRescheduleOpen = false;
+        OnPropertyChanged(nameof(RescheduleTaskTitle));
+    }
+
+    private System.Threading.Tasks.Task MoveTaskUpAsync(TodayTaskViewModel task) =>
+        MoveTaskWithinGroupAsync(task, -1);
+
+    private System.Threading.Tasks.Task MoveTaskDownAsync(TodayTaskViewModel task) =>
+        MoveTaskWithinGroupAsync(task, 1);
+
+    private async System.Threading.Tasks.Task MoveTaskWithinGroupAsync(
+        TodayTaskViewModel task,
+        int offset)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        if (!_isLive || task.DomainTaskId is not { } taskId || task.PlanDate is not { } planDate)
+        {
+            return;
+        }
+
+        var group = Groups.FirstOrDefault(candidate => candidate.Group == task.CurrentGroup);
+        if (group is null)
+        {
+            return;
+        }
+
+        var items = group.Items.ToList();
+        var index = items.FindIndex(candidate => ReferenceEquals(candidate, task));
+        var neighborIndex = index + offset;
+        if (index < 0 || neighborIndex < 0 || neighborIndex >= items.Count)
+        {
+            InteractionMessage = LiveReorderBoundaryMessage;
+            return;
+        }
+
+        var neighbor = items[neighborIndex];
+        if (neighbor.DomainTaskId is not { } neighborId ||
+            neighbor.PlanDate is not { } neighborPlanDate ||
+            neighborPlanDate != planDate)
+        {
+            InteractionMessage = LiveReorderCrossDateMessage;
+            return;
+        }
+
+        try
+        {
+            var first = await _taskApplicationService!
+                .ReorderAsync(new ReorderTaskCommand(taskId, neighbor.SortOrder))
+                .ConfigureAwait(true);
+            if (first is null)
+            {
+                InteractionMessage = "无法排序：Task 不存在，TODAY 数据未改变";
+                return;
+            }
+
+            var second = await _taskApplicationService!
+                .ReorderAsync(new ReorderTaskCommand(neighborId, task.SortOrder))
+                .ConfigureAwait(true);
+            if (second is null)
+            {
+                InteractionMessage = "无法排序：相邻 Task 不存在，TODAY 数据未改变";
+                return;
+            }
+        }
+        catch (TaskWriteGateBusyException)
+        {
+            InteractionMessage = LiveWriteFailedMessage;
+            return;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            InteractionMessage = LiveWriteFailedMessage;
+            return;
+        }
+
+        try
+        {
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            InteractionMessage = LiveWriteRefreshFailedMessage;
+            return;
+        }
+
+        InteractionMessage = $"已调整「{task.Title}」的分组内顺序 · 仅影响同日期同分组排序";
+    }
+
+    private static string FormatRescheduleDate(LocalDate date) =>
+        LocalDatePattern.CreateWithInvariantCulture("uuuu-MM-dd").Format(date);
+
+    private static string FormatRescheduleTime(TimeSpec? timeSpec) => timeSpec switch
+    {
+        TimePointSpec point => $"{point.TimePoint.Hour:00}:{point.TimePoint.Minute:00}",
+        TimeRangeSpec range => $"{range.RangeStart.Hour:00}:{range.RangeStart.Minute:00}" +
+            $"-{range.RangeEnd.Hour:00}:{range.RangeEnd.Minute:00}",
+        _ => string.Empty
+    };
 
     private void OpenNeedsReview()
     {
@@ -770,10 +1038,13 @@ public sealed class TodayTaskViewModel : ObservableObject
         Action<TodayTaskViewModel> togglePin,
         Func<TodayTaskViewModel, System.Threading.Tasks.Task> recordPartial,
         Func<TodayTaskViewModel, System.Threading.Tasks.Task> recordMissed,
-        Func<TodayTaskViewModel, System.Threading.Tasks.Task> continueTask)
+        Func<TodayTaskViewModel, System.Threading.Tasks.Task> continueTask,
+        Action<TodayTaskViewModel> reschedule,
+        Func<TodayTaskViewModel, System.Threading.Tasks.Task> moveUp,
+        Func<TodayTaskViewModel, System.Threading.Tasks.Task> moveDown)
     {
         ArgumentNullException.ThrowIfNull(mockTask);
-        InitializeCallbacks(select, toggleCompletion, togglePin, recordPartial, recordMissed, continueTask);
+        InitializeCallbacks(select, toggleCompletion, togglePin, recordPartial, recordMissed, continueTask, reschedule, moveUp, moveDown);
 
         _isLive = false;
         Id = mockTask.Id;
@@ -797,10 +1068,13 @@ public sealed class TodayTaskViewModel : ObservableObject
         Action<TodayTaskViewModel> togglePin,
         Func<TodayTaskViewModel, System.Threading.Tasks.Task> recordPartial,
         Func<TodayTaskViewModel, System.Threading.Tasks.Task> recordMissed,
-        Func<TodayTaskViewModel, System.Threading.Tasks.Task> continueTask)
+        Func<TodayTaskViewModel, System.Threading.Tasks.Task> continueTask,
+        Action<TodayTaskViewModel> reschedule,
+        Func<TodayTaskViewModel, System.Threading.Tasks.Task> moveUp,
+        Func<TodayTaskViewModel, System.Threading.Tasks.Task> moveDown)
     {
         ArgumentNullException.ThrowIfNull(readModel);
-        InitializeCallbacks(select, toggleCompletion, togglePin, recordPartial, recordMissed, continueTask);
+        InitializeCallbacks(select, toggleCompletion, togglePin, recordPartial, recordMissed, continueTask, reschedule, moveUp, moveDown);
 
         _isLive = true;
         Id = readModel.Task.Id.ToString();
@@ -811,6 +1085,9 @@ public sealed class TodayTaskViewModel : ObservableObject
         _liveStatus = readModel.Status;
         _liveResult = readModel.Task.Result;
         _isContinuation = readModel.Task.ContinuedFromTaskId is not null;
+        PlanDate = readModel.Task.TimeSpec.LocalDate;
+        LiveTimeSpec = readModel.Task.TimeSpec;
+        SortOrder = readModel.Task.SortOrder;
         PriorityLabel = "NORMAL";
         CategoryLabel = "Task";
         TimeShapeLabel = readModel.Task.TimeType.ToString();
@@ -822,6 +1099,12 @@ public sealed class TodayTaskViewModel : ObservableObject
     public string Id { get; }
 
     public TaskId? DomainTaskId { get; }
+
+    public LocalDate? PlanDate { get; }
+
+    public TimeSpec? LiveTimeSpec { get; }
+
+    public int SortOrder { get; }
 
     public string Title { get; }
 
@@ -924,6 +1207,14 @@ public sealed class TodayTaskViewModel : ObservableObject
 
     public string ContinueActionLabel => _isLive ? "继续 Task" : "继续";
 
+    public string RescheduleActionLabel => _isLive ? "改期" : string.Empty;
+
+    public string MoveUpActionLabel => _isLive ? "上移" : string.Empty;
+
+    public string MoveDownActionLabel => _isLive ? "下移" : string.Empty;
+
+    public bool IsPlanActionsVisible => _isLive && !IsCompleted;
+
     public string RecordPartialActionLabel => _isLive ? "记录 PARTIAL" : "PARTIAL";
 
     public string RecordMissedActionLabel => _isLive ? "记录 MISSED" : "MISSED";
@@ -944,6 +1235,12 @@ public sealed class TodayTaskViewModel : ObservableObject
 
     public IAsyncRelayCommand ContinueCommand { get; private set; } = null!;
 
+    public IRelayCommand RescheduleCommand { get; private set; } = null!;
+
+    public IAsyncRelayCommand MoveUpCommand { get; private set; } = null!;
+
+    public IAsyncRelayCommand MoveDownCommand { get; private set; } = null!;
+
     internal void SetCompleted(bool value)
     {
         if (!SetProperty(ref _isCompleted, value, nameof(IsCompleted)))
@@ -958,6 +1255,7 @@ public sealed class TodayTaskViewModel : ObservableObject
         OnPropertyChanged(nameof(CompletionGlyph));
         OnPropertyChanged(nameof(CompletionActionLabel));
         OnPropertyChanged(nameof(IsCompletionActionEnabled));
+        OnPropertyChanged(nameof(IsPlanActionsVisible));
         OnPropertyChanged(nameof(ReviewLabel));
     }
 
@@ -983,7 +1281,10 @@ public sealed class TodayTaskViewModel : ObservableObject
         Action<TodayTaskViewModel> togglePin,
         Func<TodayTaskViewModel, System.Threading.Tasks.Task> recordPartial,
         Func<TodayTaskViewModel, System.Threading.Tasks.Task> recordMissed,
-        Func<TodayTaskViewModel, System.Threading.Tasks.Task> continueTask)
+        Func<TodayTaskViewModel, System.Threading.Tasks.Task> continueTask,
+        Action<TodayTaskViewModel> reschedule,
+        Func<TodayTaskViewModel, System.Threading.Tasks.Task> moveUp,
+        Func<TodayTaskViewModel, System.Threading.Tasks.Task> moveDown)
     {
         ArgumentNullException.ThrowIfNull(select);
         ArgumentNullException.ThrowIfNull(toggleCompletion);
@@ -991,6 +1292,9 @@ public sealed class TodayTaskViewModel : ObservableObject
         ArgumentNullException.ThrowIfNull(recordPartial);
         ArgumentNullException.ThrowIfNull(recordMissed);
         ArgumentNullException.ThrowIfNull(continueTask);
+        ArgumentNullException.ThrowIfNull(reschedule);
+        ArgumentNullException.ThrowIfNull(moveUp);
+        ArgumentNullException.ThrowIfNull(moveDown);
 
         SelectCommand = new RelayCommand(() => select(this));
         ToggleCompletionCommand = new AsyncRelayCommand(() => toggleCompletion(this));
@@ -998,6 +1302,9 @@ public sealed class TodayTaskViewModel : ObservableObject
         RecordPartialCommand = new AsyncRelayCommand(() => recordPartial(this));
         RecordMissedCommand = new AsyncRelayCommand(() => recordMissed(this));
         ContinueCommand = new AsyncRelayCommand(() => continueTask(this));
+        RescheduleCommand = new RelayCommand(() => reschedule(this));
+        MoveUpCommand = new AsyncRelayCommand(() => moveUp(this));
+        MoveDownCommand = new AsyncRelayCommand(() => moveDown(this));
     }
 
     private static string CreateLiveNotes(TodayTaskReadModel readModel)

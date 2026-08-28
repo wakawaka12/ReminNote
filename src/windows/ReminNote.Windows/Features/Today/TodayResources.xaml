@@ -641,6 +641,28 @@
 
                 <StackPanel Orientation="Horizontal"
                             Margin="0,10,0,0"
+                            Visibility="{Binding IsPlanActionsVisible, Converter={StaticResource TodayBooleanToVisibilityConverter}}">
+                    <Button Content="{Binding RescheduleActionLabel}"
+                            Command="{Binding RescheduleCommand}"
+                            Style="{StaticResource TodaySecondaryButtonStyle}"
+                            Margin="0,0,8,0"
+                            AutomationProperties.Name="{Binding RescheduleActionLabel}"
+                            AutomationProperties.HelpText="修改计划的日期或时间，已有结果的 Task 不能改期" />
+                    <Button Content="{Binding MoveUpActionLabel}"
+                            Command="{Binding MoveUpCommand}"
+                            Style="{StaticResource TodaySecondaryButtonStyle}"
+                            Margin="0,0,8,0"
+                            AutomationProperties.Name="{Binding MoveUpActionLabel}"
+                            AutomationProperties.HelpText="在同一计划日期和分组内上移一位" />
+                    <Button Content="{Binding MoveDownActionLabel}"
+                            Command="{Binding MoveDownCommand}"
+                            Style="{StaticResource TodaySecondaryButtonStyle}"
+                            AutomationProperties.Name="{Binding MoveDownActionLabel}"
+                            AutomationProperties.HelpText="在同一计划日期和分组内下移一位" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal"
+                            Margin="0,10,0,0"
                             Visibility="{Binding IsNeedsReviewVisible, Converter={StaticResource TodayBooleanToVisibilityConverter}}">
                     <Button Content="{Binding RecordPartialActionLabel}"
                             Command="{Binding RecordPartialCommand}"
@@ -776,6 +798,61 @@
                                     AutomationProperties.Name="{x:Static local:UiText.TodayAddToToday}" />
                             <Button Content="{x:Static local:UiText.CommonCancel}"
                                     Command="{Binding CancelQuickAddCommand}"
+                                    Style="{StaticResource TodaySecondaryButtonStyle}"
+                                    AutomationProperties.Name="{x:Static local:UiText.CommonCancel}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Border Grid.Row="1"
+                        Style="{StaticResource TodayPanelStyle}"
+                        Visibility="{Binding IsRescheduleOpen, Converter={StaticResource TodayBooleanToVisibilityConverter}}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <StackPanel>
+                            <TextBlock Text="改期计划"
+                                       Style="{StaticResource TodayEyebrowTextStyle}" />
+                            <TextBlock Text="{Binding RescheduleTaskTitle}"
+                                       Style="{StaticResource CardTitleTextStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,0" />
+                            <TextBlock Text="日期支持今天、明天、后天、yyyy-MM-dd；时间支持 HH:mm 或 HH:mm-HH:mm，留空表示 ANYTIME。旧计划会保留在历史中。"
+                                       Style="{StaticResource TodayTaskMetaTextStyle}"
+                                       TextWrapping="Wrap"
+                                       Margin="0,6,0,0" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="1"
+                                    Orientation="Horizontal"
+                                    Margin="0,12,0,0">
+                            <TextBox Text="{Binding RescheduleDateText, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource TodayTextBoxStyle}"
+                                     Width="160"
+                                     Margin="0,0,10,0"
+                                     ToolTip="改期日期"
+                                     AutomationProperties.Name="改期日期"
+                                     AutomationProperties.HelpText="输入今天、明天、后天或 yyyy-MM-dd" />
+                            <TextBox Text="{Binding RescheduleTimeText, UpdateSourceTrigger=PropertyChanged}"
+                                     Style="{StaticResource TodayTextBoxStyle}"
+                                     Width="160"
+                                     ToolTip="改期时间"
+                                     AutomationProperties.Name="改期时间"
+                                     AutomationProperties.HelpText="输入 HH:mm 或 HH:mm-HH:mm，留空表示 ANYTIME" />
+                        </StackPanel>
+                        <StackPanel Grid.Row="2"
+                                    Orientation="Horizontal"
+                                    Margin="0,12,0,0">
+                            <Button Content="确认改期"
+                                    Command="{Binding ConfirmRescheduleCommand}"
+                                    Style="{StaticResource TodayButtonStyle}"
+                                    Margin="0,0,8,0"
+                                    AutomationProperties.Name="确认改期"
+                                    AutomationProperties.HelpText="保存新计划并刷新 TODAY" />
+                            <Button Content="{x:Static local:UiText.CommonCancel}"
+                                    Command="{Binding CancelRescheduleCommand}"
                                     Style="{StaticResource TodaySecondaryButtonStyle}"
                                     AutomationProperties.Name="{x:Static local:UiText.CommonCancel}" />
                         </StackPanel>
