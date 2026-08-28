@@ -21,3 +21,8 @@ packages/
 # Local logs and reports
 artifacts/
 TestResults/
+
+# Internal review material is retained locally for audit work but is not part
+# of the public source tree.
+reviews/
+second-review/
