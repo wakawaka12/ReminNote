@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/windows/ReminNote.Core/ReminNote.Core.csproj" />
+    <ProjectReference Include="../../src/windows/ReminNote.Infrastructure/ReminNote.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../../src/windows/ReminNote.Widget/ViewModels/WidgetViewModel.cs"
+             Link="WidgetViewModel.cs" />
+    <Compile Include="../../src/windows/ReminNote.Widget/Startup/WidgetSingleInstanceCoordinator.cs"
+             Link="WidgetSingleInstanceCoordinator.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/Startup/SingleInstanceCoordinator.cs"
+             Link="SingleInstanceCoordinator.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/Features/Today/TodayPageViewModel.cs"
+             Link="TodayPageViewModel.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/Features/Today/TodayMockDataService.cs"
+             Link="TodayMockDataService.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/ViewModels/ShellPageViewModel.cs"
+             Link="ShellPageViewModel.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/Resources/Localization/UiText.cs"
+             Link="Resources/Localization/UiText.cs" />
+    <EmbeddedResource Include="../../src/windows/ReminNote.Windows/Resources/Localization/UiText.resx"
+                      Link="Resources/Localization/UiText.resx">
+      <LogicalName>ReminNote.Windows.Resources.Localization.UiText.resources</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+</Project>

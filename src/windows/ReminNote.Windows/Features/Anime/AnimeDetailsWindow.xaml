@@ -1,0 +1,105 @@
+<Window x:Class="ReminNote.Windows.Features.Anime.AnimeDetailsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ReminNote.Windows.Resources.Localization"
+        Title="{x:Static local:UiText.AnimeSelectedAnime}"
+        AutomationProperties.Name="{x:Static local:UiText.AnimeSelectedAnime}"
+        Width="590"
+        Height="470"
+        MinWidth="460"
+        MinHeight="360"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        ResizeMode="CanResizeWithGrip"
+        UseLayoutRounding="True">
+    <Border Margin="12"
+            Padding="20"
+            Background="{DynamicResource CardBackgroundBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1"
+            CornerRadius="12">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <DockPanel Grid.Row="0"
+                       Margin="0,0,0,16">
+                <Button x:Name="CloseButton"
+                        DockPanel.Dock="Right"
+                        Content="×"
+                        Click="OnCloseClick"
+                        Style="{StaticResource AnimeButtonStyle}"
+                        Padding="10,5"
+                        ToolTip="{x:Static local:UiText.CommonCancel}"
+                        AutomationProperties.Name="{x:Static local:UiText.CommonCancel}"
+                        AutomationProperties.HelpText="{x:Static local:UiText.CommonCancel}" />
+                <StackPanel>
+                    <TextBlock Text="ANIME DETAILS · MOCK"
+                               Style="{StaticResource AnimeEyebrowTextStyle}" />
+                    <TextBlock Text="{x:Static local:UiText.AnimeSelectedAnime}"
+                               Margin="0,3,0,0"
+                               Style="{StaticResource AnimeSectionHeadingTextStyle}" />
+                </StackPanel>
+            </DockPanel>
+
+            <ScrollViewer Grid.Row="1"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled"
+                          PanningMode="VerticalOnly">
+                <StackPanel>
+                    <TextBlock Text="{Binding SelectedEntryTitle}"
+                               Style="{StaticResource AnimeHeroTitleTextStyle}" />
+                    <TextBlock Text="{Binding SelectedEntrySubtitle}"
+                               Margin="0,4,0,0"
+                               Style="{StaticResource AnimeMetaTextStyle}" />
+                    <TextBlock Text="{Binding InteractionStatus}"
+                               Margin="0,12,0,0"
+                               Foreground="{DynamicResource AccentBrush}"
+                               TextWrapping="Wrap"
+                               AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock Text="{Binding SelectedEntryDescription}"
+                               Margin="0,14,0,0"
+                               TextWrapping="Wrap"
+                               Style="{StaticResource CardBodyTextStyle}" />
+                    <StackPanel Margin="0,16,0,0"
+                                Orientation="Horizontal">
+                        <Border Style="{StaticResource AnimeBadgeBorderStyle}">
+                            <TextBlock Text="{Binding SelectedEntry.StatusLabel}"
+                                       FontSize="10"
+                                       FontWeight="Bold"
+                                       Foreground="{DynamicResource AnimeInkBrush}" />
+                        </Border>
+                        <TextBlock Text="{Binding SelectedEntry.ProgressLabel}"
+                                   Margin="10,5,0,0"
+                                   Style="{StaticResource AnimeMetaTextStyle}" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+
+            <StackPanel Grid.Row="2"
+                        Margin="0,18,0,0"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right">
+                <Button Content="{Binding SelectedEntry.MarkWatchedButtonText}"
+                        Command="{Binding MarkWatchedCommand}"
+                        CommandParameter="{Binding SelectedEntry}"
+                        Style="{StaticResource AnimeAccentButtonStyle}"
+                        AutomationProperties.Name="{Binding SelectedEntry.MarkWatchedButtonText}" />
+                <Button Content="{Binding SelectedEntry.WatchLaterButtonText}"
+                        Margin="7,0,0,0"
+                        Command="{Binding ToggleWatchLaterCommand}"
+                        CommandParameter="{Binding SelectedEntry}"
+                        Style="{StaticResource AnimeButtonStyle}"
+                        AutomationProperties.Name="{Binding SelectedEntry.WatchLaterButtonText}" />
+                <Button Content="{x:Static local:UiText.CommonCancel}"
+                        Margin="7,0,0,0"
+                        Click="OnCloseClick"
+                        Style="{StaticResource AnimeButtonStyle}"
+                        AutomationProperties.Name="{x:Static local:UiText.CommonCancel}" />
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

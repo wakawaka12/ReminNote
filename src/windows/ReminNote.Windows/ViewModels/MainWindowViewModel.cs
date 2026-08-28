@@ -29,6 +29,10 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public IReadOnlyList<NavigationItemViewModel> NavigationItems { get; }
 
+    public TodayPageViewModel TodayPage => _todayPage;
+
+    public AnimePageViewModel AnimePage => _animePage;
+
     public IRelayCommand<NavigationItemViewModel?> NavigateCommand { get; }
 
     public ShellPageViewModel CurrentPage

@@ -35,7 +35,7 @@ public sealed class AnimePageViewModel : ShellPageViewModel
         ];
 
         SelectSectionCommand = new RelayCommand<string?>(SelectSection);
-        SelectAnimeCommand = new RelayCommand<AnimeMockEntry?>(SelectAnime, entry => entry is not null);
+        ViewDetailsCommand = new RelayCommand<AnimeMockEntry?>(ViewDetails, entry => entry is not null);
         ToggleWatchLaterCommand = new RelayCommand<AnimeMockEntry?>(ToggleWatchLater, entry => entry is not null);
         MarkWatchedCommand = new RelayCommand<AnimeMockEntry?>(MarkWatched, entry => entry is not null);
         ToggleTrackingCommand = new RelayCommand<AnimeMockEntry?>(ToggleTracking, entry => entry is not null);
@@ -47,6 +47,8 @@ public sealed class AnimePageViewModel : ShellPageViewModel
         UpdateSectionCounts();
         SelectSection(AllSectionKey);
     }
+
+    public event Action<AnimeMockEntry>? DetailsRequested;
 
     public IReadOnlyList<AnimeSectionItem> Sections { get; }
 
@@ -127,7 +129,7 @@ public sealed class AnimePageViewModel : ShellPageViewModel
 
     public IRelayCommand<string?> SelectSectionCommand { get; }
 
-    public IRelayCommand<AnimeMockEntry?> SelectAnimeCommand { get; }
+    public IRelayCommand<AnimeMockEntry?> ViewDetailsCommand { get; }
 
     public IRelayCommand<AnimeMockEntry?> ToggleWatchLaterCommand { get; }
 
@@ -169,6 +171,17 @@ public sealed class AnimePageViewModel : ShellPageViewModel
 
         SelectedEntry = entry;
         InteractionStatus = UiText.Format(UiText.AnimeInteractionSelectedKey, entry.DisplayTitle);
+    }
+
+    private void ViewDetails(AnimeMockEntry? entry)
+    {
+        if (entry is null)
+        {
+            return;
+        }
+
+        SelectAnime(entry);
+        DetailsRequested?.Invoke(entry);
     }
 
     private void ToggleWatchLater(AnimeMockEntry? entry)

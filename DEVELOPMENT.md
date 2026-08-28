@@ -26,12 +26,14 @@ SDK 版本由 `global.json` 固定到 .NET 10.0.100，并允许同一 LTS 小版
 
 `verify-p0-07.ps1` 检查 `global.json`、解决方案 Widget 登记、所有项目 lock 文件、默认资源键/非空值、Shell/TODAY/ANIME/Widget 的基础 UI Automation 标记和开发数据清理边界。它不能替代真实 UI 操作测试。
 
-## P0-02 依赖
+## 已冻结依赖边界
 
 - `CommunityToolkit.Mvvm` 8.4.2：用于 ObservableObject 和 RelayCommand；MIT；Microsoft/.NET Foundation 维护。
 - `Microsoft.Extensions.Hosting` 10.0.11：用于 Generic Host、DI 和生命周期组合；MIT；Microsoft 维护。
 
 本 Slice 没有引入 EF Core、Serilog、Noda Time、SQLite 或网络库。
+
+P1 已在独立项目边界引入 Noda Time 3.3.3、EF Core/SQLite 10.0.11 和 xUnit v3 测试依赖；Core 仍不引用 EF Core、WPF、Windows API 或 Serilog。版本由 `Directory.Packages.props` 和各项目 lock 文件统一管理。
 
 ## 数据安全
 
@@ -52,7 +54,7 @@ run.ps1 会在当前启动进程缺少 WINDIR 但存在 SystemRoot 时使用进�
 ## P0-07 稳定化
 
 - P0 默认语言是简体中文；当前只提供默认资源，不提供运行时语言切换。
-- `dotnet test ReminNote.sln` 当前没有测试项目，因此 CI 同时运行 P0-07 仓库验证脚本；不得将该空测试结果写成业务覆盖率。
+- P1 测试项目位于 `tests/ReminNote.Tests`。`scripts/test.ps1` 通过 .NET 10 Microsoft Testing Platform 直接运行构建后的 xUnit v3 测试 executable，并同时运行 P0-07 仓库验证；不得把旧 VSTest 的“未发现测试”结果写成业务覆盖率。
 - CI 输出实际 SDK 版本、SDK 信息和解决方案项目清单，并在构建前执行 P0-07 仓库验证。
 
 ## 并行开发

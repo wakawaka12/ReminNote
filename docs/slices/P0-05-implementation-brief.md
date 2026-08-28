@@ -9,7 +9,7 @@
 - ANIME 页面真实 WPF `DataTemplate`、ViewModel、Mock model 和本地状态服务边界。
 - `NEXT AIRING` 主视觉，以及 `WATCH LATER`、`WATCHING`、`PLAN TO WATCH`、`THIS SEASON` 信息层级。
 - 固定本地 Mock 数据，不访问网络、不读取数据库、不使用真实 Token。
-- 本地搜索、栏目筛选、动画选择、详情面板、标记已看、加入/移出 WATCH LATER、开启/关闭追番和模拟提醒状态。
+- 本地搜索、栏目筛选、动画选择、上层详情对话框、标记已看、加入/移出 WATCH LATER、开启/关闭追番和模拟提醒状态。
 - 使用现有 Design System 的颜色、字体、间距、圆角和卡片资源，并在 ANIME 资源字典中补充仅限模块的装饰/控件样式。
 - 本简报中的手动验收步骤、预期结果、失败判定、风险和集成说明。
 
@@ -19,7 +19,7 @@
 - PAT、Credential Manager、DPAPI、真实图片下载和远程缓存。
 - SQLite、EF Core、业务持久化、Agent IPC、Reminder Scheduler 和真实提醒。
 - 播放、下载、视频源、弹幕、同步、真实 Anime domain、Anime -> Task 关系。
-- 修改 App.xaml、MainWindow、共享 ViewModels、Resources/DesignSystem、Solution、Directory 文件、脚本、CI、TODAY 或 Widget。
+- 修改 App.xaml、共享 ViewModels、Resources/DesignSystem、Solution、Directory 文件、脚本、CI、TODAY 或 Widget；MainWindow 仅允许接入本 Slice 的拥有者详情对话框生命周期。
 
 ## Product Rules
 
@@ -41,10 +41,10 @@
 
 - 从主窗口导航到“动画”后，页面能够显示 ANIME 高保真 Mock，而非 P0-02 占位内容。
 - 页面首屏清晰呈现 `NEXT AIRING` 主视觉，并能继续浏览 `WATCH LATER`、`WATCHING`、`PLAN TO WATCH`、`THIS SEASON`。
-- 搜索框和栏目筛选能即时改变本地 Mock 卡片列表；选中动画后详情面板同步变化。
+- 搜索框和栏目筛选能即时改变本地 Mock 卡片列表；点击“查看详情”后上层对话框显示所选动画，且可明确关闭。
 - “标记已看”“加入/移出待看”“开启/关闭追番”和“模拟提醒”按钮有明确的文本/计数反馈，窗口不崩溃。
 - 所有状态仅存在内存；实现中没有网络客户端、SQLite、真实 Token、Reminder 或 IPC 调用。
-- 只修改 `Features/Anime/**` 与 `docs/slices/P0-05-*`，不越过并行开发文件所有权。
+- 仅增加 `Features/Anime/**`、MainWindow 的对话框接入、测试与 `docs/slices/P0-05-*`，不越过并行开发文件所有权。
 - 通过 locked restore、Release build 和适合当前仓库的自动化测试，且无新增未解释警告。
 
 ## Manual Test
@@ -87,14 +87,16 @@
 
 ### Test 3：本地状态交互
 
-1. 选择一张动画卡片，点击“查看详情”。
-2. 在详情面板点击“加入 WATCH LATER”或“移出 WATCH LATER”。
-3. 点击“标记已看”，观察状态和计数。
-4. 点击“开启追番/关闭追番”和“模拟提醒”各一次。
+1. 先向下滚动 ANIME 页面到任意位置，选择一张动画卡片并点击“查看详情”。
+2. 确认上层详情对话框显示明确标题、动画名称和状态，再点击“加入 WATCH LATER”或“移出 WATCH LATER”。
+3. 点击右上角 `×` 或“取消”。
+4. 点击“标记已看”，观察状态和计数。
+5. 点击“开启追番/关闭追番”和“模拟提醒”各一次。
 
 预期：
 
-- 详情面板标题和状态与所选卡片一致。
+- 详情对话框位于页面上层，不与底层卡片/面板互相遮挡；标题和状态与所选卡片一致。
+- 对话框打开后焦点进入关闭入口；关闭后回到原页面滚动位置和原触发控件，不强制跳到底部详情区。
 - 待看、已看、追番和模拟提醒动作立即更新按钮文案、卡片状态或栏目计数。
 - 操作只影响当前运行中的 Mock 状态；不创建数据库、Token、缓存或提醒实例。
 
@@ -104,11 +106,11 @@
 
 1. 将窗口调整到接近最小尺寸（约 960x640）。
 2. 使用 Tab 在搜索框、筛选按钮和操作按钮间移动，并用 Enter 激活一个按钮。
-3. 向下滚动检查详情面板和空结果文案。
+3. 向下滚动检查卡片和空结果文案；用 Tab/Enter 打开并关闭详情对话框。
 
 预期：
 
-- 页面可滚动，卡片/文字不被严重裁切；焦点可见；Enter 能触发当前按钮。
+- 页面可滚动，卡片/文字不被严重裁切；详情对话框焦点可见且可用 X/取消关闭；Enter 能触发当前按钮。
 - 不因缩小窗口或键盘操作发生异常。
 
 失败：控件无法获得焦点、焦点不可见、页面布局重叠、滚动失效或窗口崩溃。

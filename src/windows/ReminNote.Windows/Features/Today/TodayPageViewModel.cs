@@ -63,6 +63,8 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         SelectTask(PrimaryTask);
     }
 
+    public event Action<TodayTaskViewModel>? QuickTaskAdded;
+
     public ObservableCollection<TodayTaskGroupViewModel> Groups { get; } = [];
 
     public TodayTaskViewModel PrimaryTask { get; }
@@ -171,9 +173,9 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         RebuildGroups();
         SelectTask(task);
         QuickAddText = string.Empty;
-        IsQuickAddOpen = false;
         InteractionMessage = UiText.Format(UiText.TodayInteractionQuickAddAddedKey, task.Title);
         NotifySummaryChanged();
+        QuickTaskAdded?.Invoke(task);
     }
 
     private void OpenNeedsReview()

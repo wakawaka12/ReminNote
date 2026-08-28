@@ -341,7 +341,7 @@
                                             AutomationProperties.Name="{Binding NextAiring.ReminderButtonText}" />
                                     <Button Content="{x:Static local:UiText.AnimeViewDetails}"
                                             Margin="8,0,0,0"
-                                            Command="{Binding SelectAnimeCommand}"
+                                            Command="{Binding ViewDetailsCommand}"
                                             CommandParameter="{Binding NextAiring}"
                                             Style="{StaticResource AnimeButtonStyle}"
                                             AutomationProperties.Name="{x:Static local:UiText.AnimeViewDetails}" />
@@ -547,7 +547,7 @@
                                                     Margin="0,12,0,0"
                                                     Orientation="Horizontal">
                                             <Button Content="{x:Static local:UiText.AnimeViewDetails}"
-                                                    Command="{Binding RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}, Path=DataContext.SelectAnimeCommand}"
+                                                    Command="{Binding RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}, Path=DataContext.ViewDetailsCommand}"
                                                     CommandParameter="{Binding}"
                                                     Style="{StaticResource AnimeSmallButtonStyle}"
                                                     AutomationProperties.Name="{x:Static local:UiText.AnimeViewDetails}" />
@@ -569,76 +569,6 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-
-                    <Border Padding="16"
-                            Margin="0,2,0,12"
-                            Style="{StaticResource AnimeDetailsCardStyle}"
-                            Background="{DynamicResource AnimeLavenderBrush}"
-                            BorderBrush="#DDD7FF">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel>
-                                <TextBlock Text="{x:Static local:UiText.AnimeSelectedAnime}"
-                                           Style="{StaticResource AnimeEyebrowTextStyle}"
-                                           Foreground="{DynamicResource AnimeInkBrush}" />
-                                <TextBlock Text="{Binding SelectedEntryTitle}"
-                                           Margin="0,5,0,0"
-                                           FontSize="19"
-                                           FontWeight="SemiBold"
-                                           Foreground="{DynamicResource ContentPrimaryBrush}" />
-                                <TextBlock Text="{Binding SelectedEntrySubtitle}"
-                                           Margin="0,2,0,0"
-                                           Style="{StaticResource AnimeMetaTextStyle}" />
-                                <TextBlock Text="{Binding SelectedEntryDescription}"
-                                           Margin="0,10,14,0"
-                                           MaxWidth="450"
-                                           TextWrapping="Wrap"
-                                           Style="{StaticResource CardBodyTextStyle}" />
-                                <StackPanel Margin="0,10,0,0"
-                                            Orientation="Horizontal">
-                                    <Border Style="{StaticResource AnimeBadgeBorderStyle}">
-                                        <TextBlock Text="{Binding SelectedEntry.StatusLabel}"
-                                                   FontSize="10"
-                                                   FontWeight="Bold"
-                                                   Foreground="{DynamicResource AnimeInkBrush}" />
-                                    </Border>
-                                    <TextBlock Text="{Binding SelectedEntry.ProgressLabel}"
-                                               Margin="10,5,0,0"
-                                               Style="{StaticResource AnimeMetaTextStyle}" />
-                                </StackPanel>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1"
-                                        Width="116"
-                                        Margin="12,0,0,0">
-                                <Button Content="{Binding SelectedEntry.MarkWatchedButtonText}"
-                                        Command="{Binding MarkWatchedCommand}"
-                                        CommandParameter="{Binding SelectedEntry}"
-                                        Style="{StaticResource AnimeAccentButtonStyle}"
-                                        AutomationProperties.Name="{Binding SelectedEntry.MarkWatchedButtonText}" />
-                                <Button Content="{Binding SelectedEntry.WatchLaterButtonText}"
-                                        Margin="0,7,0,0"
-                                        Command="{Binding ToggleWatchLaterCommand}"
-                                        CommandParameter="{Binding SelectedEntry}"
-                                        Style="{StaticResource AnimeButtonStyle}"
-                                        AutomationProperties.Name="{Binding SelectedEntry.WatchLaterButtonText}" />
-                                <Button Content="{Binding SelectedEntry.TrackingButtonText}"
-                                        Margin="0,7,0,0"
-                                        Command="{Binding ToggleTrackingCommand}"
-                                        CommandParameter="{Binding SelectedEntry}"
-                                        Style="{StaticResource AnimeButtonStyle}"
-                                        AutomationProperties.Name="{Binding SelectedEntry.TrackingButtonText}" />
-                                <Button Content="{Binding SelectedEntry.ReminderButtonText}"
-                                        Margin="0,7,0,0"
-                                        Command="{Binding ToggleReminderCommand}"
-                                        CommandParameter="{Binding SelectedEntry}"
-                                        Style="{StaticResource AnimeButtonStyle}"
-                                        AutomationProperties.Name="{Binding SelectedEntry.ReminderButtonText}" />
-                            </StackPanel>
-                        </Grid>
-                    </Border>
 
                     <Border Padding="12"
                             Background="{DynamicResource CardBackgroundBrush}"

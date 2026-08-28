@@ -4,4 +4,7 @@
     <RootNamespace>ReminNote.Core</RootNamespace>
     <AssemblyName>ReminNote.Core</AssemblyName>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="NodaTime" />
+  </ItemGroup>
 </Project>

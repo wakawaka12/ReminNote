@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>ReminNote.P1ManualHarness</RootNamespace>
+    <AssemblyName>ReminNote.P1ManualHarness</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/windows/ReminNote.Core/ReminNote.Core.csproj" />
+    <ProjectReference Include="../../src/windows/ReminNote.Infrastructure/ReminNote.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

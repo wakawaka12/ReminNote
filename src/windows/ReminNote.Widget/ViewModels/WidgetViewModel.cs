@@ -68,6 +68,7 @@ public sealed class WidgetViewModel : ObservableObject
         ShowAnimeCommand = new RelayCommand(ShowAnime);
         ToggleInteractionCommand = new RelayCommand(ToggleInteractionState);
         ToggleQuickAddCommand = new RelayCommand(ToggleQuickAdd);
+        CloseQuickAddCommand = new RelayCommand(CloseQuickAdd);
         SubmitQuickAddCommand = new RelayCommand(SubmitQuickAdd, CanSubmitQuickAdd);
         CompleteTaskCommand = new RelayCommand(CompleteTask);
         SnoozeTaskCommand = new RelayCommand(SnoozeTask);
@@ -93,6 +94,8 @@ public sealed class WidgetViewModel : ObservableObject
     public IRelayCommand ToggleInteractionCommand { get; }
 
     public IRelayCommand ToggleQuickAddCommand { get; }
+
+    public IRelayCommand CloseQuickAddCommand { get; }
 
     public IRelayCommand SubmitQuickAddCommand { get; }
 
@@ -223,16 +226,34 @@ public sealed class WidgetViewModel : ObservableObject
     public bool IsQuickAddOpen
     {
         get => _isQuickAddOpen;
-        private set => SetProperty(ref _isQuickAddOpen, value);
+        private set
+        {
+            if (SetProperty(ref _isQuickAddOpen, value))
+            {
+                OnPropertyChanged(nameof(QuickAddTriggerLabel));
+            }
+        }
     }
 
     public bool IsReminderDrawerOpen
     {
         get => _isReminderDrawerOpen;
-        private set => SetProperty(ref _isReminderDrawerOpen, value);
+        private set
+        {
+            if (SetProperty(ref _isReminderDrawerOpen, value))
+            {
+                OnPropertyChanged(nameof(ReminderTriggerLabel));
+            }
+        }
     }
 
     public bool IsAlert => _interactionState == WidgetInteractionState.Alert;
+
+    public string QuickAddTriggerLabel => IsQuickAddOpen ? UiText.WidgetClose : UiText.WidgetQuickAdd;
+
+    public string ReminderTriggerLabel => IsReminderDrawerOpen ? UiText.WidgetClose : UiText.WidgetReminders;
+
+    public string AlertTriggerLabel => IsAlert ? UiText.WidgetDismissAlert : UiText.WidgetSimulateReminder;
 
     public bool IsCompact => _responsiveMode == WidgetResponsiveMode.Compact;
 
@@ -296,7 +317,20 @@ public sealed class WidgetViewModel : ObservableObject
 
     private void ToggleQuickAdd()
     {
-        IsQuickAddOpen = !IsQuickAddOpen;
+        if (IsQuickAddOpen)
+        {
+            CloseQuickAdd();
+            return;
+        }
+
+        CloseReminderDrawer();
+        DismissAlertIfOpen();
+        IsQuickAddOpen = true;
+    }
+
+    private void CloseQuickAdd()
+    {
+        IsQuickAddOpen = false;
     }
 
     private bool CanSubmitQuickAdd() => !string.IsNullOrWhiteSpace(QuickAddText);
@@ -345,6 +379,14 @@ public sealed class WidgetViewModel : ObservableObject
 
     private void OpenReminderDrawer()
     {
+        if (IsReminderDrawerOpen)
+        {
+            CloseReminderDrawer();
+            return;
+        }
+
+        CloseQuickAdd();
+        DismissAlertIfOpen();
         IsReminderDrawerOpen = true;
     }
 
@@ -361,10 +403,15 @@ public sealed class WidgetViewModel : ObservableObject
 
     private void SimulateAlert()
     {
-        if (_interactionState != WidgetInteractionState.Alert)
+        if (IsAlert)
         {
-            _stateBeforeAlert = _interactionState;
+            DismissAlert();
+            return;
         }
+
+        CloseQuickAdd();
+        CloseReminderDrawer();
+        _stateBeforeAlert = _interactionState;
 
         _interactionState = WidgetInteractionState.Alert;
         NotifyInteractionStateChanged();
@@ -372,8 +419,21 @@ public sealed class WidgetViewModel : ObservableObject
 
     private void DismissAlert()
     {
+        if (!IsAlert)
+        {
+            return;
+        }
+
         _interactionState = _stateBeforeAlert;
         NotifyInteractionStateChanged();
+    }
+
+    private void DismissAlertIfOpen()
+    {
+        if (IsAlert)
+        {
+            DismissAlert();
+        }
     }
 
     private void NotifyPageChanged()
@@ -389,6 +449,7 @@ public sealed class WidgetViewModel : ObservableObject
         OnPropertyChanged(nameof(InteractionStateLabel));
         OnPropertyChanged(nameof(InteractionStateIcon));
         OnPropertyChanged(nameof(IsAlert));
+        OnPropertyChanged(nameof(AlertTriggerLabel));
     }
 
 }

@@ -82,3 +82,35 @@
 - 决策：保留现有 `dotnet test` 流程，但在 CI 和 `scripts/test.ps1` 中追加 `verify-p0-07.ps1`，检查资源、项目锁文件、解决方案登记、UI Automation 标记和数据安全边界。
 - 原因：当前 P0 没有测试项目；不能凭空添加与产品行为无关的假测试，也不能把空测试成功描述为业务覆盖。
 - 限制：该脚本是静态/配置门禁，不能替代真实 WPF UI、读屏和键盘人工验收；后续测试项目建立后应补充真实测试并保留门禁。
+
+## ADR-0012：P1 Task 开发数据库与 P0 Mock 兼容边界
+
+- 日期：2026-08-28
+- 状态：已接受
+- 决策：P1 开发数据库固定为仓库相对路径 `.devdata/reminnote.sqlite`。开发期间允许通过显式 `-PurgeDevData` 清理开发数据；默认清理流程不得触碰该目录，更不得读取或修改生产数据路径。P1 保留现有 P0 Mock 展示行为，P1 只提供真实 Task core、持久化和应用边界，TODAY/Widget 的真实任务体验留到 P2。
+- 原因：明确开发数据隔离和可重复 migration 的边界，同时保证 P0 已验收的展示行为不会因 P1 基础设施替换而被无意改写。
+- 结果：所有 P1 数据库测试必须使用 `.devdata` 下的开发数据库或临时数据库；任何删除/重置动作必须显式触发。P1 不创建 Reminder、Anime 或 Sync 表。
+
+## ADR-0013：P1 使用稳定的 Noda Time、EF Core 与 UUID v7 实现
+
+- 日期：2026-08-28
+- 状态：已接受
+- 决策：Core 使用 Noda Time 3.3.3 的 `LocalDate`、`LocalTime`、`Instant` 等类型表达时间语义；Infrastructure 使用 EF Core 10.0.11 和 `Microsoft.EntityFrameworkCore.Sqlite` 10.0.11；migration tooling 使用同版本的 Design 包。Task ID 使用 .NET 10 内置的 `Guid.CreateVersion7()`，不引入额外 UUID 包。
+- 原因：Noda Time 是项目已冻结的 Core 时间模型，EF Core/SQLite 与当前 net10.0 SDK 和 Hosting 版本对齐；内置 UUID v7 可减少依赖和许可证/供应链面，同时符合 RFC 9562。
+- 影响：上述版本统一由 `Directory.Packages.props` 管理，项目 lock 文件必须在依赖更新后重新生成并纳入提交；不使用 EF Core preview/RC 或第三方 UUID 实现。
+
+## ADR-0014：P1 自动化测试使用 xUnit.net v3 与 VSTest
+
+- 日期：2026-08-28
+- 状态：已接受
+- 决策：P1 测试项目使用 xUnit.net v3 4.0.0、`xunit.runner.visualstudio` 4.0.0 和 `Microsoft.NET.Test.Sdk` 18.9.0；测试项目以 `net10.0` 为目标并引用 Core/Infrastructure，主路径通过 `global.json` 的 Microsoft Testing Platform runner 运行，保留 VSTest 包以兼容旧版 IDE/runner。
+- 原因：xUnit.net v2 已停止功能开发，xUnit.net v3 是当前稳定主线；VSTest 适配保留 CLI、CI 和 IDE 的现有运行路径。上述包均采用 Apache-2.0 或 MIT 许可，并由中央包管理统一版本。
+- 限制：P1 不引入大规模测试框架、UI 快照或假业务测试；测试聚焦领域不变量、持久化约束和 CRUD 数据路径。
+
+## ADR-0015：P1 明确未冻结契约与已记录结果的时间保护
+
+- 日期：2026-08-28
+- 状态：已接受
+- 决策：P1 当前明确记录以下仍未冻结的契约：`Task` 标题上限待定、删除采用硬删除、当前无并发版本，以及结果重录采用覆盖式更新。已有 `ResultRecord` 的 Task 禁止通过 `ChangeTime` 修改计划时间，并以稳定错误码 `task.time_spec.changed_after_result` 报告；`Rename` 不受该限制。应用层只透传该领域异常，失败不写入数据库。
+- 原因：已有结果属于历史事实，改写计划时间会使历史语义含混；稳定错误码让上层可识别失败，同时不把 UI 文案下沉到 Core。
+- 结果：P1 不根据当前时钟或时区判断“无结果但已过去”的任务是否可以改期；该判断留到 P2，届时结合用户时区与时钟规则定义。P1 不因此引入历史计划模型、并发控制或其他未来 Slice 实现。
