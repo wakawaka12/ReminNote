@@ -336,11 +336,12 @@ public sealed class TodayPageViewModelTests
                 return ValueTask.FromResult<TaskSnapshot?>(null);
             }
 
-            var task = DomainTask.Create(
+            var sourceTask = Rehydrate(source);
+            var task = DomainTask.CreateContinuation(
+                sourceTask,
                 command.Title,
                 command.TimeSpec,
-                Current,
-                continuedFromTaskId: command.SourceTaskId);
+                Current);
             return ValueTask.FromResult<TaskSnapshot?>(Save(task));
         }
 
