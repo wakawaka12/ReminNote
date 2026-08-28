@@ -4,6 +4,8 @@
 
 本文件是 P1-05 准备、P1-06 集成后校对的验收稿。当前已合入真实 P1 Core、SQLite migration、repository 和 application/query boundary，但 `scripts/run.ps1` 仍启动 P0 WPF Mock，尚未把真实 CRUD 接入用户界面。不得使用 P0 TODAY 的 Quick Add 代替真实 Task Create；在真实 CRUD UI 尚未接入前，Test 2–6 的入口只能使用报告中明确记录的受控测试/harness。
 
+重要：手动验收必须在 P1 集成分支的 worktree 执行，而不是当前仍处于 P0 基线的 `D:\Anime` `main`/`codex/p0-integration` checkout。当前集成 worktree 为 `C:\Users\EMT\.codex\worktrees\68a7\Anime`，其 HEAD 为 `codex/p1-integration`；如果 worktree 路径不同，应先确认其中包含 `tools/ReminNote.P1ManualHarness` 和最新 P1 提交。
+
 环境：
 
 - Windows 10 22H2 x64 或 Windows 11 x64；
