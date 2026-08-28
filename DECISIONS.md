@@ -98,3 +98,11 @@
 - 决策：Core 使用 Noda Time 3.3.3 的 `LocalDate`、`LocalTime`、`Instant` 等类型表达时间语义；Infrastructure 使用 EF Core 10.0.11 和 `Microsoft.EntityFrameworkCore.Sqlite` 10.0.11；migration tooling 使用同版本的 Design 包。Task ID 使用 .NET 10 内置的 `Guid.CreateVersion7()`，不引入额外 UUID 包。
 - 原因：Noda Time 是项目已冻结的 Core 时间模型，EF Core/SQLite 与当前 net10.0 SDK 和 Hosting 版本对齐；内置 UUID v7 可减少依赖和许可证/供应链面，同时符合 RFC 9562。
 - 影响：上述版本统一由 `Directory.Packages.props` 管理，项目 lock 文件必须在依赖更新后重新生成并纳入提交；不使用 EF Core preview/RC 或第三方 UUID 实现。
+
+## ADR-0014：P1 自动化测试使用 xUnit.net v3 与 VSTest
+
+- 日期：2026-08-28
+- 状态：已接受
+- 决策：P1 测试项目使用 xUnit.net v3 4.0.0、`xunit.runner.visualstudio` 4.0.0 和 `Microsoft.NET.Test.Sdk` 18.9.0，通过现有 `dotnet test`/VSTest 流程运行；测试项目以 `net10.0` 为目标并引用 Core/Infrastructure。
+- 原因：xUnit.net v2 已停止功能开发，xUnit.net v3 是当前稳定主线；VSTest 适配保留 CLI、CI 和 IDE 的现有运行路径。上述包均采用 Apache-2.0 或 MIT 许可，并由中央包管理统一版本。
+- 限制：P1 不引入大规模测试框架、UI 快照或假业务测试；测试聚焦领域不变量、持久化约束和 CRUD 数据路径。
