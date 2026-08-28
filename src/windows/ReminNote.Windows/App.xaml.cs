@@ -1,7 +1,13 @@
 ﻿using System.Windows;
 using System.Diagnostics;
+using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using NodaTime;
+using ReminNote.Core.Application;
+using ReminNote.Core.Today;
+using ReminNote.Infrastructure.Application;
+using ReminNote.Infrastructure.Persistence;
 using ReminNote.Windows.Features.Anime;
 using ReminNote.Windows.Features.Today;
 using ReminNote.Windows.Startup;
@@ -27,13 +33,23 @@ public partial class App : Application, IDisposable
             return;
         }
 
+        var repositoryRoot = ResolveRepositoryRoot(e.Args);
         var builder = Host.CreateApplicationBuilder(e.Args);
+        builder.Services.AddSingleton(new TaskWorkspace(repositoryRoot));
+        builder.Services.AddSingleton<ITaskApplicationService>(serviceProvider =>
+            serviceProvider.GetRequiredService<TaskWorkspace>());
+        builder.Services.AddSingleton<ITaskQueryService>(serviceProvider =>
+            serviceProvider.GetRequiredService<TaskWorkspace>());
+        builder.Services.AddSingleton<ITodayQueryService>(serviceProvider =>
+            serviceProvider.GetRequiredService<TaskWorkspace>());
+        builder.Services.AddSingleton<IClock>(SystemClock.Instance);
         builder.Services.AddTodayFeature();
         builder.Services.AddAnimeFeature();
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();
 
         _host = builder.Build();
+        _host.Services.GetRequiredService<TaskWorkspace>().Initialize();
         _host.Start();
 
         var window = _host.Services.GetRequiredService<MainWindow>();
@@ -85,5 +101,26 @@ public partial class App : Application, IDisposable
     {
         _singleInstance?.Dispose();
         GC.SuppressFinalize(this);
+    }
+
+    private static string ResolveRepositoryRoot(string[] args)
+    {
+        var repositoryRoot = Directory.GetCurrentDirectory();
+        for (var index = 0; index < args.Length; index++)
+        {
+            if (!string.Equals(args[index], "--repo-root", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (++index >= args.Length)
+            {
+                throw new ArgumentException("--repo-root 必须带路径。", nameof(args));
+            }
+
+            repositoryRoot = args[index];
+        }
+
+        return ReminNoteDatabase.ValidateRepositoryRoot(repositoryRoot);
     }
 }
