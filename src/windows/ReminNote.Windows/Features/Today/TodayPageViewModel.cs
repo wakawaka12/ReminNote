@@ -36,6 +36,10 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     private const string LiveRescheduleUnavailableMessage = "只有未记录结果的 Task 才能改期";
     private const string LiveReorderBoundaryMessage = "已到达分组边界 · 没有可交换的相邻任务";
     private const string LiveReorderCrossDateMessage = "排序仅在同一计划日期和分组内生效 · 跨日期请使用改期";
+    private const string RescheduleParserPlaceholder = "改期占位";
+    private const string RescheduleEmptyInputCode = "task.parser.empty";
+    private const string RescheduleInvalidDateCode = "task.parser.date.invalid";
+    private const string RescheduleInvalidTimeCode = "task.parser.time.invalid";
 
     private static readonly TodayGroupDefinition[] GroupDefinitions =
     [
@@ -506,17 +510,14 @@ public sealed class TodayPageViewModel : ShellPageViewModel
 
         var datePart = RescheduleDateText.Trim();
         var timePart = RescheduleTimeText.Trim();
-        if (datePart.Length == 0 && timePart.Length == 0)
+        if (!TryParseRescheduleTimeSpec(
+                datePart,
+                timePart,
+                ResolveLogicalToday(),
+                out var timeSpec,
+                out var errorCode))
         {
-            InteractionMessage = "无法改期：task.parser.empty";
-            return;
-        }
-
-        var combined = timePart.Length == 0 ? datePart : $"{datePart} {timePart}";
-        var parsed = TaskParser.Parse($"{combined} 改期占位", ResolveLogicalToday());
-        if (!parsed.IsSuccess)
-        {
-            InteractionMessage = $"无法改期：{parsed.Errors[0].Code}";
+            InteractionMessage = $"无法改期：{errorCode}";
             return;
         }
 
@@ -524,7 +525,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         try
         {
             updated = await _taskApplicationService!
-                .UpdateAsync(new UpdateTaskCommand(taskId, target.Title, parsed.Value!.TimeSpec))
+                .UpdateAsync(new UpdateTaskCommand(taskId, target.Title, timeSpec!))
                 .ConfigureAwait(true);
         }
         catch (DomainValidationException exception)
@@ -569,6 +570,80 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         }
 
         InteractionMessage = $"已改期「{updated.Title}」· 旧计划已保存到 task_history";
+    }
+
+    private static bool TryParseRescheduleTimeSpec(
+        string datePart,
+        string timePart,
+        LocalDate logicalToday,
+        out TimeSpec? timeSpec,
+        out string errorCode)
+    {
+        timeSpec = null;
+
+        if (datePart.Length == 0 && timePart.Length == 0)
+        {
+            errorCode = RescheduleEmptyInputCode;
+            return false;
+        }
+
+        // 面板把日期作为独立字段处理。日期缺失时不能重新解释为“只有时间”，
+        // 否则会悄悄改变改期字段的含义。
+        if (datePart.Length == 0)
+        {
+            errorCode = RescheduleInvalidDateCode;
+            return false;
+        }
+
+        var dateResult = TaskParser.Parse(
+            $"{datePart} {RescheduleParserPlaceholder}",
+            logicalToday);
+        if (!dateResult.IsSuccess)
+        {
+            errorCode = dateResult.Errors[0].Code;
+            return false;
+        }
+
+        // 通用 Parser 即使成功，也可能只是把输入当作标题并回退到 ANYTIME。
+        // 要求占位标题完整保留，并且日期探测必须确实得到仅日期的 ANYTIME。
+        if (dateResult.Value is null ||
+            dateResult.Value.Title != RescheduleParserPlaceholder ||
+            dateResult.Value.TimeSpec is not AnytimeSpec dateSpec)
+        {
+            errorCode = RescheduleInvalidDateCode;
+            return false;
+        }
+
+        if (timePart.Length == 0)
+        {
+            // 仅日期改期是既有的明确 ANYTIME 语义，只有日期探测成功后才允许。
+            timeSpec = dateSpec;
+            errorCode = string.Empty;
+            return true;
+        }
+
+        var timeResult = TaskParser.Parse(
+            $"{datePart} {timePart} {RescheduleParserPlaceholder}",
+            logicalToday);
+        if (!timeResult.IsSuccess)
+        {
+            errorCode = timeResult.Errors[0].Code;
+            return false;
+        }
+
+        // 拒绝通用 Parser 原本会保留为标题并降级为 ANYTIME 的任意时间字段文本。
+        if (timeResult.Value is null ||
+            timeResult.Value.Title != RescheduleParserPlaceholder ||
+            (timeResult.Value.TimeSpec.Type != TaskTimeType.TIME &&
+             timeResult.Value.TimeSpec.Type != TaskTimeType.RANGE))
+        {
+            errorCode = RescheduleInvalidTimeCode;
+            return false;
+        }
+
+        timeSpec = timeResult.Value.TimeSpec;
+        errorCode = string.Empty;
+        return true;
     }
 
     private void CancelReschedule()

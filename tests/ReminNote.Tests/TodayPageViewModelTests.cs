@@ -249,6 +249,63 @@ public sealed class TodayPageViewModelTests
         Assert.Contains("task.parser.reserved_syntax", viewModel.InteractionMessage, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("", "20:00", "task.parser.date.invalid")]
+    [InlineData("不是日期", "", "task.parser.date.invalid")]
+    [InlineData("今天", "不是时间", "task.parser.time.invalid")]
+    [InlineData("今天", "25:00", "task.parser.time.invalid")]
+    [InlineData("不是日期", "20:00", "task.parser.date.invalid")]
+    public async SystemTask RescheduleRejectsBlankInvalidOrFreeTextFieldsWithoutUpdating(
+        string dateText,
+        string timeText,
+        string expectedErrorCode)
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "保持原计划",
+            TimeSpec.At(Workday, new LocalTime(9, 0)),
+            "0191f6a4-3b25-7c12-8d34-56789abcde25"));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var target = FindTask(viewModel, "保持原计划");
+
+        target.RescheduleCommand.Execute(null);
+        viewModel.RescheduleDateText = dateText;
+        viewModel.RescheduleTimeText = timeText;
+        await viewModel.ConfirmRescheduleCommand.ExecuteAsync(null);
+
+        Assert.Empty(store.UpdatedCommands);
+        Assert.True(viewModel.IsRescheduleOpen);
+        Assert.Contains($"无法改期：{expectedErrorCode}", viewModel.InteractionMessage, StringComparison.Ordinal);
+        Assert.Equal("09:00", target.TimeLabel);
+        Assert.Equal(1, store.TodayQueryCount);
+    }
+
+    [Fact]
+    public async SystemTask ReschedulePreservesRangeSemanticsAfterFieldValidation()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "跨午夜范围",
+            TimeSpec.Range(Workday, new LocalTime(14, 0), new LocalTime(16, 0)),
+            "0191f6a4-3b25-7c12-8d34-56789abcde26"));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var target = FindTask(viewModel, "跨午夜范围");
+
+        target.RescheduleCommand.Execute(null);
+        viewModel.RescheduleDateText = "明天";
+        viewModel.RescheduleTimeText = "23:00–01:00";
+        await viewModel.ConfirmRescheduleCommand.ExecuteAsync(null);
+
+        var update = Assert.Single(store.UpdatedCommands);
+        var range = Assert.IsType<TimeRangeSpec>(update.TimeSpec);
+        Assert.Equal(Workday.PlusDays(1), range.LocalDate);
+        Assert.Equal(new LocalTime(23, 0), range.RangeStart);
+        Assert.Equal(new LocalTime(1, 0), range.RangeEnd);
+        Assert.True(range.IsCrossMidnight);
+        Assert.False(viewModel.IsRescheduleOpen);
+        Assert.Equal(2, store.TodayQueryCount);
+    }
+
     [Fact]
     public async SystemTask ReorderSwapsPersistedSortOrderWithinSameDateAndGroup()
     {
