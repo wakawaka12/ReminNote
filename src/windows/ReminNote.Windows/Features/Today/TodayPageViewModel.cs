@@ -173,7 +173,6 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         RebuildGroups();
         SelectTask(task);
         QuickAddText = string.Empty;
-        IsQuickAddOpen = false;
         InteractionMessage = UiText.Format(UiText.TodayInteractionQuickAddAddedKey, task.Title);
         NotifySummaryChanged();
         QuickTaskAdded?.Invoke(task);

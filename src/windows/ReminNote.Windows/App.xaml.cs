@@ -1,4 +1,5 @@
 ﻿using System.Windows;
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ReminNote.Windows.Features.Anime;
@@ -45,7 +46,16 @@ public partial class App : Application, IDisposable
     {
         try
         {
-            _host?.StopAsync().GetAwaiter().GetResult();
+            using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            var stopTask = _host?.StopAsync(shutdown.Token);
+            if (stopTask is not null && !stopTask.Wait(TimeSpan.FromSeconds(2)))
+            {
+                Debug.WriteLine("Main host shutdown timed out; continuing application cleanup.");
+            }
+        }
+        catch (AggregateException exception)
+        {
+            Debug.WriteLine($"Main host shutdown failed; continuing application cleanup: {exception.Message}");
         }
         finally
         {

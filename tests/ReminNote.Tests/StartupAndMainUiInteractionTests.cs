@@ -2,6 +2,7 @@ using ReminNote.Widget.Startup;
 using ReminNote.Widget.ViewModels;
 using ReminNote.Windows.Features.Today;
 using ReminNote.Windows.Startup;
+using System.Diagnostics;
 
 namespace ReminNote.Tests;
 
@@ -59,6 +60,26 @@ public sealed class StartupAndMainUiInteractionTests
     }
 
     [Fact]
+    public void DisposingPrimaryStopsTheListenerAndReleasesItsMutex()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var primary = new SingleInstanceCoordinator(
+            $"Local\\ReminNote.Tests.Dispose.{suffix}",
+            $"ReminNote.Tests.Dispose.{suffix}");
+        primary.StartListener(() => { });
+
+        var stopwatch = Stopwatch.StartNew();
+        primary.Dispose();
+        stopwatch.Stop();
+
+        using var replacement = new SingleInstanceCoordinator(
+            $"Local\\ReminNote.Tests.Dispose.{suffix}",
+            $"ReminNote.Tests.Dispose.{suffix}");
+        Assert.True(replacement.IsPrimary);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
     public void QuickAddReportsSuccessSelectsAndPublishesTheNewAnytimeTask()
     {
         var viewModel = new TodayPageViewModel();
@@ -73,8 +94,18 @@ public sealed class StartupAndMainUiInteractionTests
         var task = anytimeGroup.Items.Single(item => item.Title == "整理新的 ANYTIME 事项");
         Assert.Same(task, addedTask);
         Assert.Same(task, viewModel.SelectedTask);
-        Assert.False(viewModel.IsQuickAddOpen);
+        Assert.True(viewModel.IsQuickAddOpen);
+        Assert.Empty(viewModel.QuickAddText);
         Assert.Contains("ANYTIME", viewModel.InteractionMessage, StringComparison.OrdinalIgnoreCase);
+
+        viewModel.QuickAddText = "连续添加的第二项";
+        viewModel.AddQuickTaskCommand.Execute(null);
+
+        Assert.True(viewModel.IsQuickAddOpen);
+        Assert.Empty(viewModel.QuickAddText);
+        Assert.Contains(
+            anytimeGroup.Items,
+            item => item.Title == "连续添加的第二项");
     }
 
     [Fact]

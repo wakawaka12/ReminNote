@@ -707,6 +707,17 @@
                             <TextBlock Text="{x:Static local:UiText.TodayQuickAddDescription}"
                                        Style="{StaticResource TodayTaskMetaTextStyle}"
                                        TextWrapping="Wrap" />
+                            <Border Margin="0,10,0,0"
+                                    Padding="10,7"
+                                    Background="#EEF0FF"
+                                    BorderBrush="#D7DCFF"
+                                    BorderThickness="1"
+                                    CornerRadius="7">
+                                <TextBlock Text="{Binding InteractionMessage}"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           TextWrapping="Wrap"
+                                           AutomationProperties.LiveSetting="Polite" />
+                            </Border>
                         </StackPanel>
                         <TextBox Grid.Row="1"
                                  Text="{Binding QuickAddText, UpdateSourceTrigger=PropertyChanged}"

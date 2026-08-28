@@ -15,9 +15,11 @@ internal sealed class SingleInstanceCoordinator : IDisposable
     private readonly Mutex _mutex;
     private readonly string _pipeName;
     private readonly CancellationTokenSource _cancellation = new();
+    private readonly object _listenerGate = new();
     private readonly int _mutexOwnerThreadId;
     private bool _ownsMutex;
     private Task? _listenerTask;
+    private NamedPipeServerStream? _activeServer;
     private bool _disposed;
 
     public SingleInstanceCoordinator(string mutexName, string pipeName)
@@ -73,12 +75,22 @@ internal sealed class SingleInstanceCoordinator : IDisposable
                 writer.WriteLine(ActivationMessage);
                 return true;
             }
-            catch (IOException) when (attempt < 2)
+            catch (IOException)
             {
+                if (attempt == 2)
+                {
+                    return false;
+                }
+
                 Thread.Sleep(50);
             }
-            catch (TimeoutException) when (attempt < 2)
+            catch (TimeoutException)
             {
+                if (attempt == 2)
+                {
+                    return false;
+                }
+
                 Thread.Sleep(50);
             }
         }
@@ -95,15 +107,21 @@ internal sealed class SingleInstanceCoordinator : IDisposable
 
         _disposed = true;
         _cancellation.Cancel();
-        try
+        lock (_listenerGate)
         {
-            _listenerTask?.GetAwaiter().GetResult();
-        }
-        catch (OperationCanceledException)
-        {
+            _activeServer?.Dispose();
         }
 
-        _cancellation.Dispose();
+        try
+        {
+            _listenerTask?.Wait(TimeSpan.FromSeconds(1));
+        }
+        catch (AggregateException)
+        {
+            // Shutdown must continue if the listener was interrupted by a
+            // closed pipe while the application is exiting.
+        }
+
         // Mutex ownership is thread-affine. The WPF app disposes this on its
         // startup/UI thread; avoid throwing if a host disposes from elsewhere.
         if (_ownsMutex && Environment.CurrentManagedThreadId == _mutexOwnerThreadId)
@@ -126,12 +144,30 @@ internal sealed class SingleInstanceCoordinator : IDisposable
                     1,
                     PipeTransmissionMode.Byte,
                     PipeOptions.Asynchronous);
-                await server.WaitForConnectionAsync(cancellationToken);
-
-                using var reader = new StreamReader(server);
-                if (await reader.ReadLineAsync(cancellationToken) == ActivationMessage)
+                lock (_listenerGate)
                 {
-                    activatePrimaryWindow();
+                    _activeServer = server;
+                }
+
+                try
+                {
+                    await server.WaitForConnectionAsync(cancellationToken).ConfigureAwait(false);
+
+                    using var reader = new StreamReader(server);
+                    if (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) == ActivationMessage)
+                    {
+                        activatePrimaryWindow();
+                    }
+                }
+                finally
+                {
+                    lock (_listenerGate)
+                    {
+                        if (ReferenceEquals(_activeServer, server))
+                        {
+                            _activeServer = null;
+                        }
+                    }
                 }
             }
         }

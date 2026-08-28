@@ -74,6 +74,7 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 - Compact：主任务/最近一集、当前时间和完成/WATCHED 主操作仍可见；Upcoming 队列、长 Summary 和次要操作收起；内容不重叠、不被裁切到无法辨认；
 - 窗口高度不足时，正文区域出现可用的纵向滚动，滚轮/触控板可以看到位于下方的内容；顶部主信息、底部触发栏和焦点控件不被窗口圆角裁切；
 - Quick Add 打开时，输入框和“添加”按钮完整位于正文面板内，不被底部触发栏覆盖；调整高度或滚动正文后仍可输入、添加和关闭；
+- Widget 使用窗口边缘/右下角调整大小后仍保持圆角裁剪，内容随可用高度重排且不遮挡输入框、按钮或关闭入口；
 - Standard：Upcoming 队列、Summary 和次要操作恢复；
 - Expanded：窗口可继续放宽，主信息保持稳定且显示宽屏布局标识；
 - TODAY 与 ANIME 三档尺寸均能正常切换。
@@ -84,6 +85,7 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 - 文本、卡片重叠或窗口内容溢出；
 - 鼠标滚轮/触控板无法滚动正文，或滚动后关键内容仍被裁切；
 - Quick Add 输入框/添加按钮下半部被 footer 遮挡，或滚动后无法回到面板继续操作；
+- Widget 无法通过窗口边缘/右下角调整大小，或调整后圆角、边框和焦点区域异常；
 - 调整尺寸导致异常、黑屏或页面状态丢失。
 
 ## Test 3 — Widget 状态 Mock
@@ -202,6 +204,20 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 - 发现授权范围外文件被修改；
 - Widget 依赖 Agent IPC、Reminder Scheduler 或真实业务服务才能启动。
 
+## 补充回归 — Main Quick Add 连续添加
+
+1. 启动 Main App，进入 TODAY 并打开 `QUICK ADD`。
+2. 输入第一条任务并点击“添加”；确认输入框仍在原处且已清空。
+3. 输入第二条任务并再次点击“添加”，随后点击“取消”。
+
+预期：
+
+- 每次添加后面板不关闭，输入框和“添加”按钮持续可用；
+- 成功反馈靠近输入区清晰显示，并明确写出已加入 `ANYTIME`；反馈在下一次操作前保持可见；
+- 每次输入均被清空，两个新条目都出现在/定位到 `ANYTIME`，取消仍可关闭面板。
+
+失败：添加后输入框消失、面板自动关闭、反馈只在不可见的页面底部出现，或未明确说明 `ANYTIME`。
+
 ## 补充回归 — Main App / Widget 单实例与并行启动
 
 1. 先启动 Release Main App，再用第二个终端启动同一个 Main App（可直接运行 `src/windows/ReminNote.Windows/bin/Release/net10.0-windows/ReminNote.Windows.exe`）。
@@ -213,11 +229,11 @@ src/windows/ReminNote.Widget/bin/Release/net10.0-windows/ReminNote.Widget.exe
 - Main App 第二次启动不创建第二个窗口，进程以 0 退出并唤起已有 Main 窗口；已有页面/Mock 状态保持不变；
 - Widget 与 Main App 可以同时运行；Widget 只与同身份的 Widget 实例互斥，不阻塞 Main App；
 - Widget 第二次启动不创建第二个 Widget 窗口，并以 0 退出后唤起已有 Widget；
-- 关闭主窗口后 `scripts/run.ps1 -Configuration Release` 的前台进程退出码为 0；直接 EXE 启动与脚本启动行为一致；
+- 关闭主窗口后 `scripts/run.ps1 -Configuration Release` 的前台 `dotnet run` 和 PowerShell 命令都返回提示符、退出码为 0；`ReminNote.Windows.exe` 与 `dotnet.exe` 不留下该次启动的后台进程，Mutex/NamedPipe 可被下一次启动重新取得；直接 EXE 启动与脚本启动行为一致；
 
 失败：
 
-- 第二次 Main App/Widget 启动出现重复窗口、悬挂不退出、退出码非 0 或没有唤起已有窗口；
+- 第二次 Main App/Widget 启动出现重复窗口、悬挂不退出、退出码非 0 或没有唤起已有窗口；窗口关闭后 exe/dotnet 仍驻留、命令行不返回或下一次启动仍被锁住；
 - 先启动 Widget 导致 Main App 无法启动，或两个应用共享同一个互斥锁；
 
 ## Known Limitations

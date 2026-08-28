@@ -1,11 +1,10 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Automation;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using ReminNote.Windows.Features.Anime;
 using ReminNote.Windows.Features.Today;
-using ReminNote.Windows.Resources.Localization;
 using ReminNote.Windows.ViewModels;
 
 namespace ReminNote.Windows;
@@ -13,6 +12,8 @@ namespace ReminNote.Windows;
 public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
+    private AnimeDetailsWindow? _animeDetailsWindow;
+    private IInputElement? _focusedElementBeforeDetails;
 
     public MainWindow(MainWindowViewModel viewModel)
     {
@@ -20,7 +21,7 @@ public partial class MainWindow : Window
         _viewModel = viewModel;
         DataContext = viewModel;
         _viewModel.TodayPage.QuickTaskAdded += OnQuickTaskAdded;
-        _viewModel.AnimePage.SelectedAnimeChanged += OnSelectedAnimeChanged;
+        _viewModel.AnimePage.DetailsRequested += OnDetailsRequested;
         Closed += OnClosed;
     }
 
@@ -38,19 +39,55 @@ public partial class MainWindow : Window
             }));
     }
 
-    private void OnSelectedAnimeChanged(AnimeMockEntry entry)
+    private void OnDetailsRequested(AnimeMockEntry entry)
     {
-        Dispatcher.BeginInvoke(
-            DispatcherPriority.Loaded,
-            new Action(() => FindVisualChild<FrameworkElement>(
-                MainContent,
-                element => AutomationProperties.GetName(element) == UiText.AnimeSelectedAnime)?.BringIntoView()));
+        if (!ReferenceEquals(_viewModel.AnimePage.SelectedEntry, entry))
+        {
+            return;
+        }
+
+        if (_animeDetailsWindow is { IsVisible: true } existingWindow)
+        {
+            existingWindow.Activate();
+            return;
+        }
+
+        _focusedElementBeforeDetails = Keyboard.FocusedElement;
+        var detailsWindow = new AnimeDetailsWindow(_viewModel.AnimePage)
+        {
+            Owner = this
+        };
+        _animeDetailsWindow = detailsWindow;
+        detailsWindow.Closed += OnDetailsClosed;
+        detailsWindow.ShowDialog();
     }
 
     private void OnClosed(object? sender, EventArgs e)
     {
         _viewModel.TodayPage.QuickTaskAdded -= OnQuickTaskAdded;
-        _viewModel.AnimePage.SelectedAnimeChanged -= OnSelectedAnimeChanged;
+        _viewModel.AnimePage.DetailsRequested -= OnDetailsRequested;
+        _animeDetailsWindow?.Close();
+    }
+
+    private void OnDetailsClosed(object? sender, EventArgs e)
+    {
+        if (sender is Window detailsWindow)
+        {
+            detailsWindow.Closed -= OnDetailsClosed;
+        }
+
+        _animeDetailsWindow = null;
+        Activate();
+        if (_focusedElementBeforeDetails is UIElement focusTarget && focusTarget.Focusable)
+        {
+            focusTarget.Focus();
+        }
+        else
+        {
+            Focus();
+        }
+
+        _focusedElementBeforeDetails = null;
     }
 
     private static T? FindVisualChild<T>(
