@@ -51,4 +51,4 @@
 
 实现位于 `src/windows/ReminNote.Infrastructure/Application/TaskApplicationService.cs` 和 `TaskQueryService.cs`。应用服务使用注入的 Noda Time `IClock`，通过 Core aggregate 完成 Create、Update、RecordResult 和 Delete，再经 `ITaskRepository` 持久化；更新和记录结果先在 rehydrated copy 上校验，失败不会污染 repository 返回的对象。已有结果的 Task 调用 Update 实际改期时，`task.time_spec.changed_after_result` 领域异常直接透传，且不会调用 repository 更新数据库行；TimeSpec 不变时仍允许 Rename。无结果但已过去的改期判断留到 P2 的时区与时钟规则。查询服务使用 EF `AsNoTracking`，按 ID 或计划日期返回 `TaskSnapshot`，并按时间形状、时间值和 ID 稳定排序，不向上层泄露 EF entity。
 
-该边界仍是 P1 本地写入适配，未引入 DI、Agent IPC、Named Pipe 或生产 UI 接线；后续 P2.5 可将同一 application boundary 路由到 Agent single writer。`tests/ReminNote.Tests/TaskApplicationBoundaryTests.cs` 已覆盖 Create、Update、RecordResult、Delete、缺失 ID、按计划日查询、稳定排序、no-tracking 结果，以及已有结果改期异常透传和数据库行不变；集成测试总数为 64 项。
+该边界仍是 P1 本地写入适配，未引入 DI、Agent IPC、Named Pipe 或生产 UI 接线；后续 P2.5 可将同一 application boundary 路由到 Agent single writer。`tests/ReminNote.Tests/TaskApplicationBoundaryTests.cs` 已覆盖 Create、Update、RecordResult、Delete、缺失 ID、按计划日查询、稳定排序、no-tracking 结果，以及已有结果改期异常透传和数据库行不变；P1 合并后包含启动/UI 状态逻辑在内的 Release 测试总数为 75 项。
