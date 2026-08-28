@@ -1,5 +1,13 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using NodaTime;
+using ReminNote.Core;
+using ReminNote.Core.Application;
+using ReminNote.Core.Tasks;
+using ReminNote.Core.Tasks.Parsing;
+using ReminNote.Core.Time;
+using ReminNote.Core.Today;
 using ReminNote.Windows.Resources.Localization;
 
 namespace ReminNote.Widget.ViewModels;
@@ -36,7 +44,7 @@ public sealed class WidgetQueueItem(string time, string title, string meta, stri
     public string Marker { get; } = marker;
 }
 
-public sealed class WidgetViewModel : ObservableObject
+public sealed class WidgetViewModel : ObservableObject, IDisposable
 {
     private WidgetPage _activePage = WidgetPage.Today;
     private WidgetInteractionState _interactionState = WidgetInteractionState.Locked;
@@ -50,9 +58,26 @@ public sealed class WidgetViewModel : ObservableObject
     private string _quickAddText = string.Empty;
     private string _quickAddFeedback = string.Empty;
     private string _reminderFeedback = string.Empty;
+    private readonly ITaskApplicationService? _taskApplicationService;
+    private readonly ITodayQueryService? _todayQueryService;
+    private readonly IClock _clock;
+    private readonly bool _isLive;
+    private readonly ObservableCollection<WidgetQueueItem> _todayItems = [];
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private TodayTaskReadModel? _livePrimaryTask;
+    private TaskId? _currentTaskId;
+    private LocalDate _currentWorkday;
+    private int _openTaskCount;
+    private int _completedTaskCount;
+    private int _needsReviewCount;
+    private string _primaryTaskTitle = "整理桌面资料";
+    private string _primaryTaskMeta = "TODAY · ANYTIME · 生活";
+    private string _primaryTaskTimeLabel = UiText.WidgetNow;
 
     public WidgetViewModel()
     {
+        _clock = SystemClock.Instance;
+        _isLive = false;
         TodayUpcomingItems =
         [
             new WidgetQueueItem("12:00", "吃钙片", UiText.Get(UiText.WidgetTodayHealthMetaKey), "NOW"),
@@ -64,13 +89,42 @@ public sealed class WidgetViewModel : ObservableObject
             new WidgetQueueItem("明天", "迷宫饭", UiText.Get(UiText.WidgetAnimeWatchLaterMetaKey), "+2")
         ];
 
+        ConfigureCommands();
+    }
+
+    public WidgetViewModel(
+        ITodayQueryService todayQueryService,
+        ITaskApplicationService taskApplicationService,
+        IClock clock)
+    {
+        _todayQueryService = todayQueryService ?? throw new ArgumentNullException(nameof(todayQueryService));
+        _taskApplicationService = taskApplicationService ?? throw new ArgumentNullException(nameof(taskApplicationService));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
+        _isLive = true;
+        _primaryTaskTitle = "暂无 TODAY Task";
+        _primaryTaskMeta = "TODAY · 暂无计划";
+        _primaryTaskTimeLabel = "—";
+        TodayUpcomingItems = _todayItems;
+        AnimeUpcomingItems =
+        [
+            new WidgetQueueItem("22:30", "药屋少女的呢喃", UiText.Get(UiText.WidgetAnimeWatchingMetaKey), "01:12"),
+            new WidgetQueueItem("明天", "迷宫饭", UiText.Get(UiText.WidgetAnimeWatchLaterMetaKey), "+2")
+        ];
+
+        ConfigureCommands();
+    }
+
+    private void ConfigureCommands()
+    {
         ShowTodayCommand = new RelayCommand(ShowToday);
         ShowAnimeCommand = new RelayCommand(ShowAnime);
         ToggleInteractionCommand = new RelayCommand(ToggleInteractionState);
         ToggleQuickAddCommand = new RelayCommand(ToggleQuickAdd);
         CloseQuickAddCommand = new RelayCommand(CloseQuickAdd);
-        SubmitQuickAddCommand = new RelayCommand(SubmitQuickAdd, CanSubmitQuickAdd);
-        CompleteTaskCommand = new RelayCommand(CompleteTask);
+        SubmitQuickAddCommand = new AsyncRelayCommand(SubmitQuickAddAsync, CanSubmitQuickAdd);
+        CompleteTaskCommand = new AsyncRelayCommand(CompleteTaskAsync);
+        RecordPartialTaskCommand = new AsyncRelayCommand(RecordPartialTaskAsync);
+        RecordMissedTaskCommand = new AsyncRelayCommand(RecordMissedTaskAsync);
         SnoozeTaskCommand = new RelayCommand(SnoozeTask);
         RescheduleTaskCommand = new RelayCommand(RescheduleTask);
         WatchAnimeCommand = new RelayCommand(WatchAnime);
@@ -83,43 +137,47 @@ public sealed class WidgetViewModel : ObservableObject
         DismissAlertCommand = new RelayCommand(DismissAlert);
     }
 
-    public IReadOnlyList<WidgetQueueItem> TodayUpcomingItems { get; }
+    public IReadOnlyList<WidgetQueueItem> TodayUpcomingItems { get; private set; }
 
     public IReadOnlyList<WidgetQueueItem> AnimeUpcomingItems { get; }
 
-    public IRelayCommand ShowTodayCommand { get; }
+    public IRelayCommand ShowTodayCommand { get; private set; } = null!;
 
-    public IRelayCommand ShowAnimeCommand { get; }
+    public IRelayCommand ShowAnimeCommand { get; private set; } = null!;
 
-    public IRelayCommand ToggleInteractionCommand { get; }
+    public IRelayCommand ToggleInteractionCommand { get; private set; } = null!;
 
-    public IRelayCommand ToggleQuickAddCommand { get; }
+    public IRelayCommand ToggleQuickAddCommand { get; private set; } = null!;
 
-    public IRelayCommand CloseQuickAddCommand { get; }
+    public IRelayCommand CloseQuickAddCommand { get; private set; } = null!;
 
-    public IRelayCommand SubmitQuickAddCommand { get; }
+    public IAsyncRelayCommand SubmitQuickAddCommand { get; private set; } = null!;
 
-    public IRelayCommand CompleteTaskCommand { get; }
+    public IAsyncRelayCommand CompleteTaskCommand { get; private set; } = null!;
 
-    public IRelayCommand SnoozeTaskCommand { get; }
+    public IAsyncRelayCommand RecordPartialTaskCommand { get; private set; } = null!;
 
-    public IRelayCommand RescheduleTaskCommand { get; }
+    public IAsyncRelayCommand RecordMissedTaskCommand { get; private set; } = null!;
 
-    public IRelayCommand WatchAnimeCommand { get; }
+    public IRelayCommand SnoozeTaskCommand { get; private set; } = null!;
 
-    public IRelayCommand WatchLaterCommand { get; }
+    public IRelayCommand RescheduleTaskCommand { get; private set; } = null!;
 
-    public IRelayCommand ScheduleAnimeTaskCommand { get; }
+    public IRelayCommand WatchAnimeCommand { get; private set; } = null!;
 
-    public IRelayCommand OpenReminderDrawerCommand { get; }
+    public IRelayCommand WatchLaterCommand { get; private set; } = null!;
 
-    public IRelayCommand CloseReminderDrawerCommand { get; }
+    public IRelayCommand ScheduleAnimeTaskCommand { get; private set; } = null!;
 
-    public IRelayCommand MarkReminderReadCommand { get; }
+    public IRelayCommand OpenReminderDrawerCommand { get; private set; } = null!;
 
-    public IRelayCommand SimulateAlertCommand { get; }
+    public IRelayCommand CloseReminderDrawerCommand { get; private set; } = null!;
 
-    public IRelayCommand DismissAlertCommand { get; }
+    public IRelayCommand MarkReminderReadCommand { get; private set; } = null!;
+
+    public IRelayCommand SimulateAlertCommand { get; private set; } = null!;
+
+    public IRelayCommand DismissAlertCommand { get; private set; } = null!;
 
     public string ActivePageTitle => _activePage == WidgetPage.Today
         ? UiText.ShellTodayTitle
@@ -128,6 +186,14 @@ public sealed class WidgetViewModel : ObservableObject
     public string ActivePageSubtitle => _activePage == WidgetPage.Today
         ? UiText.Get(UiText.WidgetTodayPageSubtitleKey)
         : UiText.Get(UiText.WidgetAnimePageSubtitleKey);
+
+    public string WidgetSubtitle => _isLive
+        ? "轻量 Widget · P2 Task loop"
+        : UiText.WidgetSubtitle;
+
+    public string WindowTitle => _isLive
+        ? "ReminNote Widget"
+        : UiText.WidgetWindowTitle;
 
     public bool IsTodayActive => _activePage == WidgetPage.Today;
 
@@ -151,9 +217,56 @@ public sealed class WidgetViewModel : ObservableObject
         _ => "·"
     };
 
-    public string TaskStatusLabel => _isTaskCompleted
-        ? UiText.Get(UiText.WidgetTaskCompletedKey)
-        : UiText.Get(UiText.WidgetTaskAnytimeKey);
+    public bool IsLive => _isLive;
+
+    public string PrimaryTaskTitle => _primaryTaskTitle;
+
+    public string PrimaryTaskMeta => _primaryTaskMeta;
+
+    public string PrimaryTaskTimeLabel => _primaryTaskTimeLabel;
+
+    public string TaskStatusLabel => _isLive
+        ? FormatStatusLabel(_livePrimaryTask)
+        : _isTaskCompleted
+            ? UiText.Get(UiText.WidgetTaskCompletedKey)
+            : UiText.Get(UiText.WidgetTaskAnytimeKey);
+
+    public int OpenTaskCount => _openTaskCount;
+
+    public int CompletedTaskCount => _completedTaskCount;
+
+    public int NeedsReviewCount => _needsReviewCount;
+
+    public string TodaySummaryFull => _isLive
+        ? FormatLiveSummary(includeNeedsReview: true)
+        : UiText.WidgetTodaySummaryFull;
+
+    public string TodaySummaryCompact => _isLive
+        ? FormatLiveSummary(includeNeedsReview: false)
+        : UiText.WidgetTodaySummaryCompact;
+
+    public string DataSourceLabel => _isLive
+        ? "LOCAL SQLITE · LIVE TASKS"
+        : UiText.WidgetFooterLocalMock;
+
+    public string QuickAddHeading => _isLive
+        ? "QUICK ADD · LIVE TASK"
+        : UiText.WidgetQuickAddHeading;
+
+    public string QuickAddDescription => _isLive
+        ? "输入确定的日期/时间语法，任务会写入本地 SQLite。"
+        : UiText.WidgetQuickAddDescription;
+
+    public string QuickAddToolTip => _isLive
+        ? "例如：明天 18:00 买东西"
+        : UiText.WidgetQuickAddToolTip;
+
+    public bool IsResultActionsVisible =>
+        _isLive && _livePrimaryTask is { IsRange: true, IsCompleted: false };
+
+    public string ResultActionHint => _livePrimaryTask?.IsNeedsReview == true
+        ? UiText.TodayRangeNeedsResult
+        : "RANGE · 记录结果";
 
     public string TaskFeedback
     {
@@ -280,6 +393,148 @@ public sealed class WidgetViewModel : ObservableObject
         OnPropertyChanged(nameof(IsExpanded));
     }
 
+    /// <summary>
+    /// Refreshes the widget from the same local Today read model used by the
+    /// Main window. The default constructor remains the P0 in-memory fixture.
+    /// </summary>
+    public async System.Threading.Tasks.Task RefreshAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!_isLive)
+        {
+            return;
+        }
+
+        await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(true);
+        try
+        {
+            var readModel = await _todayQueryService!
+                .GetAsync(new TodayQueryRequest(_clock.GetCurrentInstant()), cancellationToken)
+                .ConfigureAwait(true);
+
+            _currentWorkday = readModel.Workday;
+            _openTaskCount = readModel.OpenTaskCount;
+            _completedTaskCount = readModel.CompletedTaskCount;
+            _needsReviewCount = readModel.NeedsReviewCount;
+
+            var openTasks = readModel.Tasks
+                .Where(task => !task.IsCompleted)
+                .ToArray();
+            _livePrimaryTask = openTasks.FirstOrDefault()
+                ?? (readModel.Tasks.Count > 0 ? readModel.Tasks[0] : null);
+            _currentTaskId = _livePrimaryTask?.Task.Id;
+            _isTaskCompleted = _livePrimaryTask?.IsCompleted ?? false;
+
+            if (_livePrimaryTask is null)
+            {
+                _primaryTaskTitle = "暂无 TODAY Task";
+                _primaryTaskMeta = "TODAY · 暂无计划";
+                _primaryTaskTimeLabel = "—";
+            }
+            else
+            {
+                _primaryTaskTitle = _livePrimaryTask.Task.Title;
+                _primaryTaskMeta = FormatTaskMeta(_livePrimaryTask);
+                _primaryTaskTimeLabel = FormatTaskTime(_livePrimaryTask.Task.TimeSpec);
+            }
+
+            _todayItems.Clear();
+            foreach (var task in openTasks.Skip(_livePrimaryTask is { IsCompleted: false } ? 1 : 0))
+            {
+                _todayItems.Add(ToQueueItem(task));
+            }
+
+            OnPropertyChanged(nameof(PrimaryTaskTitle));
+            OnPropertyChanged(nameof(PrimaryTaskMeta));
+            OnPropertyChanged(nameof(PrimaryTaskTimeLabel));
+            OnPropertyChanged(nameof(TaskStatusLabel));
+            OnPropertyChanged(nameof(OpenTaskCount));
+            OnPropertyChanged(nameof(CompletedTaskCount));
+            OnPropertyChanged(nameof(NeedsReviewCount));
+            OnPropertyChanged(nameof(TodaySummaryFull));
+            OnPropertyChanged(nameof(TodaySummaryCompact));
+            OnPropertyChanged(nameof(IsResultActionsVisible));
+            OnPropertyChanged(nameof(ResultActionHint));
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        _refreshGate.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    private static string FormatStatusLabel(TodayTaskReadModel? task)
+    {
+        if (task is null)
+        {
+            return "—";
+        }
+
+        return task.Task.Result?.ToString() ?? (task.Status switch
+        {
+            TodayTaskStatus.OVERDUE => UiText.Get(UiText.TodayStatusOverdueKey),
+            TodayTaskStatus.AwaitingResult => UiText.Get(UiText.TodayStatusAwaitingResultKey),
+            TodayTaskStatus.UPCOMING => UiText.Get(UiText.TodayStatusUpcomingKey),
+            TodayTaskStatus.PLANNED => UiText.Get(UiText.TodayStatusPlannedKey),
+            TodayTaskStatus.COMPLETED => UiText.Get(UiText.TodayStatusCompletedKey),
+            _ => UiText.Get(UiText.TodayStatusPlannedKey)
+        });
+    }
+
+    private static string FormatTaskMeta(TodayTaskReadModel task)
+    {
+        var reviewSuffix = task.IsNeedsReview ? " · NEEDS REVIEW" : string.Empty;
+        return $"{task.Group} · {FormatStatusLabel(task)}{reviewSuffix}";
+    }
+
+    private static string FormatTaskTime(TimeSpec timeSpec) => timeSpec switch
+    {
+        AnytimeSpec => "ANYTIME",
+        TimePointSpec point => FormatLocalTime(point.TimePoint),
+        TimeRangeSpec range =>
+            $"{FormatLocalTime(range.RangeStart)}–{FormatLocalTime(range.RangeEnd)}",
+        _ => "—"
+    };
+
+    private static string FormatLocalTime(LocalTime time) =>
+        $"{time.Hour:00}:{time.Minute:00}";
+
+    private static WidgetQueueItem ToQueueItem(TodayTaskReadModel task)
+    {
+        var marker = task.IsNeedsReview
+            ? "REVIEW"
+            : task.Task.Result?.ToString() ?? (task.Status switch
+            {
+                TodayTaskStatus.UPCOMING => "NEXT",
+                TodayTaskStatus.OVERDUE => "OPEN",
+                _ => "OPEN"
+            });
+        return new WidgetQueueItem(
+            FormatTaskTime(task.Task.TimeSpec),
+            task.Task.Title,
+            FormatTaskMeta(task),
+            marker);
+    }
+
+    private string FormatLiveSummary(bool includeNeedsReview)
+    {
+        var summary = UiText.Format(
+            UiText.TodayPlanSummaryKey,
+            OpenTaskCount,
+            CompletedTaskCount);
+        return includeNeedsReview && NeedsReviewCount > 0
+            ? $"{summary} · {UiText.Format(UiText.TodayNeedsReviewTextKey, NeedsReviewCount)}"
+            : summary;
+    }
+
+    private static string FormatResultFeedback(string title, TaskResult result) =>
+        $"已记录「{title}」的 {result} 结果。";
+
     private void ShowToday()
     {
         if (_activePage == WidgetPage.Today)
@@ -335,21 +590,131 @@ public sealed class WidgetViewModel : ObservableObject
 
     private bool CanSubmitQuickAdd() => !string.IsNullOrWhiteSpace(QuickAddText);
 
-    private void SubmitQuickAdd()
+    private async System.Threading.Tasks.Task SubmitQuickAddAsync()
     {
-        QuickAddFeedback = UiText.Format(UiText.WidgetQuickAddFeedbackKey, QuickAddText.Trim());
-        QuickAddText = string.Empty;
+        var input = QuickAddText.Trim();
+        if (!_isLive)
+        {
+            QuickAddFeedback = UiText.Format(UiText.WidgetQuickAddFeedbackKey, input);
+            QuickAddText = string.Empty;
+            return;
+        }
+
+        var workday = _currentWorkday == default
+            ? new WorkdayService(
+                DateTimeZoneProviders.Tzdb.GetSystemDefault(),
+                LocalTime.Midnight).GetWorkday(_clock.GetCurrentInstant())
+            : _currentWorkday;
+        var parsed = TaskParser.Parse(input, workday);
+        if (!parsed.IsSuccess)
+        {
+            QuickAddFeedback = $"无法创建 Task：{parsed.Errors[0].Code}";
+            return;
+        }
+
+        try
+        {
+            var created = await _taskApplicationService!
+                .CreateAsync(new CreateTaskCommand(parsed.Value!.Title, parsed.Value.TimeSpec))
+                .ConfigureAwait(true);
+            QuickAddText = string.Empty;
+            await RefreshAsync().ConfigureAwait(true);
+            QuickAddFeedback = $"已写入本地 Task：「{created.Title}」";
+        }
+        catch (Exception exception) when (exception is DomainValidationException or TaskWriteGateBusyException)
+        {
+            QuickAddFeedback = $"无法创建 Task：{exception.Message}";
+        }
     }
 
-    private void CompleteTask()
+    private async System.Threading.Tasks.Task CompleteTaskAsync()
     {
-        _isTaskCompleted = true;
-        OnPropertyChanged(nameof(TaskStatusLabel));
-        TaskFeedback = UiText.Get(UiText.WidgetTaskCompletedFeedbackKey);
+        if (!_isLive)
+        {
+            _isTaskCompleted = true;
+            OnPropertyChanged(nameof(TaskStatusLabel));
+            TaskFeedback = UiText.Get(UiText.WidgetTaskCompletedFeedbackKey);
+            return;
+        }
+
+        await RecordLiveResultAsync(TaskResult.COMPLETED, null).ConfigureAwait(true);
+    }
+
+    private async System.Threading.Tasks.Task RecordPartialTaskAsync()
+    {
+        if (!_isLive)
+        {
+            return;
+        }
+
+        await RecordLiveResultAsync(
+                TaskResult.PARTIAL,
+                "由 Widget 记录的 PARTIAL 结果。")
+            .ConfigureAwait(true);
+    }
+
+    private async System.Threading.Tasks.Task RecordMissedTaskAsync()
+    {
+        if (!_isLive)
+        {
+            return;
+        }
+
+        await RecordLiveResultAsync(TaskResult.MISSED, null).ConfigureAwait(true);
+    }
+
+    private async System.Threading.Tasks.Task RecordLiveResultAsync(
+        TaskResult result,
+        string? note)
+    {
+        if (_currentTaskId is not { } taskId || _livePrimaryTask is null)
+        {
+            TaskFeedback = "当前没有可记录结果的 TODAY Task。";
+            return;
+        }
+
+        if (_livePrimaryTask.IsCompleted)
+        {
+            TaskFeedback = "该 Task 已有结果，不能重复通过 Widget 记录。";
+            return;
+        }
+
+        if (result == TaskResult.PARTIAL && !_livePrimaryTask.IsRange)
+        {
+            TaskFeedback = "PARTIAL 结果只适用于 RANGE Task。";
+            return;
+        }
+
+        var title = _livePrimaryTask.Task.Title;
+        try
+        {
+            var recorded = await _taskApplicationService!
+                .RecordResultAsync(new RecordTaskResultCommand(taskId, result, note))
+                .ConfigureAwait(true);
+            if (recorded is null)
+            {
+                TaskFeedback = "当前 Task 已不存在，Widget 已刷新。";
+                await RefreshAsync().ConfigureAwait(true);
+                return;
+            }
+
+            await RefreshAsync().ConfigureAwait(true);
+            TaskFeedback = FormatResultFeedback(title, result);
+        }
+        catch (Exception exception) when (exception is DomainValidationException or TaskWriteGateBusyException)
+        {
+            TaskFeedback = $"无法记录结果：{exception.Message}";
+        }
     }
 
     private void SnoozeTask()
     {
+        if (_isLive)
+        {
+            TaskFeedback = "P2 暂不在 Widget 自动改期，请在 Main TODAY 编辑计划。";
+            return;
+        }
+
         _isTaskCompleted = false;
         OnPropertyChanged(nameof(TaskStatusLabel));
         TaskFeedback = UiText.Get(UiText.WidgetTaskSnoozedFeedbackKey);
@@ -357,6 +722,12 @@ public sealed class WidgetViewModel : ObservableObject
 
     private void RescheduleTask()
     {
+        if (_isLive)
+        {
+            TaskFeedback = "P2 暂不在 Widget 自动改期，请在 Main TODAY 编辑计划。";
+            return;
+        }
+
         _isTaskCompleted = false;
         OnPropertyChanged(nameof(TaskStatusLabel));
         TaskFeedback = UiText.Get(UiText.WidgetTaskRescheduledFeedbackKey);

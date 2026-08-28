@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
+    <ProjectReference Include="..\ReminNote.Core\ReminNote.Core.csproj" />
+    <ProjectReference Include="..\ReminNote.Infrastructure\ReminNote.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>

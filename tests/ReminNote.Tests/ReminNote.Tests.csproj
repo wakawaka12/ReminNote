@@ -22,6 +22,8 @@
   <ItemGroup>
     <Compile Include="../../src/windows/ReminNote.Widget/ViewModels/WidgetViewModel.cs"
              Link="WidgetViewModel.cs" />
+    <Compile Include="../../src/windows/ReminNote.Widget/Startup/WidgetStartupOptions.cs"
+             Link="WidgetStartupOptions.cs" />
     <Compile Include="../../src/windows/ReminNote.Widget/Startup/WidgetSingleInstanceCoordinator.cs"
              Link="WidgetSingleInstanceCoordinator.cs" />
     <Compile Include="../../src/windows/ReminNote.Windows/Startup/SingleInstanceCoordinator.cs"

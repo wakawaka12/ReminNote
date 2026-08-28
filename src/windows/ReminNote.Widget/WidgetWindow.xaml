@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:local="clr-namespace:ReminNote.Windows.Resources.Localization"
-        Title="{x:Static local:UiText.WidgetWindowTitle}"
-        AutomationProperties.Name="{x:Static local:UiText.WidgetWindowTitle}"
+        Title="{Binding WindowTitle}"
+        AutomationProperties.Name="{Binding WindowTitle}"
         Width="500"
         Height="390"
         MinWidth="360"
@@ -47,7 +47,7 @@
                     <StackPanel Grid.Column="0">
                         <TextBlock Text="{x:Static local:UiText.ShellBrandName}"
                                    Style="{StaticResource WidgetBrandTextStyle}" />
-                        <TextBlock Text="{x:Static local:UiText.WidgetSubtitle}"
+                        <TextBlock Text="{Binding WidgetSubtitle}"
                                    Style="{StaticResource WidgetEyebrowTextStyle}" />
                     </StackPanel>
                     <Border Grid.Column="2"
@@ -123,6 +123,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Border Grid.Row="0"
                                 Style="{StaticResource WidgetPrimaryCardStyle}">
@@ -139,9 +140,9 @@
                                             Margin="14,0,12,0">
                                     <TextBlock Text="{x:Static local:UiText.WidgetPrimaryNextUp}"
                                                Style="{StaticResource WidgetCardEyebrowTextStyle}" />
-                                    <TextBlock Text="&#x6574;&#x7406;&#x684C;&#x9762;&#x8D44;&#x6599;"
+                                    <TextBlock Text="{Binding PrimaryTaskTitle}"
                                                Style="{StaticResource WidgetPrimaryTitleTextStyle}" />
-                                    <TextBlock Text="TODAY · ANYTIME · 生活"
+                                    <TextBlock Text="{Binding PrimaryTaskMeta}"
                                                Style="{StaticResource WidgetMetaTextStyle}"
                                                Visibility="{Binding IsNotCompact, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                     <TextBlock Text="{Binding TaskFeedback}"
@@ -153,7 +154,7 @@
                                     <TextBlock Text="{Binding TaskStatusLabel}"
                                                HorizontalAlignment="Right"
                                                Style="{StaticResource WidgetStatusTextStyle}" />
-                                    <TextBlock Text="{x:Static local:UiText.WidgetNow}"
+                                    <TextBlock Text="{Binding PrimaryTaskTimeLabel}"
                                                HorizontalAlignment="Right"
                                                Style="{StaticResource WidgetTimeTextStyle}" />
                                 </StackPanel>
@@ -203,10 +204,10 @@
                                         VerticalAlignment="Center">
                                 <TextBlock Text="{x:Static local:UiText.WidgetSummary}"
                                            Style="{StaticResource WidgetSectionLabelTextStyle}" />
-                                <TextBlock Text="{x:Static local:UiText.WidgetTodaySummaryFull}"
+                                <TextBlock Text="{Binding TodaySummaryFull}"
                                            Style="{StaticResource WidgetSummaryTextStyle}"
                                            Visibility="{Binding IsNotCompact, Converter={StaticResource BooleanToVisibilityConverter}}" />
-                                <TextBlock Text="{x:Static local:UiText.WidgetTodaySummaryCompact}"
+                                <TextBlock Text="{Binding TodaySummaryCompact}"
                                            Style="{StaticResource WidgetSummaryTextStyle}"
                                            Visibility="{Binding IsCompact, Converter={StaticResource BooleanToVisibilityConverter}}" />
                             </StackPanel>
@@ -231,6 +232,24 @@
                                     Visibility="{Binding IsNotCompact, Converter={StaticResource BooleanToVisibilityConverter}}"
                                     AutomationProperties.Name="{x:Static local:UiText.WidgetReschedule}" />
                         </Grid>
+                        <StackPanel Grid.Row="3"
+                                    Margin="0,10,0,0"
+                                    Visibility="{Binding IsResultActionsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <TextBlock Text="{Binding ResultActionHint}"
+                                       Style="{StaticResource WidgetSectionLabelTextStyle}" />
+                            <StackPanel Orientation="Horizontal"
+                                        Margin="0,5,0,0">
+                                <Button Content="记录 PARTIAL"
+                                        Command="{Binding RecordPartialTaskCommand}"
+                                        Style="{StaticResource WidgetSecondaryActionButtonStyle}"
+                                        AutomationProperties.Name="记录 PARTIAL 结果" />
+                                <Button Content="记录 MISSED"
+                                        Command="{Binding RecordMissedTaskCommand}"
+                                        Style="{StaticResource WidgetSecondaryActionButtonStyle}"
+                                        Margin="6,0,0,0"
+                                        AutomationProperties.Name="记录 MISSED 结果" />
+                            </StackPanel>
+                        </StackPanel>
                     </Grid>
                     <Grid x:Name="AnimePage"
                           Visibility="{Binding IsAnimeActive, Converter={StaticResource BooleanToVisibilityConverter}}">
@@ -370,7 +389,7 @@
                     <StackPanel Grid.Column="0"
                                 Orientation="Horizontal"
                                 VerticalAlignment="Center">
-                        <TextBlock Text="{x:Static local:UiText.WidgetFooterLocalMock}"
+                        <TextBlock Text="{Binding DataSourceLabel}"
                                    Style="{StaticResource WidgetFooterTextStyle}"
                                    Visibility="{Binding IsNotCompact, Converter={StaticResource BooleanToVisibilityConverter}}" />
                         <TextBlock Text="{Binding ReminderFeedback}"
@@ -469,9 +488,9 @@
                                 AutomationProperties.Name="{x:Static local:UiText.WidgetClose}"
                                 AutomationProperties.HelpText="{x:Static local:UiText.WidgetClose}" />
                         <StackPanel>
-                            <TextBlock Text="{x:Static local:UiText.WidgetQuickAddHeading}"
+                            <TextBlock Text="{Binding QuickAddHeading}"
                                        Style="{StaticResource WidgetCardEyebrowTextStyle}" />
-                            <TextBlock Text="{x:Static local:UiText.WidgetQuickAddDescription}"
+                            <TextBlock Text="{Binding QuickAddDescription}"
                                        Margin="0,3,0,10"
                                        Style="{StaticResource WidgetAlertBodyTextStyle}" />
                         </StackPanel>
@@ -483,9 +502,9 @@
                         </Grid.ColumnDefinitions>
                         <TextBox Text="{Binding QuickAddText, UpdateSourceTrigger=PropertyChanged}"
                                  Style="{StaticResource WidgetQuickAddTextBoxStyle}"
-                                 ToolTip="{x:Static local:UiText.WidgetQuickAddToolTip}"
-                                 AutomationProperties.Name="{x:Static local:UiText.WidgetQuickAddToolTip}"
-                                 AutomationProperties.HelpText="{x:Static local:UiText.WidgetQuickAddDescription}" />
+                                 ToolTip="{Binding QuickAddToolTip}"
+                                 AutomationProperties.Name="{Binding QuickAddToolTip}"
+                                 AutomationProperties.HelpText="{Binding QuickAddDescription}" />
                         <Button Grid.Column="1"
                                 Content="{x:Static local:UiText.WidgetAdd}"
                                 Command="{Binding SubmitQuickAddCommand}"
