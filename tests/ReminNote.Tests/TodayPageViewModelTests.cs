@@ -34,7 +34,7 @@ public sealed class TodayPageViewModelTests
         Assert.Equal("星期五", viewModel.WeekdayLabel);
         Assert.Equal(1, viewModel.NeedsReviewCount);
         Assert.Equal("AWAITING RESULT", viewModel.Groups
-            .Single(group => group.Group == UiTodayTaskGroup.Overdue)
+            .Single(group => group.Group == UiTodayTaskGroup.Afternoon)
             .Items.Single()
             .StatusLabel);
     }
