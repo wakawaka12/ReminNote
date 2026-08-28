@@ -313,6 +313,11 @@ internal static class Program
             Console.WriteLine($"记录时间：{InstantPattern.Format(recordedAt)}");
         }
 
+        if (snapshot.ResultNote is { } resultNote)
+        {
+            Console.WriteLine($"结果备注：{resultNote}");
+        }
+
         Console.WriteLine($"更新时间：{InstantPattern.Format(snapshot.UpdatedAt)}");
         Console.WriteLine();
     }
