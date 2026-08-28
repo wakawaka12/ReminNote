@@ -58,8 +58,9 @@ P2 临时边界，P2.5 必须替换为 Agent 命令串行化、版本/冲突控�
 P2 的持久化对象限于 `task_history`、单例 `app_settings`、`tasks.sort_order` 和
 `tasks.continued_from_task_id`；不加入 Reminder、Anime、Sync、WAL、Change Journal、
 Agent 或 IPC。Widget 正式入口已接入 `TaskWorkspace` 和短周期 Today 刷新；Main 的
-live Today ViewModel 与应用契约已在树中，但当前 `App.xaml.cs` 和 Today DI 仍注册
-P0 Mock 路径，尚未完成正式 Main 的 live 组合，这属于总成审查项而不是新的业务边界。
+正式 `App.xaml.cs`/Today DI 也已在总成接管期间接通 live 组合（真实 `TaskWorkspace`
+加校验 `--repo-root`，见提交 `da2fc4d`），TODAY 页面具备改期与同日期同分组排序的
+用户入口；剩余总成复核项为 Main/Widget 双宿主真实进程人工验收，不是新的业务边界。
 
 ## P0-03 Design System
 

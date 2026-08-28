@@ -4,7 +4,7 @@
 
 ## 当前阶段
 
-P0/P1 已完成并通过用户确认；当前执行 P2 Real TODAY / Widget Task loop。P2 的持久化、Today、Parser、Main Today ViewModel、Widget 及 Widget lock 文件已合并到当前分支。P2 将真实 Task 接入 Main TODAY 和 Widget，但不实现 Reminder、Anime 网络、Agent IPC、WAL、Change Journal 或 P2.5 单写者迁移。当前 Widget 正式入口已接入本地工作区；Main 的 live ViewModel 已具备，但正式 App 组合仍需总成复核，不能把保留的 P0 Mock 构造路径当作 P2 验收证据。
+P0/P1 已完成并通过用户确认；当前执行 P2 Real TODAY / Widget Task loop。P2 的持久化、Today、Parser、Main Today ViewModel、Widget 及 Widget lock 文件已合并到当前分支。P2 将真实 Task 接入 Main TODAY 和 Widget，但不实现 Reminder、Anime 网络、Agent IPC、WAL、Change Journal 或 P2.5 单写者迁移。当前 Widget 正式入口已接入本地工作区；Main 的正式 live 组合与真实 SQLite 全量查询已在总成接管期间接通并修复（含 TODAY 改期/排序入口补齐）；Main/Widget 双宿主真实进程人工验收仍未执行，不能把独立测试当作该步骤的验收证据。
 
 ## 已冻结的核心边界
 

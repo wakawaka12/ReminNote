@@ -2,7 +2,7 @@
 
 - 阶段：P2 Real TODAY / Widget Task loop
 - 日期：2026-08-28
-- 状态：契约已由用户确认；模块提交已合并；本文件完成恢复/核对，最终总成验收仍有明确复核项
+- 状态：契约已由用户确认；模块提交已合并；总成风险项 2/3/4 已在接管期间关闭（Main live 组合、无日期真实查询、改期/排序入口），剩余复核项为双宿主真实进程人工验收与真实库迁移幂等验证
 - 负责窗口：主线总成窗口
 - 前置基线：`codex/p0-integration@1737305`，包含 P1 合并提交 `7b1e67c`
 
@@ -144,12 +144,12 @@ P2-00 最终集成与用户验收
 本轮只恢复和修订公开文档，不恢复总成 stash 中的源码或项目变更。对当前合并树的只读核对结果如下：
 
 1. P2 持久化、Today 分类器、Parser、Main Today live ViewModel、Widget live ViewModel/启动入口和 Widget lock 文件均已进入当前分支；Widget App 已创建并初始化 `TaskWorkspace`，使用两秒 DispatcherTimer 轮询，并在写入后刷新。
-2. Main 的 live `TodayPageViewModel` 构造函数和独立测试已经存在，但当前 `ReminNote.Windows/App.xaml.cs` 仍只注册 P0 Mock Today 服务，`TodayFeatureRegistration` 也仍创建无参 Mock ViewModel；正式 Main 尚未通过 DI 接入 `TaskWorkspace`，因此不能把独立 ViewModel 测试或提交说明当作 Main live 手工验收证据。
-3. 当前 Main Today UI 没有计划编辑/改期或持久化排序的用户命令；application service 已有 `UpdateAsync`/`ReorderAsync`，Widget 的 live Snooze/Reschedule 也明确不写计划，只提示回 Main 编辑。P2 的改期/排序产品契约不变，但用户可达路径和“同日期/同分组”约束仍需总成审查。
-4. Today SQLite 端到端查询必须单独复核：`TodayQueryService` 请求无日期的 `new TaskQuery()` 以读取所有计划，而 `TaskQueryService` 当前使用 `task.LocalDate == query.PlanDate` 过滤；已有 Today 测试使用内存查询替身，持久化查询测试主要传入显式日期。总成窗口必须用真实 SQLite 增加/执行无日期查询场景，确认空日期确实表示全量读取后，才能报告双宿主 live Today 通过。
-5. `TaskWorkspace` 只在 `Initialize()` 成功后允许普通读写，并固定开发路径；这一边界、migration 保留和 named Semaphore 写门已有隔离测试，但尚未替代 Main/Widget 两个真实进程的人工验收。
+2. 【已关闭】Main 的 live `TodayPageViewModel` 原本仍挂在 P0 Mock 服务上；总成接管期间 `App.xaml.cs` 已注册真实 `TaskWorkspace`（校验 `--repo-root`）、`ITaskApplicationService`/`ITaskQueryService`/`ITodayQueryService`/`IClock`，并在显示窗口前执行 `Initialize()`，`TodayFeatureRegistration` 的 DI 构造改用真实 query/application/clock（提交 `da2fc4d`）。
+3. 【已关闭】Main Today UI 原本没有计划编辑/改期或持久化排序的用户命令；接管期间已在选中任务面板补齐"改期/上移/下移"（改期复用冻结 `TaskParser` 与 `UpdateAsync` 生成 `PlanChanged` 历史；排序仅同日期同分组相邻交换 `sort_order`，跨日期/越界拒绝写库），并有 4 项 VM 测试（见 `docs/reports/P2-总成接管记录-2026-08-28.md` 4.1）。
+4. 【已关闭】Today SQLite 端到端无日期查询：`TaskQueryService` 原把 `TaskQuery` 的空 `PlanDate` 翻译成 `local_date IS NULL`，真实 SQLite 上 Today 全量读取恒为空；已改为仅显式日期才过滤，并新增真实 SQLite 回归测试（提交 `3b33875`，整仓 145/145 通过）。
+5. 【待执行】`TaskWorkspace` 初始化边界、migration 保留和 named Semaphore 写门的隔离测试已存在，但尚未以 Main/Widget 两个真实进程完成人工验收（含重启保留、RANGE NEEDS REVIEW、跨午夜、非法 Parser、数据路径核对）。
 
-以上项目是总成审查风险，不是本次文档恢复对产品语义的改写；在风险关闭前，P2 状态只能报告为“模块已合并、总成待验收”。
+以上第 2-4 项由总成接管窗口（ZCode）在 Codex 额度中断期间关闭，证据与取舍记录于 `docs/reports/P2-总成接管记录-2026-08-28.md`；第 5 项仍未执行，在该项关闭前，P2 状态报告为"模块已合并、Main live 组合与真实查询已接通、双宿主人工验收待执行"。
 
 ## P2 验收门槛
 

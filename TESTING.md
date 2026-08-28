@@ -54,7 +54,7 @@ P2 必须自动化验证 Noda Time 时区/工作日边界、Today 状态和分�
 ./scripts/verify-p0-07.ps1
 ```
 
-P2 手工验收必须在同一仓库根目录分别启动 Main 和 Widget，确认二者使用同一个 `.devdata/reminnote.sqlite`：Main 创建/刷新后 Widget 在短轮询窗口内显示，Widget 的 DONE、RANGE 结果和 Quick Add 写入后 Main 能读回；必须检查重启保留、RANGE NEEDS REVIEW、跨午夜、Parser 非法输入、migration 不删库、未知路径不写入，以及 `reviews/`/`second-review/` 未被修改。Widget 的 `--repo-root` 路径必须通过 `.git` 与 `ReminNote.sln` 校验；当前 Main 正式组合仍为总成复核项，未接上 live `TaskWorkspace` 前不得报告该双宿主步骤通过。
+P2 手工验收必须在同一仓库根目录分别启动 Main 和 Widget，确认二者使用同一个 `.devdata/reminnote.sqlite`：Main 创建/刷新后 Widget 在短轮询窗口内显示，Widget 的 DONE、RANGE 结果和 Quick Add 写入后 Main 能读回；必须检查重启保留、RANGE NEEDS REVIEW、跨午夜、Parser 非法输入、migration 不删库、未知路径不写入，以及 `reviews/`/`second-review/` 未被修改。Widget 的 `--repo-root` 路径必须通过 `.git` 与 `ReminNote.sln` 校验；Main 正式组合已接通 live `TaskWorkspace`（提交 `da2fc4d`），但该双宿主步骤的完整人工验收尚未执行，未通过前不得报告 P2 双宿主验收完成。
 
 自动化或手工失败包括：未来任务进入 Today、已完成历史任务误显示、跨午夜换日丢失或换组、RANGE 自动变 `MISSED`、Parser 静默丢弃标签/优先级、结果或计划历史缺失、已有结果仍可改时间、继续关系错误、排序改写计划时间、写门超时静默覆盖、ViewModel 直写数据库、migration 删除原库、Main 仍以 Mock 作为 P2 真实入口，或审查材料被修改。
 

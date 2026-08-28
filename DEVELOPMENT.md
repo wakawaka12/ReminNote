@@ -65,4 +65,4 @@ run.ps1 会在当前启动进程缺少 WINDIR 但存在 SystemRoot 时使用进�
 
 P2 的窗口所有权、依赖关系和串行集成顺序以 `docs/slices/P2-00-integration-and-contract-brief.md` 为准。
 
-P2 大模块提交检查点依次至少包括：P2-00 契约与公共基础设施、Today/Parser 与持久化 loop、Main TODAY、Widget、最终测试/人工验收/报告。每个检查点必须在对应 Slice 中写明实际构建与测试命令、结果、人工测试步骤和失败判定；不得把未完成模块混入“已完成”提交，也不得把本地 commit 描述为 GitHub 已更新。当前 Main 的正式 live 组合和真实 SQLite Today 端到端读取仍须总成窗口复核。
+P2 大模块提交检查点依次至少包括：P2-00 契约与公共基础设施、Today/Parser 与持久化 loop、Main TODAY、Widget、最终测试/人工验收/报告。每个检查点必须在对应 Slice 中写明实际构建与测试命令、结果、人工测试步骤和失败判定；不得把未完成模块混入“已完成”提交，也不得把本地 commit 描述为 GitHub 已更新。Main 的正式 live 组合（提交 `da2fc4d`）、真实 SQLite 无日期全量查询修复（提交 `3b33875`）与 TODAY 改期/排序入口已在总成接管期间完成；仍须复核的是 Main/Widget 双宿主真实进程人工验收与真实库迁移幂等验证。
