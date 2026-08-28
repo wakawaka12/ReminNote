@@ -703,24 +703,72 @@ public sealed class TodayPageViewModel : ShellPageViewModel
             return;
         }
 
-        try
+        var sameDateItems = items
+            .Where(candidate => candidate.PlanDate == planDate)
+            .ToList();
+        var hasDuplicateSortOrders = sameDateItems
+            .GroupBy(candidate => candidate.SortOrder)
+            .Any(sortOrderGroup => sortOrderGroup.Count() > 1);
+        var reorderTargets = new List<(TaskId TaskId, int SortOrder)>();
+        if (!hasDuplicateSortOrders)
         {
-            var first = await _taskApplicationService!
-                .ReorderAsync(new ReorderTaskCommand(taskId, neighbor.SortOrder))
-                .ConfigureAwait(true);
-            if (first is null)
+            reorderTargets.Add((taskId, neighbor.SortOrder));
+            reorderTargets.Add((neighborId, task.SortOrder));
+        }
+        else
+        {
+            // New tasks share sort_order=0. Normalize the affected date's
+            // visible order before swapping so equal sort values cannot leave
+            // the tie-breaker order unchanged.
+            var reorderedItems = sameDateItems.ToList();
+            var sameDateIndex = reorderedItems.FindIndex(candidate => ReferenceEquals(candidate, task));
+            var sameDateNeighborIndex = reorderedItems.FindIndex(candidate => ReferenceEquals(candidate, neighbor));
+            if (sameDateIndex < 0 || sameDateNeighborIndex < 0)
             {
-                InteractionMessage = "无法排序：Task 不存在，TODAY 数据未改变";
+                InteractionMessage = LiveReorderCrossDateMessage;
                 return;
             }
 
-            var second = await _taskApplicationService!
-                .ReorderAsync(new ReorderTaskCommand(neighborId, task.SortOrder))
-                .ConfigureAwait(true);
-            if (second is null)
+            (reorderedItems[sameDateIndex], reorderedItems[sameDateNeighborIndex]) =
+                (reorderedItems[sameDateNeighborIndex], reorderedItems[sameDateIndex]);
+
+            var desiredSortOrders = new Dictionary<TaskId, int>();
+            for (var targetSortOrder = 0; targetSortOrder < reorderedItems.Count; targetSortOrder++)
             {
-                InteractionMessage = "无法排序：相邻 Task 不存在，TODAY 数据未改变";
-                return;
+                if (reorderedItems[targetSortOrder].DomainTaskId is { } candidateId)
+                {
+                    desiredSortOrders[candidateId] = targetSortOrder;
+                }
+            }
+
+            // Keep the original two-command flow for the selected task and
+            // its neighbor; an unchanged neighbor is an intentional no-op.
+            reorderTargets.Add((taskId, desiredSortOrders[taskId]));
+            reorderTargets.Add((neighborId, desiredSortOrders[neighborId]));
+            foreach (var candidate in sameDateItems)
+            {
+                if (candidate.DomainTaskId is { } candidateId &&
+                    candidateId != taskId &&
+                    candidateId != neighborId &&
+                    candidate.SortOrder != desiredSortOrders[candidateId])
+                {
+                    reorderTargets.Add((candidateId, desiredSortOrders[candidateId]));
+                }
+            }
+        }
+
+        try
+        {
+            foreach (var (targetId, targetSortOrder) in reorderTargets)
+            {
+                var reordered = await _taskApplicationService!
+                    .ReorderAsync(new ReorderTaskCommand(targetId, targetSortOrder))
+                    .ConfigureAwait(true);
+                if (reordered is null)
+                {
+                    InteractionMessage = "无法排序：Task 不存在，TODAY 数据未改变";
+                    return;
+                }
             }
         }
         catch (TaskWriteGateBusyException)

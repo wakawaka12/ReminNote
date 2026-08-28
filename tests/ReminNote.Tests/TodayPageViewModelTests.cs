@@ -334,6 +334,32 @@ public sealed class TodayPageViewModelTests
     }
 
     [Fact]
+    public async SystemTask ReorderMovesTasksThatShareTheDefaultSortOrder()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "P2_FINAL_SMOKE SORT C",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde27"));
+        store.Add(CreateSnapshot(
+            "P2_FINAL_SMOKE SORT D",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde28"));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var anytimeGroup = viewModel.Groups.Single(group => group.Group == UiTodayTaskGroup.Anytime);
+
+        var taskC = anytimeGroup.Items.Single(task => task.Title == "P2_FINAL_SMOKE SORT C");
+        await taskC.MoveDownCommand.ExecuteAsync(null);
+
+        Assert.Equal(2, store.ReorderCommands.Count);
+        Assert.Equal(
+            ["P2_FINAL_SMOKE SORT D", "P2_FINAL_SMOKE SORT C"],
+            anytimeGroup.Items.Select(task => task.Title).ToArray());
+        Assert.Equal(0, store.Snapshots.Single(task => task.Title == "P2_FINAL_SMOKE SORT D").SortOrder);
+        Assert.Equal(1, store.Snapshots.Single(task => task.Title == "P2_FINAL_SMOKE SORT C").SortOrder);
+    }
+
+    [Fact]
     public async SystemTask ReorderRefusesCrossDateNeighborsAndGroupBoundaries()
     {
         var store = new InMemoryTodayStore(Now, Workday);
