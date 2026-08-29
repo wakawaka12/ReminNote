@@ -36,6 +36,75 @@ public sealed class StartupAndMainUiInteractionTests
     }
 
     [Fact]
+    public void MainTodayDragUsesOnlyAReachableHandleAndHidesCompletedSorting()
+    {
+        var resources = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "Features", "Today", "TodayResources.xaml"));
+        var behavior = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "Features", "Today", "TodayTaskDragDropBehavior.cs"));
+
+        Assert.Contains("TodayDragHandleButtonStyle", resources, StringComparison.Ordinal);
+        Assert.Contains("today:TodayTaskDragDropBehavior.IsDragHandle=\"True\"", resources, StringComparison.Ordinal);
+        Assert.Contains(
+            "Visibility=\"{Binding CanReorder, Converter={StaticResource TodayBooleanToVisibilityConverter}}\"",
+            resources,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "today:TodayTaskDragDropBehavior.IsEnabled=\"{Binding IsReorderEnabled}\"",
+            resources,
+            StringComparison.Ordinal);
+        Assert.Contains("FindDragHandle", behavior, StringComparison.Ordinal);
+        Assert.Contains("!task.CanReorder", behavior, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "FindTask(args.OriginalSource as DependencyObject) is not { } task",
+            behavior,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainTodayRefreshLifecycleCoversStartupActivationAndShutdown()
+    {
+        var mainWindow = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "MainWindow.xaml.cs"));
+        var app = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "App.xaml.cs"));
+
+        Assert.Contains("new DispatcherTimer(", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("Loaded += OnLoaded", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("Activated += OnActivated", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("_viewModel.TodayPage", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("RefreshAsync(cancellationToken)", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("_todayRefreshTimer.Start()", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("_todayRefreshTimer.Stop()", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("_todayRefreshTimer.Tick -= OnTodayRefreshTimerTick", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("window.ActivateFromExternalRequest()", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainTodayDetailsClosesWhenTheSelectedTaskIsInvalidated()
+    {
+        var mainWindow = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "MainWindow.xaml.cs"));
+        var todayViewModel = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "Features", "Today", "TodayPageViewModel.cs"));
+
+        Assert.Contains(
+            "SelectedTaskInvalidated += OnTodaySelectedTaskInvalidated",
+            mainWindow,
+            StringComparison.Ordinal);
+        Assert.Contains("detailsWindow.Close()", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("SelectedTaskInvalidated?.Invoke(invalidatedId)", todayViewModel, StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectTask(null, clearSelectionInvalidation: false)",
+            todayViewModel,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "if (selectedId is { } invalidatedId && selected is null)",
+            todayViewModel,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MainAndWidgetUseDifferentLocalActivationIdentities()
     {
         Assert.NotEqual(MainInstanceIdentity.MutexName, WidgetInstanceIdentity.MutexName);
@@ -146,5 +215,18 @@ public sealed class StartupAndMainUiInteractionTests
         Assert.True(viewModel.IsAlert);
         Assert.False(viewModel.IsQuickAddOpen);
         Assert.NotEqual(MainInstanceIdentity.MutexName, WidgetInstanceIdentity.MutexName);
+    }
+
+    private static string ReadWorkspaceFile(string relativePath)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null &&
+               !File.Exists(Path.Combine(directory.FullName, "ReminNote.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+        return File.ReadAllText(Path.Combine(directory!.FullName, relativePath));
     }
 }

@@ -3,29 +3,61 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using ReminNote.Core.Tasks;
 using ReminNote.Windows.Features.Anime;
 using ReminNote.Windows.Features.Today;
 using ReminNote.Windows.ViewModels;
 
 namespace ReminNote.Windows;
 
-public partial class MainWindow : Window
+public partial class MainWindow : Window, IDisposable
 {
     private readonly MainWindowViewModel _viewModel;
+    private readonly DispatcherTimer _todayRefreshTimer;
+    private readonly CancellationTokenSource _lifetimeCancellation = new();
     private AnimeDetailsWindow? _animeDetailsWindow;
     private TodayDetailsWindow? _todayDetailsWindow;
     private IInputElement? _focusedElementBeforeDetails;
     private IInputElement? _focusedElementBeforeTodayDetails;
+    private bool _hasLoaded;
+    private bool _todayRefreshInProgress;
+    private bool _isClosing;
+    private bool _lifetimeDisposed;
 
     public MainWindow(MainWindowViewModel viewModel)
     {
         InitializeComponent();
         _viewModel = viewModel;
         DataContext = viewModel;
+        _todayRefreshTimer = new DispatcherTimer(
+            TimeSpan.FromSeconds(2),
+            DispatcherPriority.Background,
+            OnTodayRefreshTimerTick,
+            Dispatcher);
         _viewModel.TodayPage.QuickTaskAdded += OnQuickTaskAdded;
         _viewModel.TodayPage.DetailsRequested += OnTodayDetailsRequested;
+        _viewModel.TodayPage.SelectedTaskInvalidated += OnTodaySelectedTaskInvalidated;
         _viewModel.AnimePage.DetailsRequested += OnDetailsRequested;
+        Loaded += OnLoaded;
+        Activated += OnActivated;
         Closed += OnClosed;
+    }
+
+    public void ActivateFromExternalRequest()
+    {
+        if (_isClosing)
+        {
+            return;
+        }
+
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        Activate();
+        Focus();
+        RequestTodayRefresh();
     }
 
     private void OnQuickTaskAdded(TodayTaskViewModel task)
@@ -88,13 +120,102 @@ public partial class MainWindow : Window
         detailsWindow.ShowDialog();
     }
 
+    private void OnTodaySelectedTaskInvalidated(TaskId taskId)
+    {
+        if (_todayDetailsWindow is { IsVisible: true } detailsWindow)
+        {
+            detailsWindow.Close();
+        }
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (_hasLoaded)
+        {
+            return;
+        }
+
+        _hasLoaded = true;
+        _todayRefreshTimer.Start();
+        RequestTodayRefresh();
+    }
+
+    private void OnActivated(object? sender, EventArgs e)
+    {
+        RequestTodayRefresh();
+    }
+
+    private async void OnTodayRefreshTimerTick(object? sender, EventArgs e)
+    {
+        await RefreshTodayAsync().ConfigureAwait(true);
+    }
+
+    private void RequestTodayRefresh()
+    {
+        if (!_hasLoaded || _isClosing || _todayRefreshInProgress)
+        {
+            return;
+        }
+
+        _ = RefreshTodayAsync();
+    }
+
+    private async System.Threading.Tasks.Task RefreshTodayAsync()
+    {
+        if (!_hasLoaded || _isClosing || _todayRefreshInProgress)
+        {
+            return;
+        }
+
+        _todayRefreshInProgress = true;
+        var cancellationToken = _lifetimeCancellation.Token;
+        try
+        {
+            await _viewModel.TodayPage
+                .RefreshAsync(cancellationToken)
+                .ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine($"Main TODAY refresh failed: {exception}");
+        }
+        finally
+        {
+            _todayRefreshInProgress = false;
+        }
+    }
+
     private void OnClosed(object? sender, EventArgs e)
     {
+        _isClosing = true;
+        Dispose();
+        Loaded -= OnLoaded;
+        Activated -= OnActivated;
+        Closed -= OnClosed;
         _viewModel.TodayPage.QuickTaskAdded -= OnQuickTaskAdded;
         _viewModel.TodayPage.DetailsRequested -= OnTodayDetailsRequested;
+        _viewModel.TodayPage.SelectedTaskInvalidated -= OnTodaySelectedTaskInvalidated;
         _viewModel.AnimePage.DetailsRequested -= OnDetailsRequested;
         _animeDetailsWindow?.Close();
         _todayDetailsWindow?.Close();
+    }
+
+    public void Dispose()
+    {
+        if (_lifetimeDisposed)
+        {
+            return;
+        }
+
+        _lifetimeDisposed = true;
+        _todayRefreshTimer.Stop();
+        _todayRefreshTimer.Tick -= OnTodayRefreshTimerTick;
+        _lifetimeCancellation.Cancel();
+        _lifetimeCancellation.Dispose();
+        GC.SuppressFinalize(this);
     }
 
     private void OnDetailsClosed(object? sender, EventArgs e)
@@ -105,6 +226,12 @@ public partial class MainWindow : Window
         }
 
         _animeDetailsWindow = null;
+        if (_isClosing)
+        {
+            _focusedElementBeforeDetails = null;
+            return;
+        }
+
         Activate();
         if (_focusedElementBeforeDetails is UIElement focusTarget && focusTarget.Focusable)
         {
@@ -126,6 +253,12 @@ public partial class MainWindow : Window
         }
 
         _todayDetailsWindow = null;
+        if (_isClosing)
+        {
+            _focusedElementBeforeTodayDetails = null;
+            return;
+        }
+
         Activate();
         if (_focusedElementBeforeTodayDetails is UIElement focusTarget && focusTarget.Focusable)
         {

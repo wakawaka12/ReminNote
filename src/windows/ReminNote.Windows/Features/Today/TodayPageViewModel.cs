@@ -34,8 +34,10 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     private const string LiveRescheduleOpenedMessage = "改期面板已打开 · 支持今天、明天、后天、yyyy-MM-dd 和 HH:mm[-HH:mm]";
     private const string LiveRescheduleCancelledMessage = "已取消改期 · 原计划保持不变";
     private const string LiveRescheduleUnavailableMessage = "只有未记录结果的 Task 才能改期";
+    private const string LiveReorderUnavailableMessage = "已有结果的 Task 不能排序";
     private const string LiveReorderBoundaryMessage = "已到达分组边界 · 没有可交换的相邻任务";
     private const string LiveReorderCrossDateMessage = "排序仅在同一计划日期和分组内生效 · 跨日期请使用改期";
+    private const string LiveSelectedTaskUnavailableMessage = "已选 Task 已不在 TODAY 列表中 · 详情已关闭，请重新选择";
     private const string RescheduleParserPlaceholder = "改期占位";
     private const string RescheduleEmptyInputCode = "task.parser.empty";
     private const string RescheduleInvalidDateCode = "task.parser.date.invalid";
@@ -68,6 +70,8 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     private string _rescheduleDateText = string.Empty;
     private string _rescheduleTimeText = string.Empty;
     private TodayTaskViewModel? _rescheduleTarget;
+    private bool _selectionInvalidated;
+    private bool _selectionInvalidatedDuringLastRefresh;
 
     public TodayPageViewModel()
         : this(new TodayMockDataService())
@@ -115,6 +119,8 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     public event Action<TodayTaskViewModel>? QuickTaskAdded;
 
     public event Action<TodayTaskViewModel>? DetailsRequested;
+
+    public event Action<TaskId>? SelectedTaskInvalidated;
 
     public ObservableCollection<TodayTaskGroupViewModel> Groups { get; } = [];
 
@@ -228,10 +234,22 @@ public sealed class TodayPageViewModel : ShellPageViewModel
             return;
         }
 
-        var readModel = await _todayQueryService!
-            .GetAsync(new TodayQueryRequest(_clock.GetCurrentInstant()), cancellationToken)
-            .ConfigureAwait(true);
-        ApplyReadModel(readModel);
+        try
+        {
+            var readModel = await _todayQueryService!
+                .GetAsync(new TodayQueryRequest(_clock.GetCurrentInstant()), cancellationToken)
+                .ConfigureAwait(true);
+            ApplyReadModel(readModel);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            InteractionMessage = LiveRefreshFailedMessage;
+            throw;
+        }
     }
 
     private void ConfigureCommands()
@@ -268,6 +286,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         ArgumentNullException.ThrowIfNull(readModel);
 
         var selectedId = SelectedTask?.DomainTaskId;
+        _selectionInvalidatedDuringLastRefresh = false;
         _currentWorkday = readModel.Workday;
         DateLabel = FormatDate(readModel.Workday);
         WeekdayLabel = FormatWeekday(readModel.Workday);
@@ -285,7 +304,33 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         var selected = selectedId is { } id
             ? _tasks.FirstOrDefault(task => task.DomainTaskId == id)
             : null;
-        SelectTask(selected ?? PrimaryTask);
+
+        if (selectedId is { } invalidatedId && selected is null)
+        {
+            _selectionInvalidated = true;
+            SelectTask(null, clearSelectionInvalidation: false);
+            if (_rescheduleTarget?.DomainTaskId == invalidatedId)
+            {
+                CancelRescheduleCore();
+            }
+
+            _selectionInvalidatedDuringLastRefresh = true;
+            InteractionMessage = LiveSelectedTaskUnavailableMessage;
+            SelectedTaskInvalidated?.Invoke(invalidatedId);
+        }
+        else if (selected is not null)
+        {
+            SelectTask(selected, clearSelectionInvalidation: false);
+        }
+        else if (!_selectionInvalidated)
+        {
+            SelectTask(PrimaryTask, clearSelectionInvalidation: false);
+        }
+        else
+        {
+            SelectTask(null, clearSelectionInvalidation: false);
+        }
+
         NotifySummaryChanged();
     }
 
@@ -300,7 +345,10 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         try
         {
             await RefreshAsync().ConfigureAwait(true);
-            InteractionMessage = LiveRefreshedMessage;
+            if (!_selectionInvalidatedDuringLastRefresh)
+            {
+                InteractionMessage = LiveRefreshedMessage;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -687,6 +735,12 @@ public sealed class TodayPageViewModel : ShellPageViewModel
             return;
         }
 
+        if (!source.CanReorder || !target.CanReorder)
+        {
+            InteractionMessage = LiveReorderUnavailableMessage;
+            return;
+        }
+
         if (ReferenceEquals(source, target))
         {
             InteractionMessage = "拖动排序未改变 · 请将 Task 放到另一个任务上";
@@ -803,6 +857,12 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         ArgumentNullException.ThrowIfNull(task);
         if (!_isLive || task.DomainTaskId is not { } taskId || task.PlanDate is not { } planDate)
         {
+            return;
+        }
+
+        if (!task.CanReorder)
+        {
+            InteractionMessage = LiveReorderUnavailableMessage;
             return;
         }
 
@@ -958,8 +1018,15 @@ public sealed class TodayPageViewModel : ShellPageViewModel
             : UiText.Format(UiText.TodayInteractionReviewLocatedKey, task.Title);
     }
 
-    private void SelectTask(TodayTaskViewModel? task)
+    private void SelectTask(
+        TodayTaskViewModel? task,
+        bool clearSelectionInvalidation = true)
     {
+        if (clearSelectionInvalidation)
+        {
+            _selectionInvalidated = false;
+        }
+
         foreach (var candidate in _tasks)
         {
             candidate.SetSelected(ReferenceEquals(candidate, task));
@@ -1236,6 +1303,8 @@ public sealed class TodayTaskGroupViewModel : ObservableObject
 
     public bool HasItems => Items.Count > 0;
 
+    public bool IsReorderEnabled => Group != TodayTaskGroup.Completed;
+
     public string ItemCountText => UiText.Format(UiText.TodayItemsKey, Items.Count);
 
     public string AutomationName => Title;
@@ -1472,6 +1541,8 @@ public sealed class TodayTaskViewModel : ObservableObject
 
     public bool IsPlanActionsVisible => _isLive && !IsCompleted;
 
+    public bool CanReorder => _isLive && !IsCompleted && DomainTaskId is not null;
+
     public string RecordPartialActionLabel => _isLive ? "记录 PARTIAL" : "PARTIAL";
 
     public string RecordMissedActionLabel => _isLive ? "记录 MISSED" : "MISSED";
@@ -1513,6 +1584,7 @@ public sealed class TodayTaskViewModel : ObservableObject
         OnPropertyChanged(nameof(CompletionActionLabel));
         OnPropertyChanged(nameof(IsCompletionActionEnabled));
         OnPropertyChanged(nameof(IsPlanActionsVisible));
+        OnPropertyChanged(nameof(CanReorder));
         OnPropertyChanged(nameof(ReviewLabel));
     }
 

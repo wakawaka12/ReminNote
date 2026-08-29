@@ -393,6 +393,99 @@ public sealed class TodayPageViewModelTests
     }
 
     [Fact]
+    public async SystemTask CompletedTasksCannotEnterTheReorderWritePath()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "开放任务",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde32"));
+        store.Add(CreateSnapshot(
+            "已有结果",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde33",
+            TaskResult.COMPLETED));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var openTask = FindTask(viewModel, "开放任务");
+        var completedTask = FindTask(viewModel, "已有结果");
+
+        Assert.False(completedTask.CanReorder);
+        Assert.False(viewModel.Groups
+            .Single(group => group.Group == UiTodayTaskGroup.Completed)
+            .IsReorderEnabled);
+
+        await viewModel.ReorderTaskByDropAsync(completedTask, openTask);
+        await completedTask.MoveUpCommand.ExecuteAsync(null);
+        await viewModel.ReorderTaskByDropAsync(openTask, completedTask);
+
+        Assert.Empty(store.ReorderCommands);
+        Assert.Contains("已有结果的 Task 不能排序", viewModel.InteractionMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async SystemTask FailedRefreshKeepsTheExistingTodayState()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "刷新前任务",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde34"));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var existingTask = FindTask(viewModel, "刷新前任务");
+        store.FailReads = true;
+
+        InvalidOperationException? refreshFailure = null;
+        try
+        {
+            await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            refreshFailure = exception;
+        }
+
+        Assert.NotNull(refreshFailure);
+
+        Assert.Same(existingTask, FindTask(viewModel, "刷新前任务"));
+        Assert.Same(existingTask, viewModel.SelectedTask);
+        Assert.Contains("TODAY 刷新失败", viewModel.InteractionMessage, StringComparison.Ordinal);
+        Assert.Equal(2, store.TodayQueryCount);
+    }
+
+    [Fact]
+    public async SystemTask RefreshClearsASelectedTaskThatDisappearedWithoutFallingBackToPrimary()
+    {
+        var sourceId = TestValues.TaskId("0191f6a4-3b25-7c12-8d34-56789abcde35");
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "将消失的任务",
+            TimeSpec.Anytime(Workday),
+            sourceId.Value.ToString()));
+        store.Add(CreateSnapshot(
+            "刷新后的主任务",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde36",
+            sortOrder: 1));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var source = FindTask(viewModel, "将消失的任务");
+        source.SelectCommand.Execute(null);
+        var invalidatedId = (TaskId?)null;
+        viewModel.SelectedTaskInvalidated += taskId => invalidatedId = taskId;
+
+        store.Remove(sourceId);
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Null(viewModel.SelectedTask);
+        Assert.Equal(sourceId, invalidatedId);
+        Assert.Equal("刷新后的主任务", viewModel.PrimaryTask?.Title);
+        Assert.Contains("详情已关闭", viewModel.InteractionMessage, StringComparison.Ordinal);
+
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Null(viewModel.SelectedTask);
+    }
+
+    [Fact]
     public async SystemTask ReorderRefusesCrossDateNeighborsAndGroupBoundaries()
     {
         var store = new InMemoryTodayStore(Now, Workday);
@@ -492,6 +585,8 @@ public sealed class TodayPageViewModelTests
 
         public bool FailWrites { get; set; }
 
+        public bool FailReads { get; set; }
+
         public int TodayQueryCount { get; private set; }
 
         public List<CreateTaskCommand> CreatedCommands { get; } = [];
@@ -508,6 +603,8 @@ public sealed class TodayPageViewModelTests
 
         public void Add(TaskSnapshot snapshot) => tasks.Add(snapshot.Id, snapshot);
 
+        public bool Remove(TaskId taskId) => tasks.Remove(taskId);
+
         public Instant GetCurrentInstant() => Current;
 
         public ValueTask<TodayReadModel> GetAsync(
@@ -516,6 +613,11 @@ public sealed class TodayPageViewModelTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             TodayQueryCount++;
+            if (FailReads)
+            {
+                throw new InvalidOperationException("Today query failed for test.");
+            }
+
             var localNow = request.Now.InUtc().LocalDateTime;
             var workday = request.Workday ?? Workday;
             var readModels = tasks.Values

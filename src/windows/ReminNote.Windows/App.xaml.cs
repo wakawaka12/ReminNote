@@ -83,18 +83,12 @@ public partial class App : Application, IDisposable
 
     private void ActivateMainWindow()
     {
-        if (MainWindow is not { } window)
+        if (MainWindow is not MainWindow window)
         {
             return;
         }
 
-        if (window.WindowState == WindowState.Minimized)
-        {
-            window.WindowState = WindowState.Normal;
-        }
-
-        window.Activate();
-        window.Focus();
+        window.ActivateFromExternalRequest();
     }
 
     public void Dispose()

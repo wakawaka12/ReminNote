@@ -15,6 +15,13 @@ public static class TodayTaskDragDropBehavior
             typeof(TodayTaskDragDropBehavior),
             new PropertyMetadata(false, OnIsEnabledChanged));
 
+    public static readonly DependencyProperty IsDragHandleProperty =
+        DependencyProperty.RegisterAttached(
+            "IsDragHandle",
+            typeof(bool),
+            typeof(TodayTaskDragDropBehavior),
+            new PropertyMetadata(false));
+
     private static readonly DependencyProperty DragStateProperty =
         DependencyProperty.RegisterAttached(
             "DragState",
@@ -34,6 +41,18 @@ public static class TodayTaskDragDropBehavior
         return (bool)element.GetValue(IsEnabledProperty);
     }
 
+    public static void SetIsDragHandle(DependencyObject element, bool value)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        element.SetValue(IsDragHandleProperty, value);
+    }
+
+    public static bool GetIsDragHandle(DependencyObject element)
+    {
+        ArgumentNullException.ThrowIfNull(element);
+        return (bool)element.GetValue(IsDragHandleProperty);
+    }
+
     private static void OnIsEnabledChanged(
         DependencyObject dependencyObject,
         DependencyPropertyChangedEventArgs args)
@@ -47,6 +66,7 @@ public static class TodayTaskDragDropBehavior
         {
             itemsControl.AllowDrop = true;
             itemsControl.PreviewMouseLeftButtonDown += OnPreviewMouseLeftButtonDown;
+            itemsControl.PreviewMouseLeftButtonUp += OnPreviewMouseLeftButtonUp;
             itemsControl.PreviewMouseMove += OnPreviewMouseMove;
             itemsControl.DragOver += OnDragOver;
             itemsControl.Drop += OnDrop;
@@ -55,6 +75,7 @@ public static class TodayTaskDragDropBehavior
 
         itemsControl.AllowDrop = false;
         itemsControl.PreviewMouseLeftButtonDown -= OnPreviewMouseLeftButtonDown;
+        itemsControl.PreviewMouseLeftButtonUp -= OnPreviewMouseLeftButtonUp;
         itemsControl.PreviewMouseMove -= OnPreviewMouseMove;
         itemsControl.DragOver -= OnDragOver;
         itemsControl.Drop -= OnDrop;
@@ -66,14 +87,31 @@ public static class TodayTaskDragDropBehavior
         MouseButtonEventArgs args)
     {
         if (sender is not ItemsControl itemsControl ||
-            FindTask(args.OriginalSource as DependencyObject) is not { } task)
+            FindDragHandle(args.OriginalSource as DependencyObject) is not { } handle ||
+            FindTask(handle) is not { } task ||
+            !task.CanReorder)
         {
+            if (sender is ItemsControl nonHandleItemsControl)
+            {
+                nonHandleItemsControl.ClearValue(DragStateProperty);
+            }
+
             return;
         }
 
         itemsControl.SetValue(
             DragStateProperty,
             new DragState(args.GetPosition(itemsControl), task));
+    }
+
+    private static void OnPreviewMouseLeftButtonUp(
+        object sender,
+        MouseButtonEventArgs args)
+    {
+        if (sender is ItemsControl itemsControl)
+        {
+            itemsControl.ClearValue(DragStateProperty);
+        }
     }
 
     private static void OnPreviewMouseMove(
@@ -107,9 +145,13 @@ public static class TodayTaskDragDropBehavior
 
     private static void OnDragOver(object sender, DragEventArgs args)
     {
-        if (sender is not ItemsControl ||
-            !args.Data.GetDataPresent(typeof(TodayTaskViewModel)))
+        if (sender is not ItemsControl itemsControl ||
+            args.Data.GetData(typeof(TodayTaskViewModel)) is not TodayTaskViewModel source ||
+            !source.CanReorder ||
+            FindTask(args.OriginalSource as DependencyObject) is not { CanReorder: true })
         {
+            args.Effects = DragDropEffects.None;
+            args.Handled = true;
             return;
         }
 
@@ -123,6 +165,8 @@ public static class TodayTaskDragDropBehavior
             args.Data.GetData(typeof(TodayTaskViewModel)) is not TodayTaskViewModel source ||
             FindTask(args.OriginalSource as DependencyObject) is not { } target ||
             FindPage(itemsControl) is not { } page ||
+            !source.CanReorder ||
+            !target.CanReorder ||
             ReferenceEquals(source, target))
         {
             return;
@@ -154,6 +198,22 @@ public static class TodayTaskDragDropBehavior
                 element.DataContext is TodayTaskViewModel task)
             {
                 return task;
+            }
+
+            current = GetParent(current);
+        }
+
+        return null;
+    }
+
+    private static DependencyObject? FindDragHandle(DependencyObject? source)
+    {
+        var current = source;
+        while (current is not null)
+        {
+            if (GetIsDragHandle(current))
+            {
+                return current;
             }
 
             current = GetParent(current);
