@@ -147,7 +147,8 @@
                                                Visibility="{Binding IsNotCompact, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                     <TextBlock Text="{Binding TaskFeedback}"
                                                Style="{StaticResource WidgetFeedbackTextStyle}"
-                                               Visibility="{Binding HasTaskFeedback, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                               Visibility="{Binding HasTaskFeedback, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                               AutomationProperties.LiveSetting="Polite" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2"
                                             HorizontalAlignment="Right">
@@ -520,7 +521,8 @@
                     </Grid>
                     <TextBlock Text="{Binding QuickAddFeedback}"
                                Style="{StaticResource WidgetFeedbackTextStyle}"
-                               Visibility="{Binding HasQuickAddFeedback, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                               Visibility="{Binding HasQuickAddFeedback, Converter={StaticResource BooleanToVisibilityConverter}}"
+                               AutomationProperties.LiveSetting="Polite" />
                 </StackPanel>
             </Border>
             <Border Grid.Row="1"

@@ -89,6 +89,12 @@ public sealed class WidgetQueueItem : ObservableObject
 
 public sealed class WidgetViewModel : ObservableObject, IDisposable
 {
+    private const string LiveRefreshFailedFeedback =
+        "TODAY 刷新失败 · 当前列表保持不变 · 请点击刷新重试";
+    private const string LiveQuickAddWriteFailedFeedback =
+        "无法创建 Task：写入失败 · 当前 TODAY 列表保持不变";
+    private const string LiveResultWriteFailedFeedback =
+        "无法记录结果：写入失败 · 当前 TODAY 列表保持不变";
     private WidgetPage _activePage = WidgetPage.Today;
     private WidgetInteractionState _interactionState = WidgetInteractionState.Locked;
     private WidgetResponsiveMode _responsiveMode = WidgetResponsiveMode.Standard;
@@ -462,6 +468,24 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
             return;
         }
 
+        try
+        {
+            await RefreshCoreAsync(cancellationToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (!IsFatalException(exception))
+        {
+            TaskFeedback = LiveRefreshFailedFeedback;
+            throw;
+        }
+    }
+
+    private async System.Threading.Tasks.Task RefreshCoreAsync(
+        CancellationToken cancellationToken)
+    {
         await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(true);
         try
         {
@@ -469,42 +493,46 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
                 .GetAsync(new TodayQueryRequest(_clock.GetCurrentInstant()), cancellationToken)
                 .ConfigureAwait(true);
 
+            var openTasks = readModel.Tasks
+                .Where(task => !task.IsCompleted)
+                .ToArray();
+            var nextPrimaryTask = openTasks.FirstOrDefault()
+                ?? (readModel.Tasks.Count > 0 ? readModel.Tasks[0] : null);
+            var nextItems = openTasks
+                .Select(task => ToQueueItem(task, SelectTask))
+                .ToArray();
+
+            var selectedTaskId = _selectedTaskItem?.TaskId;
+            var nextSelectedItem = selectedTaskId is { } id
+                ? nextItems.FirstOrDefault(item => item.TaskId == id)
+                : null;
+            nextSelectedItem ??= nextItems.FirstOrDefault(item =>
+                item.TaskId == nextPrimaryTask?.Task.Id);
+
+            var nextPrimaryTaskTitle = nextPrimaryTask?.Task.Title ?? "暂无 TODAY Task";
+            var nextPrimaryTaskMeta = nextPrimaryTask is null
+                ? "TODAY · 暂无计划"
+                : FormatTaskMeta(nextPrimaryTask);
+            var nextPrimaryTaskTimeLabel = nextPrimaryTask is null
+                ? "—"
+                : FormatTaskTime(nextPrimaryTask.Task.TimeSpec);
+
             _currentWorkday = readModel.Workday;
             _openTaskCount = readModel.OpenTaskCount;
             _completedTaskCount = readModel.CompletedTaskCount;
             _needsReviewCount = readModel.NeedsReviewCount;
-
-            var openTasks = readModel.Tasks
-                .Where(task => !task.IsCompleted)
-                .ToArray();
-            _livePrimaryTask = openTasks.FirstOrDefault()
-                ?? (readModel.Tasks.Count > 0 ? readModel.Tasks[0] : null);
-
-            if (_livePrimaryTask is null)
-            {
-                _primaryTaskTitle = "暂无 TODAY Task";
-                _primaryTaskMeta = "TODAY · 暂无计划";
-                _primaryTaskTimeLabel = "—";
-            }
-            else
-            {
-                _primaryTaskTitle = _livePrimaryTask.Task.Title;
-                _primaryTaskMeta = FormatTaskMeta(_livePrimaryTask);
-                _primaryTaskTimeLabel = FormatTaskTime(_livePrimaryTask.Task.TimeSpec);
-            }
+            _livePrimaryTask = nextPrimaryTask;
+            _primaryTaskTitle = nextPrimaryTaskTitle;
+            _primaryTaskMeta = nextPrimaryTaskMeta;
+            _primaryTaskTimeLabel = nextPrimaryTaskTimeLabel;
 
             _todayItems.Clear();
-            foreach (var task in openTasks)
+            foreach (var item in nextItems)
             {
-                _todayItems.Add(ToQueueItem(task, SelectTask));
+                _todayItems.Add(item);
             }
 
-            var selectedItem = _selectedTaskItem?.TaskId is { } selectedTaskId
-                ? _todayItems.FirstOrDefault(item => item.TaskId == selectedTaskId)
-                : null;
-            selectedItem ??= _todayItems.FirstOrDefault(item =>
-                item.TaskId == _livePrimaryTask?.Task.Id);
-            SetSelectedTask(selectedItem, _livePrimaryTask);
+            SetSelectedTask(nextSelectedItem, _livePrimaryTask);
 
             OnPropertyChanged(nameof(PrimaryTaskTitle));
             OnPropertyChanged(nameof(PrimaryTaskMeta));
@@ -689,8 +717,10 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
 
     private bool CanSubmitQuickAdd() => !string.IsNullOrWhiteSpace(QuickAddText);
 
-    private async System.Threading.Tasks.Task SubmitQuickAddAsync()
+    private async System.Threading.Tasks.Task SubmitQuickAddAsync(
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var input = QuickAddText.Trim();
         if (!_isLive)
         {
@@ -714,20 +744,40 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         try
         {
             var created = await _taskApplicationService!
-                .CreateAsync(new CreateTaskCommand(parsed.Value!.Title, parsed.Value.TimeSpec))
+                .CreateAsync(
+                    new CreateTaskCommand(parsed.Value!.Title, parsed.Value.TimeSpec),
+                    cancellationToken)
                 .ConfigureAwait(true);
             QuickAddText = string.Empty;
-            await RefreshAsync().ConfigureAwait(true);
-            QuickAddFeedback = $"已写入本地 Task：「{created.Title}」";
+            if (!await TryRefreshAfterWriteAsync(
+                    () => QuickAddFeedback =
+                        $"已写入本地 Task：「{created.Title}」，但 TODAY 刷新失败 · 当前列表保持不变 · 请点击刷新重试",
+                    cancellationToken)
+                .ConfigureAwait(true))
+            {
+                return;
+            }
+
+            QuickAddFeedback = $"已写入本地 Task：「{created.Title}」· TODAY 已刷新";
         }
         catch (Exception exception) when (exception is DomainValidationException or TaskWriteGateBusyException)
         {
             QuickAddFeedback = $"无法创建 Task：{exception.Message}";
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (!IsFatalException(exception))
+        {
+            QuickAddFeedback = LiveQuickAddWriteFailedFeedback;
+        }
     }
 
-    private async System.Threading.Tasks.Task CompleteTaskAsync()
+    private async System.Threading.Tasks.Task CompleteTaskAsync(
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!_isLive)
         {
             _isTaskCompleted = true;
@@ -736,11 +786,17 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
             return;
         }
 
-        await RecordLiveResultAsync(TaskResult.COMPLETED, null).ConfigureAwait(true);
+        await RecordLiveResultAsync(
+                TaskResult.COMPLETED,
+                null,
+                cancellationToken)
+            .ConfigureAwait(true);
     }
 
-    private async System.Threading.Tasks.Task RecordPartialTaskAsync()
+    private async System.Threading.Tasks.Task RecordPartialTaskAsync(
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!_isLive)
         {
             return;
@@ -748,24 +804,33 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
 
         await RecordLiveResultAsync(
                 TaskResult.PARTIAL,
-                "由 Widget 记录的 PARTIAL 结果。")
+                "由 Widget 记录的 PARTIAL 结果。",
+                cancellationToken)
             .ConfigureAwait(true);
     }
 
-    private async System.Threading.Tasks.Task RecordMissedTaskAsync()
+    private async System.Threading.Tasks.Task RecordMissedTaskAsync(
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!_isLive)
         {
             return;
         }
 
-        await RecordLiveResultAsync(TaskResult.MISSED, null).ConfigureAwait(true);
+        await RecordLiveResultAsync(
+                TaskResult.MISSED,
+                null,
+                cancellationToken)
+            .ConfigureAwait(true);
     }
 
     private async System.Threading.Tasks.Task RecordLiveResultAsync(
         TaskResult result,
-        string? note)
+        string? note,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_currentTaskId is not { } taskId || _liveSelectedTask is null)
         {
             TaskFeedback = "当前没有可记录结果的 TODAY Task。";
@@ -788,22 +853,87 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         try
         {
             var recorded = await _taskApplicationService!
-                .RecordResultAsync(new RecordTaskResultCommand(taskId, result, note))
+                .RecordResultAsync(
+                    new RecordTaskResultCommand(taskId, result, note),
+                    cancellationToken)
                 .ConfigureAwait(true);
             if (recorded is null)
             {
+                if (!await TryRefreshAfterWriteAsync(
+                        () => TaskFeedback =
+                            "当前 Task 已不存在，且 TODAY 刷新失败 · 当前列表保持不变 · 请点击刷新重试",
+                        cancellationToken)
+                    .ConfigureAwait(true))
+                {
+                    return;
+                }
+
                 TaskFeedback = "当前 Task 已不存在，Widget 已刷新。";
-                await RefreshAsync().ConfigureAwait(true);
                 return;
             }
 
-            await RefreshAsync().ConfigureAwait(true);
+            if (!await TryRefreshAfterWriteAsync(
+                    () => TaskFeedback =
+                        $"已记录「{title}」的 {result} 结果，但 TODAY 刷新失败 · 当前列表保持不变 · 请点击刷新重试",
+                    cancellationToken)
+                .ConfigureAwait(true))
+            {
+                return;
+            }
+
             TaskFeedback = FormatResultFeedback(title, result);
         }
         catch (Exception exception) when (exception is DomainValidationException or TaskWriteGateBusyException)
         {
             TaskFeedback = $"无法记录结果：{exception.Message}";
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (!IsFatalException(exception))
+        {
+            TaskFeedback = LiveResultWriteFailedFeedback;
+        }
+    }
+
+    private async System.Threading.Tasks.Task<bool> TryRefreshAfterWriteAsync(
+        Action setFailureFeedback,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await RefreshCoreAsync(cancellationToken).ConfigureAwait(true);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (!IsFatalException(exception))
+        {
+            setFailureFeedback();
+            return false;
+        }
+    }
+
+    private static bool IsFatalException(Exception exception)
+    {
+        if (exception is OutOfMemoryException
+            or StackOverflowException
+            or AccessViolationException
+            or System.Runtime.InteropServices.SEHException)
+        {
+            return true;
+        }
+
+        if (exception is AggregateException aggregate)
+        {
+            return aggregate.InnerExceptions.Any(IsFatalException);
+        }
+
+        return exception.InnerException is not null
+            && IsFatalException(exception.InnerException);
     }
 
     private void SnoozeTask()

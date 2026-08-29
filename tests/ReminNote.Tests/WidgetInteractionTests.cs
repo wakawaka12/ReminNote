@@ -136,6 +136,59 @@ public sealed class WidgetInteractionTests
     }
 
     [Fact]
+    public async SystemTask LiveQuickAddReportsGenericWriteFailureAndKeepsTheExistingQueue()
+    {
+        var clock = new FixedClock(TestValues.CreatedAt);
+        var application = new FakeTaskApplicationService(clock)
+        {
+            CreateException = new InvalidOperationException("storage unavailable")
+        };
+        application.Add(CreateSnapshot("原有计划", TimeSpec.Anytime(TestValues.PlanDate)));
+        var viewModel = new WidgetViewModel(
+            new FakeTodayQueryService(application),
+            application,
+            clock);
+
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        viewModel.QuickAddText = "18:00 不应写入的任务";
+
+        await viewModel.SubmitQuickAddCommand.ExecuteAsync(null);
+
+        Assert.Contains("写入失败", viewModel.QuickAddFeedback, StringComparison.Ordinal);
+        Assert.Contains("当前 TODAY 列表保持不变", viewModel.QuickAddFeedback, StringComparison.Ordinal);
+        Assert.Equal("18:00 不应写入的任务", viewModel.QuickAddText);
+        Assert.Empty(application.CreatedTasks);
+        Assert.Equal(["原有计划"], viewModel.TodayUpcomingItems.Select(item => item.Title));
+    }
+
+    [Fact]
+    public async SystemTask LiveQuickAddSeparatesSuccessfulWriteFromRefreshFailure()
+    {
+        var clock = new FixedClock(TestValues.CreatedAt);
+        var application = new FakeTaskApplicationService(clock);
+        application.Add(CreateSnapshot("刷新前的计划", TimeSpec.Anytime(TestValues.PlanDate)));
+        var query = new FakeTodayQueryService(application);
+        var viewModel = new WidgetViewModel(query, application, clock);
+
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        query.NextException = new InvalidOperationException("query unavailable");
+        viewModel.QuickAddText = "18:00 已写入但待刷新";
+
+        await viewModel.SubmitQuickAddCommand.ExecuteAsync(null);
+
+        Assert.Single(application.CreatedTasks);
+        Assert.Contains("已写入本地 Task", viewModel.QuickAddFeedback, StringComparison.Ordinal);
+        Assert.Contains("刷新失败", viewModel.QuickAddFeedback, StringComparison.Ordinal);
+        Assert.Contains("当前列表保持不变", viewModel.QuickAddFeedback, StringComparison.Ordinal);
+        Assert.DoesNotContain("TODAY 已刷新", viewModel.QuickAddFeedback, StringComparison.Ordinal);
+        Assert.Equal(["刷新前的计划"], viewModel.TodayUpcomingItems.Select(item => item.Title));
+
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Contains(viewModel.TodayUpcomingItems, item => item.Title == "已写入但待刷新");
+    }
+
+    [Fact]
     public async SystemTask LiveDoneRecordsCompletedAndRefreshesToTheNextOpenTask()
     {
         var clock = new FixedClock(TestValues.CreatedAt);
@@ -218,6 +271,102 @@ public sealed class WidgetInteractionTests
         Assert.Equal(TaskResult.COMPLETED, application.Find(selectedTask.Id)!.Result);
         Assert.Null(application.Find(primary.Id)!.Result);
         Assert.Contains("指定完成项", viewModel.TaskFeedback, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async SystemTask LiveResultWriteReportsGenericFailureAndKeepsTheExistingQueue()
+    {
+        var clock = new FixedClock(TestValues.CreatedAt);
+        var application = new FakeTaskApplicationService(clock)
+        {
+            RecordResultException = new InvalidOperationException("storage unavailable")
+        };
+        var task = CreateSnapshot("结果写入失败的计划", TimeSpec.Anytime(TestValues.PlanDate));
+        application.Add(task);
+        var viewModel = new WidgetViewModel(
+            new FakeTodayQueryService(application),
+            application,
+            clock);
+
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+
+        await viewModel.CompleteTaskCommand.ExecuteAsync(null);
+
+        Assert.Contains("写入失败", viewModel.TaskFeedback, StringComparison.Ordinal);
+        Assert.Contains("当前 TODAY 列表保持不变", viewModel.TaskFeedback, StringComparison.Ordinal);
+        Assert.DoesNotContain("已记录", viewModel.TaskFeedback, StringComparison.Ordinal);
+        Assert.Null(application.Find(task.Id)!.Result);
+        Assert.Equal(["结果写入失败的计划"], viewModel.TodayUpcomingItems.Select(item => item.Title));
+    }
+
+    [Fact]
+    public async SystemTask LiveResultWriteSeparatesSuccessfulWriteFromRefreshFailure()
+    {
+        var clock = new FixedClock(TestValues.CreatedAt);
+        var application = new FakeTaskApplicationService(clock);
+        var task = CreateSnapshot("结果已写入但待刷新", TimeSpec.Anytime(TestValues.PlanDate));
+        application.Add(task);
+        var query = new FakeTodayQueryService(application);
+        var viewModel = new WidgetViewModel(query, application, clock);
+
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        query.NextException = new InvalidOperationException("query unavailable");
+
+        await viewModel.CompleteTaskCommand.ExecuteAsync(null);
+
+        Assert.Equal(TaskResult.COMPLETED, application.Find(task.Id)!.Result);
+        Assert.Contains("已记录", viewModel.TaskFeedback, StringComparison.Ordinal);
+        Assert.Contains("刷新失败", viewModel.TaskFeedback, StringComparison.Ordinal);
+        Assert.Contains("当前列表保持不变", viewModel.TaskFeedback, StringComparison.Ordinal);
+        Assert.DoesNotContain("TODAY 已刷新", viewModel.TaskFeedback, StringComparison.Ordinal);
+        Assert.Equal(["结果已写入但待刷新"], viewModel.TodayUpcomingItems.Select(item => item.Title));
+
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Empty(viewModel.TodayUpcomingItems);
+        Assert.Equal(1, viewModel.CompletedTaskCount);
+    }
+
+    [Fact]
+    public async SystemTask LiveRefreshFailureReportsFeedbackAndDoesNotClearTheExistingQueue()
+    {
+        var clock = new FixedClock(TestValues.CreatedAt);
+        var application = new FakeTaskApplicationService(clock);
+        application.Add(CreateSnapshot("刷新失败时仍可见", TimeSpec.Anytime(TestValues.PlanDate)));
+        var query = new FakeTodayQueryService(application);
+        var viewModel = new WidgetViewModel(query, application, clock);
+
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        query.NextException = new InvalidOperationException("query unavailable");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await viewModel.RefreshAsync(TestContext.Current.CancellationToken));
+
+        Assert.Contains("TODAY 刷新失败", viewModel.TaskFeedback, StringComparison.Ordinal);
+        Assert.Contains("当前列表保持不变", viewModel.TaskFeedback, StringComparison.Ordinal);
+        Assert.Equal(["刷新失败时仍可见"], viewModel.TodayUpcomingItems.Select(item => item.Title));
+    }
+
+    [Fact]
+    public async SystemTask LiveCancellationIsPropagatedWithoutWriteFailureFeedback()
+    {
+        var clock = new FixedClock(TestValues.CreatedAt);
+        var application = new FakeTaskApplicationService(clock)
+        {
+            CreateException = new OperationCanceledException()
+        };
+        var viewModel = new WidgetViewModel(
+            new FakeTodayQueryService(application),
+            application,
+            clock);
+        viewModel.QuickAddText = "18:00 取消的任务";
+
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+            await viewModel.SubmitQuickAddCommand.ExecuteAsync(null));
+
+        Assert.Empty(viewModel.QuickAddFeedback);
+        Assert.Empty(application.CreatedTasks);
+        Assert.Equal("18:00 取消的任务", viewModel.QuickAddText);
     }
 
     [Fact]
@@ -405,11 +554,19 @@ public sealed class WidgetInteractionTests
     private sealed class FakeTodayQueryService(FakeTaskApplicationService application)
         : ITodayQueryService
     {
+        public Exception? NextException { get; set; }
+
         public ValueTask<TodayReadModel> GetAsync(
             TodayQueryRequest request,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (NextException is { } exception)
+            {
+                NextException = null;
+                throw exception;
+            }
+
             var tasks = application.Tasks
                 .Select(application.ToReadModel)
                 .ToArray();
@@ -429,6 +586,10 @@ public sealed class WidgetInteractionTests
         public List<RecordTaskResultCommand> RecordedResults { get; } = [];
 
         public IReadOnlyList<TaskSnapshot> Tasks => tasks;
+
+        public Exception? CreateException { get; set; }
+
+        public Exception? RecordResultException { get; set; }
 
         public void Add(
             TaskSnapshot task,
@@ -462,6 +623,12 @@ public sealed class WidgetInteractionTests
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (CreateException is { } exception)
+            {
+                CreateException = null;
+                throw exception;
+            }
+
             var snapshot = new TaskSnapshot(
                 TestValues.TaskId(Guid.CreateVersion7().ToString()),
                 command.Title,
@@ -484,6 +651,12 @@ public sealed class WidgetInteractionTests
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (RecordResultException is { } exception)
+            {
+                RecordResultException = null;
+                throw exception;
+            }
+
             var index = tasks.FindIndex(task => task.Id == command.TaskId);
             if (index < 0)
             {
