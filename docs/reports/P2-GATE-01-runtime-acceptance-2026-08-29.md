@@ -2,7 +2,7 @@
 
 ## 结论先行
 
-本记录**不解除 P2-GATE-01 最终门禁**。本窗口在隔离临时 clone 上完成了当前 Release 的构建、真实 Widget 启动、UI Automation 交互、RANGE/DONE/History 和 SQLite 完整性 smoke；但没有形成 Main/Widget 双宿主同库双向 Quick Add、真实 23:00–01:00 跨午夜时序、已有 P1 数据 forward migration/幂等，或用户正常桌面人工签字的完整证据。因此最终状态为 **Pending（待用户人工完成）**，不能写成 P2 已最终通过。
+本记录**不解除 P2-GATE-01 最终门禁**。本窗口在隔离临时 clone 上完成了当前 Release 的构建、真实 Widget 启动、UI Automation 交互、RANGE/DONE/History 和 SQLite 完整性 smoke；恢复收尾阶段又在隔离临时副本中完成了已有 P1 数据的 forward migration、连续第二次正常 schema/迁移路径和幂等核对。仍没有形成 Main/Widget 双宿主同库双向 Quick Add、真实 23:00–01:00 跨午夜时序、无效 `--repo-root` 两宿主可执行文件非零退出，或用户正常桌面人工签字的完整证据。因此最终状态仍为 **Pending（待用户人工完成）**，不能写成 P2 已最终通过。
 
 所有 UI Automation 和命令均由 Codex 执行，只能作为“Codex 实机 smoke”证据，不能冒充用户最终签字。暂停测试后没有再启动、操作或关闭 Main/Widget，也没有继续争抢桌面 UI。
 
@@ -11,6 +11,7 @@
 | 项目 | 记录 |
 |---|---|
 | 验收窗口 | 2026-08-29 13:06–13:20（Asia/Shanghai；暂停前） |
+| 恢复后非 GUI 补证 | 2026-08-29 13:31:43 +08:00 为收尾记录时刻；仅检查临时数据库和构建 DLL，未启动、操作、激活或关闭任何 Main/Widget |
 | 产品基线 | `d3754879e53038148e18a13c1acfe2be88f0d374`（`d375487`） |
 | 基线分支 | `codex/p0-integration`；总成根目录为 `D:\Anime` |
 | 当前收尾工作树 | `C:\Users\EMT\.codex\worktrees\e8a2\Anime`，只新增本报告 |
@@ -29,7 +30,8 @@
 | 首个 Widget smoke clone | `C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29`；数据库为其 `.devdata\reminnote.sqlite` | `d3754879...`；Release 构建和一次 UIA Quick Add 成功，但随后出现本窗口未发起的并发数据变更，未作为最终隔离证据使用 |
 | 正式 isolated Widget smoke clone | `C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-isolated`；数据库为其 `.devdata\reminnote.sqlite` | `d3754879...`；有真实 Widget UIA、RANGE/DONE/History 和 SQLite 证据；最终数据库文件约 65536 bytes |
 | P1 旧库生成 clone | `C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-p1-seed`；数据库为其 `.devdata\reminnote.sqlite` | `7b1e67cb3d8adc7131064a6d2a939c7cdb6819dc`；只有 P1 schema，生成一条旧 Task，数据库文件约 24576 bytes |
-| 当前版本 migration 目标 clone | `C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-migration-current`；数据库为其 `.devdata\reminnote.sqlite` | `d3754879...`；已复制 P1 旧库，暂停前尚未应用当前版本 migration |
+| 当前版本 migration 目标 clone | `C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-migration-current`；数据库为其 `.devdata\reminnote.sqlite` | `d3754879...`；已复制 P1 旧库，恢复后已执行当前版本 forward migration 和第二次幂等 schema/迁移路径 |
+| Widget 无效参数验证目标 | `C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-invalid-widget-root` | 目录在验证后仍不存在；只做 Widget DLL 入口方法级检查，未启动 Widget EXE |
 
 临时 clone 均有真实 `.git` 目录并包含 `ReminNote.sln`。本轮确实写入的数据库都在上述临时根目录的 `.devdata` 下；没有把临时库复制回 `D:\Anime`。
 
@@ -120,8 +122,8 @@ C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-isolated\src\windows\Re
 | Main ↔ Widget 双宿主同库双向 Quick Add | **Pending** | 本窗口只取得 Widget 侧 UIA 写入和数据库读取；没有同一临时根的 Main→Widget、Widget→Main 双向人工/无竞争证据。 |
 | DONE/RANGE 跨 Main 与 Widget 的刷新链路 | **Pending** | Widget 侧完成；Main 侧未在同一隔离运行窗口取得证据。 |
 | 真实 23:00 → 次日 00:30 → 01:00 跨午夜时序 | **Pending** | 只验证了 `23:00–01:00` 的领域/数据库结构；未等待真实时钟节点，未修改系统时钟，不能替代时序验收。 |
-| 已有 P1 Task 的 forward migration、连续两次启动、幂等 | **Pending** | 已由 `7b1e67c` 生成 P1 旧库并复制到当前版本 clone；暂停前尚未应用当前 migration，未取得升级后 schema/行数/history/integrity 证据。 |
-| 无效 `--repo-root` 两宿主非零退出且不建未知库 | **Pending** | 本窗口尚未执行；现有 Main 单实例会使第二个 Main 进程走激活路径，不能把该结果当作参数校验。 |
+| 已有 P1 Task 的 forward migration、连续两次启动、幂等 | **Pass（非 GUI 补证；用户最终签字仍 Pending）** | `migration-current` 上当前版本正常 schema/迁移路径连续执行两次均退出码 0；旧 Task 行数为 1 且内容保持；升级后表、三条 migration history、`integrity_check=ok` 和无外键违规均已核对；`p1-seed` 未改写。 |
+| 无效 `--repo-root` 两宿主非零退出且不建未知库 | **Pending** | 本轮未启动任何 Main/Widget EXE；仅反射调用 Widget 入口方法，确认不存在路径抛 `System.ArgumentException` 且目录未创建。这是方法级 Pass，不是两宿主可执行文件非零退出证据；Main 和 Widget EXE 仍待用户在无竞争桌面复核。 |
 | 用户正常桌面人工验收和最终签字 | **Pending** | UIA/Codex 操作不是用户签字；当前用户已接手手工测试，最终结论必须由用户在正常桌面完成。 |
 
 ## 桌面并发、UI Automation 和进程限制
@@ -131,8 +133,9 @@ C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-isolated\src\windows\Re
 - 在暂停前的后续阶段，UIA 树读取开始阻塞；这也是没有继续争抢 UI、没有声称重启后 UIA 或 Main UI 通过的原因。
 - 本窗口没有捕获可作为用户签字的截图/录屏；已有证据是进程路径、命令行、窗口标题、UIA 控件/文本、harness 输出和只读 SQLite 查询。
 - 暂停时不再主动收尾进程。收尾阶段最后一次只读观察到的桌面进程属于用户在 `D:\Anime` 手工测试的 Main/Widget（路径分别为 `D:\Anime\src\windows\ReminNote.Windows\bin\Release\net10.0-windows\ReminNote.Windows.exe` 和 `D:\Anime\src\windows\ReminNote.Widget\bin\Release\net10.0-windows\ReminNote.Widget.exe`）；没有触碰这些进程。
+- 恢复后严格没有启动、操作、激活或关闭任何 Main/Widget；只加载 `migration-current` 的 Widget 构建 DLL 做参数解析入口检查，因此没有再次争抢桌面 UI，也没有触碰用户在 `D:\Anime` 或已存在 isolated clone 的进程。
 
-## P1 migration 生成材料（仅准备，未宣称通过）
+## P1 migration 生成材料与恢复后非 GUI 补证
 
 在 `7b1e67cb3d8adc7131064a6d2a939c7cdb6819dc` 的 P1 seed clone 中，harness 只读 schema 为 `__EFMigrationsHistory`、`__EFMigrationsLock`、`tasks`，随后创建：
 
@@ -143,14 +146,33 @@ ID：01a04bf5-0a65-7cb4-b1a8-6d9a1a3a01f4
 结果：未记录
 ```
 
-该 SQLite 主文件已复制到 `...-migration-current\.devdata\reminnote.sqlite`，原 P1 seed 文件仍保留。当前版本的 `schema`/`Migrate`、第二次幂等启动、行数/History/integrity 核对均因用户暂停而未执行，所以该部分必须由用户后续完成。
+截至暂停时，该 SQLite 主文件已复制到 `...-migration-current\.devdata\reminnote.sqlite`，原 P1 seed 文件仍保留；当时尚未执行当前版本迁移。恢复后补证仅在该临时副本执行，未触碰原始开发库。
+
+### 恢复后 P1 forward migration、第二次幂等和完整性
+
+- 在 `...-migration-current` 使用当前基线的 `dotnet restore ReminNote.sln --locked-mode` 和 Release build，均退出码 0；构建结果为 0 warning、0 error。随后只运行 `ReminNote.P1ManualHarness.exe schema` 的正常初始化/schema 路径两次，第一次和第二次均退出码 0。
+- 第一次完成后 schema 为 `__EFMigrationsHistory`、`__EFMigrationsLock`、`app_settings`、`task_history`、`tasks`；第二次输出完全相同。两次 `list 2026-08-28` 均只有同一条旧 Task：ID `01a04bf5-0a65-7cb4-b1a8-6d9a1a3a01f4`、标题 `P2GATE01-P1-legacy-20260829`、`RANGE 2026-08-28 23:00-01:00（跨午夜）`、结果未记录。
+- 两个 SQLite 文件均使用只读连接核对，结果如下：
+
+| 副本 | 文件证据 | 表/行数 | migration history | 完整性 |
+|---|---|---|---|---|
+| P1 seed（未改写） | 24576 bytes；SHA-256 `C750758076FED7A7C08284894372698771AEDE9342F9BEF329D23AF88970E802` | `tasks=1`；旧 schema 无 `task_history`；旧 Task 与上文相同 | `20260828025922_InitialTaskSchema` | `integrity_check=ok`；`foreign_key_check` 无行 |
+| 当前版本升级副本 | 65536 bytes；SHA-256 `A31626018346F3DC064F1911261692ED5FE0063C817C3CAB619AE08F3310E021` | `tasks=1`；`task_history=0`；旧 Task ID/标题/时间保持不变 | `20260828025922_InitialTaskSchema`、`20260828120000_P2TaskLoop`、`20260828130000_P2ContinuationDeleteBoundary` | `integrity_check=ok`；`foreign_key_check` 无行 |
+
+结论：已有 P1 Task 的 forward migration、旧行保留、连续第二次迁移无新增/破坏性变化、migration history 和 SQLite 完整性在隔离副本中均为 **Pass（Codex 非 GUI 补证）**。这不是用户正常桌面人工签字。
+
+### Widget 无效 `--repo-root` 入口补证（非 GUI）
+
+- 仅从 `...-migration-current\src\windows\ReminNote.Widget\bin\Release\net10.0-windows\ReminNote.Widget.dll` 反射调用 `WidgetStartupOptions.ResolveRepositoryRoot(IReadOnlyList<string>, string?)`，参数为 `--repo-root C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-invalid-widget-root`。
+- 方法拒绝结果为 `System.ArgumentException`：`Repository root must contain .git and ReminNote.sln: C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-invalid-widget-root`；验证后该目录仍不存在（`INVALID_ROOT_EXISTS_AFTER=False`）。
+- 这是入口方法级参数校验的 **Pass**，不是 Widget 可执行文件退出码证据。由于当前用户桌面存在单实例并发且本轮严禁启动/激活 GUI，Widget EXE 非零退出和 Main EXE 非零退出仍为 **Pending**。
 
 ## 解除门禁所需的用户后续动作
 
 1. 在不与其他 UIA/自动化竞争的正常桌面会话中，以同一个明确的临时根目录同时启动 Main 和 Widget，记录两个真实进程路径、窗口标题和 SQLite 绝对路径。
 2. 通过 Main Quick Add 创建后在 Widget 刷新确认，再通过 Widget Quick Add 创建后在 Main 刷新确认；分别验证非法粘连不增加 `tasks` 行、合法 `明天 18:00` 的日期/时间/标题。
 3. 对 RANGE 验证明确的 `NEEDS REVIEW`、`COMPLETED`、`PARTIAL`、`MISSED`、History 和重启保留；在真实时钟 23:00、次日 00:30、01:00 观察跨午夜状态，不改系统时钟。
-4. 使用已保留的 P1 seed 副本执行当前版本 forward migration，连续启动两次，核对旧 Task、schema、migration history、`integrity_check` 和可读写性；原始 seed 与原始开发库必须保留。
+4. 本窗口已在保留的 P1 seed 临时副本完成当前版本 forward migration、连续第二次正常迁移路径、旧 Task、schema、migration history、`integrity_check` 和外键核对；如流程要求用户亲自复核该项，只能继续使用可恢复副本，不能把本报告的 Codex 补证写成用户签字。
 5. 使用不存在或不含 Git/`ReminNote.sln` 的路径测试 Main/Widget `--repo-root`，保存两宿主非零退出码和“没有创建未知数据库”的证据。
 6. 用户本人在正常桌面完成上述 P2-GATE-01 项目后再签字；在此之前，P2 只能标记为有条件实现/待人工验收。
 
