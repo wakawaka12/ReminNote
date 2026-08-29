@@ -68,6 +68,8 @@ public sealed class StartupAndMainUiInteractionTests
             Path.Combine("src", "windows", "ReminNote.Windows", "MainWindow.xaml.cs"));
         var app = ReadWorkspaceFile(
             Path.Combine("src", "windows", "ReminNote.Windows", "App.xaml.cs"));
+        var todayViewModel = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "Features", "Today", "TodayPageViewModel.cs"));
 
         Assert.Contains("new DispatcherTimer(", mainWindow, StringComparison.Ordinal);
         Assert.Contains("Loaded += OnLoaded", mainWindow, StringComparison.Ordinal);
@@ -77,6 +79,10 @@ public sealed class StartupAndMainUiInteractionTests
         Assert.Contains("_todayRefreshTimer.Start()", mainWindow, StringComparison.Ordinal);
         Assert.Contains("_todayRefreshTimer.Stop()", mainWindow, StringComparison.Ordinal);
         Assert.Contains("_todayRefreshTimer.Tick -= OnTodayRefreshTimerTick", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("_viewModel.TodayPage.Dispose()", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("SemaphoreSlim", todayViewModel, StringComparison.Ordinal);
+        Assert.Contains("WaitAsync(refreshCancellation.Token)", todayViewModel, StringComparison.Ordinal);
+        Assert.Contains("Volatile.Read(ref _refreshGeneration)", todayViewModel, StringComparison.Ordinal);
         Assert.Contains("window.ActivateFromExternalRequest()", app, StringComparison.Ordinal);
     }
 

@@ -453,6 +453,138 @@ public sealed class TodayPageViewModelTests
     }
 
     [Fact]
+    public async SystemTask ConcurrentRefreshesAreSerializedAndTheNewestReadModelWins()
+    {
+        const string taskId = "0191f6a4-3b25-7c12-8d34-56789abcde37";
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot("旧查询", TimeSpec.Anytime(Workday), taskId));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var firstQuery = store.BlockNextQuery();
+
+        var firstRefresh = viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        await firstQuery.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        store.Replace(CreateSnapshot("新查询", TimeSpec.Anytime(Workday), taskId));
+        var secondRefresh = viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.False(secondRefresh.IsCompleted);
+        Assert.Equal(1, store.ActiveQueryCount);
+
+        firstQuery.Release.TrySetResult(true);
+        await SystemTask.WhenAll(firstRefresh, secondRefresh);
+
+        Assert.Equal(1, store.MaxConcurrentQueryCount);
+        Assert.Equal("新查询", Assert.Single(viewModel.Groups
+            .SelectMany(group => group.Items)).Title);
+        Assert.Equal(3, store.TodayQueryCount);
+    }
+
+    [Fact]
+    public async SystemTask FailedRefreshReleasesTheGateForTheFollowingRefresh()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "可保留任务",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde38"));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        store.FailReads = true;
+
+        InvalidOperationException? refreshFailure = null;
+        try
+        {
+            await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            refreshFailure = exception;
+        }
+
+        Assert.NotNull(refreshFailure);
+        Assert.Equal("可保留任务", Assert.Single(viewModel.Groups
+            .SelectMany(group => group.Items)).Title);
+
+        store.FailReads = false;
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("可保留任务", Assert.Single(viewModel.Groups
+            .SelectMany(group => group.Items)).Title);
+        Assert.Equal(3, store.TodayQueryCount);
+    }
+
+    [Fact]
+    public async SystemTask CancelledQueuedRefreshReleasesTheGate()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "取消时保留",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde39"));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var firstQuery = store.BlockNextQuery();
+
+        var firstRefresh = viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        await firstQuery.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        OperationCanceledException? cancellation = null;
+        try
+        {
+            await viewModel.RefreshAsync(cancelled.Token);
+        }
+        catch (OperationCanceledException exception)
+        {
+            cancellation = exception;
+        }
+
+        Assert.NotNull(cancellation);
+        Assert.Equal(1, store.ActiveQueryCount);
+
+        firstQuery.Release.TrySetResult(true);
+        await firstRefresh;
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal("取消时保留", Assert.Single(viewModel.Groups
+            .SelectMany(group => group.Items)).Title);
+        Assert.Equal(1, store.MaxConcurrentQueryCount);
+        Assert.Equal(3, store.TodayQueryCount);
+    }
+
+    [Fact]
+    public async SystemTask DisposingDuringRefreshCancelsItAndRejectsLaterRefreshes()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "释放时保留",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde40"));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var existingTask = FindTask(viewModel, "释放时保留");
+        var firstQuery = store.BlockNextQuery();
+
+        var refresh = viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        await firstQuery.Started.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        viewModel.Dispose();
+        OperationCanceledException? cancellation = null;
+        try
+        {
+            await refresh;
+        }
+        catch (OperationCanceledException exception)
+        {
+            cancellation = exception;
+        }
+
+        Assert.NotNull(cancellation);
+        Assert.Same(existingTask, FindTask(viewModel, "释放时保留"));
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, store.TodayQueryCount);
+    }
+
+    [Fact]
     public async SystemTask RefreshClearsASelectedTaskThatDisappearedWithoutFallingBackToPrimary()
     {
         var sourceId = TestValues.TaskId("0191f6a4-3b25-7c12-8d34-56789abcde35");
@@ -589,6 +721,10 @@ public sealed class TodayPageViewModelTests
 
         public int TodayQueryCount { get; private set; }
 
+        public int ActiveQueryCount => Volatile.Read(ref _activeQueryCount);
+
+        public int MaxConcurrentQueryCount { get; private set; }
+
         public List<CreateTaskCommand> CreatedCommands { get; } = [];
 
         public List<UpdateTaskCommand> UpdatedCommands { get; } = [];
@@ -603,31 +739,62 @@ public sealed class TodayPageViewModelTests
 
         public void Add(TaskSnapshot snapshot) => tasks.Add(snapshot.Id, snapshot);
 
+        public void Replace(TaskSnapshot snapshot) => tasks[snapshot.Id] = snapshot;
+
         public bool Remove(TaskId taskId) => tasks.Remove(taskId);
+
+        public QueryGate BlockNextQuery()
+        {
+            var gate = new QueryGate();
+            _nextQueryGate = gate;
+            return gate;
+        }
 
         public Instant GetCurrentInstant() => Current;
 
-        public ValueTask<TodayReadModel> GetAsync(
+        public async ValueTask<TodayReadModel> GetAsync(
             TodayQueryRequest request,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             TodayQueryCount++;
-            if (FailReads)
-            {
-                throw new InvalidOperationException("Today query failed for test.");
-            }
+            var queryGate = _nextQueryGate;
+            _nextQueryGate = null;
+            var activeQueries = Interlocked.Increment(ref _activeQueryCount);
+            MaxConcurrentQueryCount = Math.Max(MaxConcurrentQueryCount, activeQueries);
 
-            var localNow = request.Now.InUtc().LocalDateTime;
-            var workday = request.Workday ?? Workday;
-            var readModels = tasks.Values
-                .Where(task => task.TimeSpec.LocalDate <= workday)
-                .Where(task => task.Result is null || task.TimeSpec.LocalDate == workday)
-                .Select(task => TodayTaskClassifier.Classify(task, workday, localNow))
-                .OrderBy(task => task.Task.SortOrder)
-                .ThenBy(task => task.Task.Id.ToString(), StringComparer.Ordinal)
-                .ToArray();
-            return ValueTask.FromResult(new TodayReadModel(workday, readModels));
+            try
+            {
+                if (FailReads)
+                {
+                    throw new InvalidOperationException("Today query failed for test.");
+                }
+
+                var localNow = request.Now.InUtc().LocalDateTime;
+                var workday = request.Workday ?? Workday;
+                var readModels = tasks.Values
+                    .Where(task => task.TimeSpec.LocalDate <= workday)
+                    .Where(task => task.Result is null || task.TimeSpec.LocalDate == workday)
+                    .Select(task => TodayTaskClassifier.Classify(task, workday, localNow))
+                    .OrderBy(task => task.Task.SortOrder)
+                    .ThenBy(task => task.Task.Id.ToString(), StringComparer.Ordinal)
+                    .ToArray();
+                var readModel = new TodayReadModel(workday, readModels);
+
+                if (queryGate is not null)
+                {
+                    queryGate.Started.TrySetResult(true);
+                    await queryGate.Release.Task
+                        .WaitAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                return readModel;
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeQueryCount);
+            }
         }
 
         public ValueTask<TaskSnapshot> CreateAsync(
@@ -738,6 +905,18 @@ public sealed class TodayPageViewModelTests
             {
                 throw new TaskWriteGateBusyException();
             }
+        }
+
+        private int _activeQueryCount;
+        private QueryGate? _nextQueryGate;
+
+        public sealed class QueryGate
+        {
+            public TaskCompletionSource<bool> Started { get; } =
+                new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public TaskCompletionSource<bool> Release { get; } =
+                new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         private static DomainTask Rehydrate(TaskSnapshot snapshot) =>

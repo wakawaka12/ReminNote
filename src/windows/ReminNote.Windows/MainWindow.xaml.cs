@@ -214,6 +214,7 @@ public partial class MainWindow : Window, IDisposable
         _todayRefreshTimer.Stop();
         _todayRefreshTimer.Tick -= OnTodayRefreshTimerTick;
         _lifetimeCancellation.Cancel();
+        _viewModel.TodayPage.Dispose();
         _lifetimeCancellation.Dispose();
         GC.SuppressFinalize(this);
     }

@@ -17,7 +17,7 @@ using RemoteTodayTaskGroup = ReminNote.Core.Today.TodayTaskGroup;
 
 namespace ReminNote.Windows.Features.Today;
 
-public sealed class TodayPageViewModel : ShellPageViewModel
+public sealed class TodayPageViewModel : ShellPageViewModel, IDisposable
 {
     private const string LivePageDescription = "TODAY · 本地 Task 计划与结果";
     private const string LiveQuickAddOpenedMessage = "Quick Add 已展开 · 支持今天、明天、后天、日期、时间和 RANGE";
@@ -58,7 +58,15 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     private readonly ITodayQueryService? _todayQueryService;
     private readonly IClock _clock;
     private readonly bool _isLive;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private readonly CancellationTokenSource _refreshLifetime = new();
+    private readonly object _refreshLifecycleGate = new();
     private int _quickTaskNumber = 1;
+    private long _refreshGeneration;
+    private int _activeRefreshes;
+    private bool _refreshDisposed;
+    private bool _refreshCancellationCompleted;
+    private bool _refreshResourcesDisposed;
     private bool _isQuickAddOpen;
     private string _quickAddText = string.Empty;
     private string _interactionMessage = UiText.Get(UiText.TodayInteractionLoadedKey);
@@ -229,16 +237,33 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     public async System.Threading.Tasks.Task RefreshAsync(
         CancellationToken cancellationToken = default)
     {
-        if (!_isLive)
+        if (!_isLive || !TryStartRefresh(out var refreshGeneration))
         {
             return;
         }
 
+        var gateEntered = false;
         try
         {
-            var readModel = await _todayQueryService!
-                .GetAsync(new TodayQueryRequest(_clock.GetCurrentInstant()), cancellationToken)
+            using var refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                _refreshLifetime.Token);
+
+            await _refreshGate
+                .WaitAsync(refreshCancellation.Token)
                 .ConfigureAwait(true);
+            gateEntered = true;
+
+            var readModel = await _todayQueryService!
+                .GetAsync(new TodayQueryRequest(_clock.GetCurrentInstant()), refreshCancellation.Token)
+                .ConfigureAwait(true);
+            refreshCancellation.Token.ThrowIfCancellationRequested();
+
+            if (refreshGeneration != Volatile.Read(ref _refreshGeneration))
+            {
+                return;
+            }
+
             ApplyReadModel(readModel);
         }
         catch (OperationCanceledException)
@@ -247,9 +272,104 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         }
         catch
         {
-            InteractionMessage = LiveRefreshFailedMessage;
+            if (refreshGeneration == Volatile.Read(ref _refreshGeneration))
+            {
+                InteractionMessage = LiveRefreshFailedMessage;
+            }
+
             throw;
         }
+        finally
+        {
+            if (gateEntered)
+            {
+                _refreshGate.Release();
+            }
+
+            FinishRefresh();
+        }
+    }
+
+    public void Dispose()
+    {
+        var disposeResources = false;
+        lock (_refreshLifecycleGate)
+        {
+            if (_refreshDisposed)
+            {
+                return;
+            }
+
+            _refreshDisposed = true;
+        }
+
+        try
+        {
+            _refreshLifetime.Cancel();
+        }
+        finally
+        {
+            lock (_refreshLifecycleGate)
+            {
+                _refreshCancellationCompleted = true;
+                if (_activeRefreshes == 0 && !_refreshResourcesDisposed)
+                {
+                    _refreshResourcesDisposed = true;
+                    disposeResources = true;
+                }
+            }
+
+            if (disposeResources)
+            {
+                DisposeRefreshResources();
+            }
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    private bool TryStartRefresh(out long refreshGeneration)
+    {
+        lock (_refreshLifecycleGate)
+        {
+            if (_refreshDisposed)
+            {
+                refreshGeneration = 0;
+                return false;
+            }
+
+            _activeRefreshes++;
+            refreshGeneration = Interlocked.Increment(ref _refreshGeneration);
+            return true;
+        }
+    }
+
+    private void FinishRefresh()
+    {
+        var disposeResources = false;
+        lock (_refreshLifecycleGate)
+        {
+            _activeRefreshes--;
+            if (_refreshDisposed &&
+                _refreshCancellationCompleted &&
+                _activeRefreshes == 0 &&
+                !_refreshResourcesDisposed)
+            {
+                _refreshResourcesDisposed = true;
+                disposeResources = true;
+            }
+        }
+
+        if (disposeResources)
+        {
+            DisposeRefreshResources();
+        }
+    }
+
+    private void DisposeRefreshResources()
+    {
+        _refreshLifetime.Dispose();
+        _refreshGate.Dispose();
     }
 
     private void ConfigureCommands()
