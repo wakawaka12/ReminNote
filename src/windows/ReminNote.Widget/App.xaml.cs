@@ -50,7 +50,11 @@ public partial class App : Application, IDisposable
             StartRefreshTimer();
             _ = InitializeWidgetAsync();
         }
-        catch (Exception exception)
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (!WidgetViewModel.IsFatalException(exception))
         {
             Debug.WriteLine($"Widget startup failed: {exception}");
             Dispose();
@@ -122,7 +126,11 @@ public partial class App : Application, IDisposable
         catch (OperationCanceledException) when (_lifetimeCancellation?.IsCancellationRequested == true)
         {
         }
-        catch (Exception exception)
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (!WidgetViewModel.IsFatalException(exception))
         {
             Debug.WriteLine($"Widget refresh failed: {exception}");
         }

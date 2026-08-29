@@ -33,6 +33,12 @@ public enum WidgetResponsiveMode
     Expanded
 }
 
+internal enum WidgetRefreshReason
+{
+    External,
+    OwnResultRecorded
+}
+
 public sealed class WidgetQueueItem : ObservableObject
 {
     private bool _isSelected;
@@ -89,6 +95,8 @@ public sealed class WidgetQueueItem : ObservableObject
 
 public sealed class WidgetViewModel : ObservableObject, IDisposable
 {
+    private const string LiveSelectionInvalidatedFeedback =
+        "已选 Task 已不在 TODAY 列表中 · 已清除选择，请重新选择";
     private const string LiveRefreshFailedFeedback =
         "TODAY 刷新失败 · 当前列表保持不变 · 请点击刷新重试";
     private const string LiveQuickAddWriteFailedFeedback =
@@ -116,6 +124,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
     private TodayTaskReadModel? _livePrimaryTask;
     private TodayTaskReadModel? _liveSelectedTask;
     private WidgetQueueItem? _selectedTaskItem;
+    private bool _selectionWasInvalidated;
     private TaskId? _currentTaskId;
     private LocalDate _currentWorkday;
     private int _openTaskCount;
@@ -277,19 +286,27 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
     public string PrimaryTaskTimeLabel => _primaryTaskTimeLabel;
 
     public string SelectedTaskTitle => _selectedTaskItem?.Title ?? (_isLive
-        ? _livePrimaryTask?.Task.Title ?? "暂无 TODAY Task"
+        ? _selectionWasInvalidated
+            ? "未选择 Task"
+            : _livePrimaryTask?.Task.Title ?? "暂无 TODAY Task"
         : _primaryTaskTitle);
 
     public string SelectedTaskMeta => _selectedTaskItem?.Meta ?? (_isLive
-        ? _livePrimaryTask is null ? "TODAY · 暂无计划" : FormatTaskMeta(_livePrimaryTask)
+        ? _selectionWasInvalidated
+            ? "TODAY · 已选 Task 不可用，请重新选择"
+            : _livePrimaryTask is null ? "TODAY · 暂无计划" : FormatTaskMeta(_livePrimaryTask)
         : _primaryTaskMeta);
 
     public string SelectedTaskTimeLabel => _selectedTaskItem?.Time ?? (_isLive
-        ? _livePrimaryTask is null ? "—" : FormatTaskTime(_livePrimaryTask.Task.TimeSpec)
+        ? _selectionWasInvalidated
+            ? "—"
+            : _livePrimaryTask is null ? "—" : FormatTaskTime(_livePrimaryTask.Task.TimeSpec)
         : _primaryTaskTimeLabel);
 
     public string TaskStatusLabel => _isLive
-        ? FormatStatusLabel(_liveSelectedTask ?? _livePrimaryTask)
+        ? _selectionWasInvalidated
+            ? "—"
+            : FormatStatusLabel(_liveSelectedTask ?? _livePrimaryTask)
         : _isTaskCompleted
             ? UiText.Get(UiText.WidgetTaskCompletedKey)
             : UiText.Get(UiText.WidgetTaskAnytimeKey);
@@ -470,7 +487,10 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
 
         try
         {
-            await RefreshCoreAsync(cancellationToken).ConfigureAwait(true);
+            await RefreshCoreAsync(
+                    WidgetRefreshReason.External,
+                    cancellationToken)
+                .ConfigureAwait(true);
         }
         catch (OperationCanceledException)
         {
@@ -484,6 +504,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
     }
 
     private async System.Threading.Tasks.Task RefreshCoreAsync(
+        WidgetRefreshReason refreshReason,
         CancellationToken cancellationToken)
     {
         await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(true);
@@ -503,11 +524,18 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
                 .ToArray();
 
             var selectedTaskId = _selectedTaskItem?.TaskId;
-            var nextSelectedItem = selectedTaskId is { } id
-                ? nextItems.FirstOrDefault(item => item.TaskId == id)
-                : null;
-            nextSelectedItem ??= nextItems.FirstOrDefault(item =>
-                item.TaskId == nextPrimaryTask?.Task.Id);
+            var nextSelectedItem = refreshReason == WidgetRefreshReason.OwnResultRecorded
+                ? nextItems.FirstOrDefault()
+                : selectedTaskId is { } id
+                    ? nextItems.FirstOrDefault(item => item.TaskId == id)
+                    : _selectionWasInvalidated
+                        ? null
+                        : nextItems.FirstOrDefault();
+            var selectionWasLost = refreshReason == WidgetRefreshReason.External
+                && selectedTaskId is not null
+                && nextSelectedItem is null;
+            var nextSelectionWasInvalidated = refreshReason == WidgetRefreshReason.External
+                && (selectionWasLost || (_selectionWasInvalidated && nextSelectedItem is null));
 
             var nextPrimaryTaskTitle = nextPrimaryTask?.Task.Title ?? "暂无 TODAY Task";
             var nextPrimaryTaskMeta = nextPrimaryTask is null
@@ -532,7 +560,10 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
                 _todayItems.Add(item);
             }
 
-            SetSelectedTask(nextSelectedItem, _livePrimaryTask);
+            SetSelectedTask(
+                nextSelectedItem,
+                nextSelectionWasInvalidated ? null : _livePrimaryTask,
+                nextSelectionWasInvalidated);
 
             OnPropertyChanged(nameof(PrimaryTaskTitle));
             OnPropertyChanged(nameof(PrimaryTaskMeta));
@@ -548,6 +579,11 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(TodaySummaryCompact));
             OnPropertyChanged(nameof(IsResultActionsVisible));
             OnPropertyChanged(nameof(ResultActionHint));
+
+            if (selectionWasLost)
+            {
+                TaskFeedback = LiveSelectionInvalidatedFeedback;
+            }
         }
         finally
         {
@@ -570,7 +606,8 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
 
     private void SetSelectedTask(
         WidgetQueueItem? item,
-        TodayTaskReadModel? fallbackTask)
+        TodayTaskReadModel? fallbackTask,
+        bool selectionWasInvalidated = false)
     {
         foreach (var candidate in _todayItems)
         {
@@ -578,6 +615,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         }
 
         _selectedTaskItem = item;
+        _selectionWasInvalidated = selectionWasInvalidated;
         _liveSelectedTask = item?.ReadModel ?? fallbackTask;
         _currentTaskId = _liveSelectedTask?.Task.Id;
         _isTaskCompleted = _liveSelectedTask?.IsCompleted ?? false;
@@ -659,8 +697,10 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
             : summary;
     }
 
-    private static string FormatResultFeedback(string title, TaskResult result) =>
-        $"已记录「{title}」的 {result} 结果。";
+    private string FormatResultFeedback(string title, TaskResult result) =>
+        _selectedTaskItem is { } nextItem
+            ? $"已记录「{title}」的 {result} 结果 · 已转到下一开放 Task：「{nextItem.Title}」。"
+            : $"已记录「{title}」的 {result} 结果 · 当前没有下一开放 Task。";
 
     private void ShowToday()
     {
@@ -752,6 +792,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
             if (!await TryRefreshAfterWriteAsync(
                     () => QuickAddFeedback =
                         $"已写入本地 Task：「{created.Title}」，但 TODAY 刷新失败 · 当前列表保持不变 · 请点击刷新重试",
+                    WidgetRefreshReason.External,
                     cancellationToken)
                 .ConfigureAwait(true))
             {
@@ -862,6 +903,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
                 if (!await TryRefreshAfterWriteAsync(
                         () => TaskFeedback =
                             "当前 Task 已不存在，且 TODAY 刷新失败 · 当前列表保持不变 · 请点击刷新重试",
+                        WidgetRefreshReason.External,
                         cancellationToken)
                     .ConfigureAwait(true))
                 {
@@ -875,6 +917,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
             if (!await TryRefreshAfterWriteAsync(
                     () => TaskFeedback =
                         $"已记录「{title}」的 {result} 结果，但 TODAY 刷新失败 · 当前列表保持不变 · 请点击刷新重试",
+                    WidgetRefreshReason.OwnResultRecorded,
                     cancellationToken)
                 .ConfigureAwait(true))
             {
@@ -899,11 +942,12 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
 
     private async System.Threading.Tasks.Task<bool> TryRefreshAfterWriteAsync(
         Action setFailureFeedback,
+        WidgetRefreshReason refreshReason,
         CancellationToken cancellationToken)
     {
         try
         {
-            await RefreshCoreAsync(cancellationToken).ConfigureAwait(true);
+            await RefreshCoreAsync(refreshReason, cancellationToken).ConfigureAwait(true);
             return true;
         }
         catch (OperationCanceledException)
@@ -917,7 +961,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         }
     }
 
-    private static bool IsFatalException(Exception exception)
+    internal static bool IsFatalException(Exception exception)
     {
         if (exception is OutOfMemoryException
             or StackOverflowException

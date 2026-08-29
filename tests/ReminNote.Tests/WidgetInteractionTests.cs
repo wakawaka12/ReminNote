@@ -210,7 +210,48 @@ public sealed class WidgetInteractionTests
         Assert.Equal(1, viewModel.OpenTaskCount);
         Assert.Equal(1, viewModel.CompletedTaskCount);
         Assert.Equal("队列里的计划", viewModel.PrimaryTaskTitle);
+        Assert.Equal("队列里的计划", viewModel.SelectedTaskTitle);
         Assert.Contains("已记录", viewModel.TaskFeedback, StringComparison.Ordinal);
+        Assert.Contains("已转到下一开放 Task", viewModel.TaskFeedback, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async SystemTask LiveExternalRefreshClearsMissingSelectionWithoutFallingBackToPrimary()
+    {
+        var clock = new FixedClock(TestValues.CreatedAt);
+        var application = new FakeTaskApplicationService(clock);
+        var selectedTask = CreateSnapshot("外部完成的计划", TimeSpec.Anytime(TestValues.PlanDate));
+        var nextTask = CreateSnapshot(
+            "刷新后的主任务",
+            TimeSpec.At(TestValues.PlanDate, new LocalTime(18, 0)));
+        application.Add(selectedTask);
+        application.Add(nextTask);
+        var viewModel = new WidgetViewModel(
+            new FakeTodayQueryService(application),
+            application,
+            clock);
+
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        var selectedItem = Assert.Single(
+            viewModel.TodayUpcomingItems,
+            item => item.Title == selectedTask.Title);
+        selectedItem.SelectCommand.Execute(null);
+        Assert.Equal(selectedTask.Title, viewModel.SelectedTaskTitle);
+
+        application.CompleteExternally(selectedTask.Id);
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(nextTask.Title, viewModel.PrimaryTaskTitle);
+        Assert.Equal([nextTask.Title], viewModel.TodayUpcomingItems.Select(item => item.Title));
+        Assert.Equal("未选择 Task", viewModel.SelectedTaskTitle);
+        Assert.Equal("TODAY · 已选 Task 不可用，请重新选择", viewModel.SelectedTaskMeta);
+        Assert.Equal("—", viewModel.SelectedTaskTimeLabel);
+        Assert.Equal("—", viewModel.TaskStatusLabel);
+        Assert.False(viewModel.IsResultActionsVisible);
+        Assert.DoesNotContain(
+            viewModel.TodayUpcomingItems,
+            item => item.IsSelected);
+        Assert.Contains("已不在 TODAY 列表中", viewModel.TaskFeedback, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -392,6 +433,7 @@ public sealed class WidgetInteractionTests
         Assert.Equal(1, viewModel.CompletedTaskCount);
         Assert.False(viewModel.IsResultActionsVisible);
         Assert.Equal("PARTIAL", viewModel.TaskStatusLabel);
+        Assert.Contains("当前没有下一开放 Task", viewModel.TaskFeedback, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -602,6 +644,24 @@ public sealed class WidgetInteractionTests
         }
 
         public TaskSnapshot? Find(TaskId id) => tasks.SingleOrDefault(task => task.Id == id);
+
+        public void CompleteExternally(TaskId taskId)
+        {
+            var index = tasks.FindIndex(task => task.Id == taskId);
+            if (index < 0)
+            {
+                throw new InvalidOperationException("测试 Task 不存在。");
+            }
+
+            tasks[index] = tasks[index] with
+            {
+                ResultRecord = TaskResultRecord.Create(
+                    TaskResult.COMPLETED,
+                    clock.GetCurrentInstant(),
+                    note: null),
+                UpdatedAt = clock.GetCurrentInstant()
+            };
+        }
 
         public TodayTaskReadModel ToReadModel(TaskSnapshot task)
         {
