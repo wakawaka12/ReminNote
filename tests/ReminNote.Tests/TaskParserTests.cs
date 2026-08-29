@@ -113,6 +113,24 @@ public sealed class TaskParserTests
     }
 
     [Theory]
+    [InlineData("今天18:00", "task.parser.time.invalid")]
+    [InlineData("明天18:00", "task.parser.time.invalid")]
+    [InlineData("后天08:05", "task.parser.time.invalid")]
+    [InlineData("今天18:00 标题", "task.parser.time.invalid")]
+    [InlineData("明天18:00 标题", "task.parser.time.invalid")]
+    [InlineData("后天08:05 标题", "task.parser.time.invalid")]
+    [InlineData("明天18:00-19:00 粘连范围", "task.parser.range.invalid")]
+    [InlineData("后天08:05–09:00 粘连范围和标题", "task.parser.range.invalid")]
+    public void RejectsGluedRelativeDateTimeBeforeTreatingInputAsTitle(
+        string input,
+        string expectedCode)
+    {
+        var result = TaskParser.Parse(input, LogicalToday);
+
+        AssertFailure(result, expectedCode);
+    }
+
+    [Theory]
     [InlineData(null, "task.parser.empty")]
     [InlineData("", "task.parser.empty")]
     [InlineData("   ", "task.parser.empty")]

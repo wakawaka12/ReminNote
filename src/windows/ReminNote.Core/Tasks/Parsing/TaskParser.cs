@@ -24,6 +24,8 @@ public static class TaskParser
     private static readonly LocalTimePattern TimePattern =
         LocalTimePattern.CreateWithInvariantCulture("HH:mm");
 
+    private static readonly string[] RelativeDateTokens = ["今天", "明天", "后天"];
+
     public static TaskParserResult Parse(string? text, LocalDate logicalToday)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -47,6 +49,12 @@ public static class TaskParser
         var index = 0;
         var planDate = logicalToday;
 
+        if (index < tokens.Length &&
+            TryGetGluedRelativeDateError(tokens[index], out var gluedDateError))
+        {
+            return TaskParserResult.Failure(gluedDateError!.Value);
+        }
+
         if (index < tokens.Length && IsDateToken(tokens[index]))
         {
             if (!TryResolveDate(tokens[index], logicalToday, out planDate, out var dateError))
@@ -64,6 +72,12 @@ public static class TaskParser
         }
 
         TimeSpec? timeSpec = null;
+        if (index < tokens.Length &&
+            TryGetGluedRelativeDateError(tokens[index], out var gluedTimeError))
+        {
+            return TaskParserResult.Failure(gluedTimeError!.Value);
+        }
+
         if (index < tokens.Length && LooksLikeTimeShape(tokens[index]))
         {
             if (!TryResolveTimeShape(tokens[index], planDate, out timeSpec, out var timeError))
@@ -237,6 +251,37 @@ public static class TaskParser
          token[..4].All(char.IsAsciiDigit) &&
          token[5..7].All(char.IsAsciiDigit) &&
          token[8..].All(char.IsAsciiDigit));
+
+    private static bool TryGetGluedRelativeDateError(
+        string token,
+        out DomainValidationError? error)
+    {
+        foreach (var relativeDateToken in RelativeDateTokens)
+        {
+            if (!token.StartsWith(relativeDateToken, StringComparison.Ordinal) ||
+                token.Length == relativeDateToken.Length)
+            {
+                continue;
+            }
+
+            var suffix = token[relativeDateToken.Length..];
+            if (suffix[0] is not (>= '0' and <= '9') and not ':' and not '-' and not '–')
+            {
+                continue;
+            }
+
+            var errorCode = suffix.Contains('-') || suffix.Contains('–')
+                ? InvalidRangeCode
+                : InvalidTimeCode;
+            error = Error(
+                errorCode,
+                $"Relative date and time must be separated by a space: {token}.");
+            return true;
+        }
+
+        error = null;
+        return false;
+    }
 
     private static bool LooksLikeDateSyntax(string token) =>
         token is "昨天" or "前天" or "大后天" or "大前天" or "上周" or "本周" or "下周" ||
