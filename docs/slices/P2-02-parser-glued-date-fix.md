@@ -51,8 +51,8 @@ ASCII 数字、冒号、连字符或 en dash 的 token：
 ### 环境
 
 1. 关闭已有 Main/Widget 实例。
-2. 使用本 worktree 作为仓库根目录启动两个宿主，并传入同一个
-   `--repo-root C:\Users\EMT\.codex\worktrees\9949\Anime`。
+2. 使用总成仓库 `D:\Anime` 作为仓库根目录启动两个宿主，并传入同一个
+   `--repo-root D:\Anime`。
 3. 确认只使用该根目录下的 `.devdata/reminnote.sqlite`；验收前用只读 SQLite 工具记录
    `SELECT COUNT(*) FROM tasks;` 的初始行数。
 
