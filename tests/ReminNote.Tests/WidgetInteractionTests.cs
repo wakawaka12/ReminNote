@@ -161,6 +161,66 @@ public sealed class WidgetInteractionTests
     }
 
     [Fact]
+    public async SystemTask LiveWidgetCanSelectANonPrimaryTaskBeforeRecordingItsResult()
+    {
+        var clock = new FixedClock(TestValues.CreatedAt);
+        var application = new FakeTaskApplicationService(clock);
+        var primary = CreateSnapshot("先做的计划", TimeSpec.Anytime(TestValues.PlanDate));
+        var range = CreateSnapshot(
+            "指定处理的 RANGE",
+            TimeSpec.Range(TestValues.PlanDate, new LocalTime(13, 0), new LocalTime(14, 0)));
+        application.Add(primary);
+        application.Add(range, TodayTaskGroup.AFTERNOON, TodayTaskStatus.AwaitingResult, isNeedsReview: true);
+        var viewModel = new WidgetViewModel(
+            new FakeTodayQueryService(application),
+            application,
+            clock);
+
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        var selected = Assert.Single(
+            viewModel.TodayUpcomingItems,
+            item => item.Title == "指定处理的 RANGE");
+
+        selected.SelectCommand.Execute(null);
+        Assert.Equal("指定处理的 RANGE", viewModel.SelectedTaskTitle);
+        Assert.True(viewModel.IsResultActionsVisible);
+
+        await viewModel.RecordPartialTaskCommand.ExecuteAsync(null);
+
+        Assert.Equal(TaskResult.PARTIAL, application.Find(range.Id)!.Result);
+        Assert.Null(application.Find(primary.Id)!.Result);
+    }
+
+    [Fact]
+    public async SystemTask LiveWidgetCompleteActsOnTheSelectedNonPrimaryTask()
+    {
+        var clock = new FixedClock(TestValues.CreatedAt);
+        var application = new FakeTaskApplicationService(clock);
+        var primary = CreateSnapshot("默认首项", TimeSpec.Anytime(TestValues.PlanDate));
+        var selectedTask = CreateSnapshot(
+            "指定完成项",
+            TimeSpec.At(TestValues.PlanDate, new LocalTime(18, 0)));
+        application.Add(primary);
+        application.Add(selectedTask);
+        var viewModel = new WidgetViewModel(
+            new FakeTodayQueryService(application),
+            application,
+            clock);
+
+        await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
+        var selected = Assert.Single(
+            viewModel.TodayUpcomingItems,
+            item => item.Title == "指定完成项");
+        selected.SelectCommand.Execute(null);
+
+        await viewModel.CompleteTaskCommand.ExecuteAsync(null);
+
+        Assert.Equal(TaskResult.COMPLETED, application.Find(selectedTask.Id)!.Result);
+        Assert.Null(application.Find(primary.Id)!.Result);
+        Assert.Contains("指定完成项", viewModel.TaskFeedback, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async SystemTask LiveRangeResultActionRecordsPartialAndClearsNeedsReview()
     {
         var clock = new FixedClock(TestValues.CreatedAt);

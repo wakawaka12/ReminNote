@@ -114,6 +114,8 @@ public sealed class TodayPageViewModel : ShellPageViewModel
 
     public event Action<TodayTaskViewModel>? QuickTaskAdded;
 
+    public event Action<TodayTaskViewModel>? DetailsRequested;
+
     public ObservableCollection<TodayTaskGroupViewModel> Groups { get; } = [];
 
     public TodayTaskViewModel? PrimaryTask { get; private set; }
@@ -325,7 +327,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     private TodayTaskViewModel CreateTask(TodayMockTask mockTask) =>
         new(
             mockTask,
-            SelectTask,
+            SelectTaskAndOpenDetails,
             ToggleTaskCompletionAsync,
             ToggleTaskPin,
             RecordPartialResultAsync,
@@ -338,7 +340,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     private TodayTaskViewModel CreateTask(TodayTaskReadModel task) =>
         new(
             task,
-            SelectTask,
+            SelectTaskAndOpenDetails,
             ToggleTaskCompletionAsync,
             ToggleTaskPin,
             RecordPartialResultAsync,
@@ -669,6 +671,131 @@ public sealed class TodayPageViewModel : ShellPageViewModel
     private System.Threading.Tasks.Task MoveTaskDownAsync(TodayTaskViewModel task) =>
         MoveTaskWithinGroupAsync(task, 1);
 
+    public async System.Threading.Tasks.Task ReorderTaskByDropAsync(
+        TodayTaskViewModel source,
+        TodayTaskViewModel target,
+        bool insertAfter = false)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(target);
+        if (!_isLive ||
+            source.DomainTaskId is not { } sourceId ||
+            source.PlanDate is not { } sourcePlanDate ||
+            target.DomainTaskId is not { } targetId ||
+            target.PlanDate is not { } targetPlanDate)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(source, target))
+        {
+            InteractionMessage = "拖动排序未改变 · 请将 Task 放到另一个任务上";
+            return;
+        }
+
+        if (source.CurrentGroup != target.CurrentGroup ||
+            sourcePlanDate != targetPlanDate)
+        {
+            InteractionMessage = LiveReorderCrossDateMessage;
+            return;
+        }
+
+        var group = Groups.FirstOrDefault(candidate => candidate.Group == source.CurrentGroup);
+        if (group is null)
+        {
+            return;
+        }
+
+        var sameDateItems = group.Items
+            .Where(candidate => candidate.PlanDate == sourcePlanDate)
+            .ToList();
+        var sourceIndex = sameDateItems.FindIndex(candidate => candidate.DomainTaskId == sourceId);
+        var targetIndex = sameDateItems.FindIndex(candidate => candidate.DomainTaskId == targetId);
+        if (sourceIndex < 0 || targetIndex < 0)
+        {
+            InteractionMessage = LiveReorderCrossDateMessage;
+            return;
+        }
+
+        var reorderedItems = sameDateItems.ToList();
+        reorderedItems.RemoveAt(sourceIndex);
+        var adjustedTargetIndex = targetIndex > sourceIndex
+            ? targetIndex - 1
+            : targetIndex;
+        var insertIndex = insertAfter
+            ? adjustedTargetIndex + 1
+            : adjustedTargetIndex;
+        insertIndex = Math.Clamp(insertIndex, 0, reorderedItems.Count);
+        if (insertIndex == sourceIndex)
+        {
+            InteractionMessage = "拖动排序未改变 · Task 已在目标位置";
+            return;
+        }
+
+        reorderedItems.Insert(insertIndex, source);
+        var desiredSortOrders = new Dictionary<TaskId, int>();
+        for (var sortOrder = 0; sortOrder < reorderedItems.Count; sortOrder++)
+        {
+            if (reorderedItems[sortOrder].DomainTaskId is { } candidateId)
+            {
+                desiredSortOrders[candidateId] = sortOrder;
+            }
+        }
+
+        try
+        {
+            foreach (var candidate in sameDateItems)
+            {
+                if (candidate.DomainTaskId is not { } candidateId ||
+                    candidate.SortOrder == desiredSortOrders[candidateId])
+                {
+                    continue;
+                }
+
+                var reordered = await _taskApplicationService!
+                    .ReorderAsync(new ReorderTaskCommand(
+                        candidateId,
+                        desiredSortOrders[candidateId]))
+                    .ConfigureAwait(true);
+                if (reordered is null)
+                {
+                    InteractionMessage = "无法排序：Task 不存在，TODAY 数据未改变";
+                    return;
+                }
+            }
+        }
+        catch (TaskWriteGateBusyException)
+        {
+            InteractionMessage = LiveWriteFailedMessage;
+            return;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            InteractionMessage = LiveWriteFailedMessage;
+            return;
+        }
+
+        try
+        {
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            InteractionMessage = LiveWriteRefreshFailedMessage;
+            return;
+        }
+
+        InteractionMessage = $"已将「{source.Title}」拖动到「{target.Title}」的位置 · 仅影响同日期同分组排序";
+    }
+
     private async System.Threading.Tasks.Task MoveTaskWithinGroupAsync(
         TodayTaskViewModel task,
         int offset)
@@ -825,7 +952,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel
             return;
         }
 
-        SelectTask(task);
+        SelectTaskAndOpenDetails(task);
         InteractionMessage = _isLive
             ? $"已定位到待复盘 Task「{task.Title}」· 请记录结果"
             : UiText.Format(UiText.TodayInteractionReviewLocatedKey, task.Title);
@@ -839,6 +966,13 @@ public sealed class TodayPageViewModel : ShellPageViewModel
         }
 
         SelectedTask = task;
+    }
+
+    private void SelectTaskAndOpenDetails(TodayTaskViewModel task)
+    {
+        ArgumentNullException.ThrowIfNull(task);
+        SelectTask(task);
+        DetailsRequested?.Invoke(task);
     }
 
     private async System.Threading.Tasks.Task ToggleTaskCompletionAsync(TodayTaskViewModel task)

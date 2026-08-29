@@ -360,6 +360,39 @@ public sealed class TodayPageViewModelTests
     }
 
     [Fact]
+    public async SystemTask DragReorderMovesATaskToTheDroppedPosition()
+    {
+        var store = new InMemoryTodayStore(Now, Workday);
+        store.Add(CreateSnapshot(
+            "拖动第一项",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde29"));
+        store.Add(CreateSnapshot(
+            "拖动第二项",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde30",
+            sortOrder: 1));
+        store.Add(CreateSnapshot(
+            "拖动第三项",
+            TimeSpec.Anytime(Workday),
+            "0191f6a4-3b25-7c12-8d34-56789abcde31",
+            sortOrder: 2));
+        var viewModel = new TodayPageViewModel(store, store, store);
+        var anytimeGroup = viewModel.Groups.Single(group => group.Group == UiTodayTaskGroup.Anytime);
+        var source = anytimeGroup.Items.Single(task => task.Title == "拖动第一项");
+        var target = anytimeGroup.Items.Single(task => task.Title == "拖动第三项");
+
+        await viewModel.ReorderTaskByDropAsync(source, target, insertAfter: true);
+
+        Assert.Equal(
+            ["拖动第二项", "拖动第三项", "拖动第一项"],
+            anytimeGroup.Items.Select(task => task.Title).ToArray());
+        Assert.Equal(0, store.Snapshots.Single(task => task.Title == "拖动第二项").SortOrder);
+        Assert.Equal(1, store.Snapshots.Single(task => task.Title == "拖动第三项").SortOrder);
+        Assert.Equal(2, store.Snapshots.Single(task => task.Title == "拖动第一项").SortOrder);
+    }
+
+    [Fact]
     public async SystemTask ReorderRefusesCrossDateNeighborsAndGroupBoundaries()
     {
         var store = new InMemoryTodayStore(Now, Workday);
@@ -390,6 +423,22 @@ public sealed class TodayPageViewModelTests
 
         Assert.Empty(store.ReorderCommands);
         Assert.Contains("分组边界", viewModel.InteractionMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SelectingATodayTaskRequestsItsDetails()
+    {
+        var viewModel = new TodayPageViewModel();
+        var task = viewModel.Groups
+            .SelectMany(group => group.Items)
+            .Single(candidate => candidate.Title == "准备设计评审材料");
+        TodayTaskViewModel? requested = null;
+        viewModel.DetailsRequested += selected => requested = selected;
+
+        task.SelectCommand.Execute(null);
+
+        Assert.Same(task, requested);
+        Assert.Same(task, viewModel.SelectedTask);
     }
 
     private static TodayTaskViewModel FindTask(

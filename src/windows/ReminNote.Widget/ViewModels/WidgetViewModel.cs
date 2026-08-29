@@ -33,15 +33,58 @@ public enum WidgetResponsiveMode
     Expanded
 }
 
-public sealed class WidgetQueueItem(string time, string title, string meta, string marker)
+public sealed class WidgetQueueItem : ObservableObject
 {
-    public string Time { get; } = time;
+    private bool _isSelected;
 
-    public string Title { get; } = title;
+    public WidgetQueueItem(
+        string time,
+        string title,
+        string meta,
+        string marker,
+        Action<WidgetQueueItem>? select = null,
+        TaskId? taskId = null,
+        TodayTaskReadModel? readModel = null)
+    {
+        Time = time;
+        Title = title;
+        Meta = meta;
+        Marker = marker;
+        TaskId = taskId;
+        ReadModel = readModel;
+        SelectCommand = new RelayCommand(() => select?.Invoke(this));
+    }
 
-    public string Meta { get; } = meta;
+    public string Time { get; }
 
-    public string Marker { get; } = marker;
+    public string Title { get; }
+
+    public string Meta { get; }
+
+    public string Marker { get; }
+
+    public TaskId? TaskId { get; }
+
+    public bool IsCompleted => ReadModel?.IsCompleted ?? false;
+
+    public bool IsRange => ReadModel?.IsRange ?? false;
+
+    public bool IsNeedsReview => ReadModel?.IsNeedsReview ?? false;
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        private set => SetProperty(ref _isSelected, value);
+    }
+
+    public IRelayCommand SelectCommand { get; }
+
+    internal TodayTaskReadModel? ReadModel { get; }
+
+    internal void SetSelected(bool value)
+    {
+        IsSelected = value;
+    }
 }
 
 public sealed class WidgetViewModel : ObservableObject, IDisposable
@@ -65,6 +108,8 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
     private readonly ObservableCollection<WidgetQueueItem> _todayItems = [];
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private TodayTaskReadModel? _livePrimaryTask;
+    private TodayTaskReadModel? _liveSelectedTask;
+    private WidgetQueueItem? _selectedTaskItem;
     private TaskId? _currentTaskId;
     private LocalDate _currentWorkday;
     private int _openTaskCount;
@@ -80,8 +125,8 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         _isLive = false;
         TodayUpcomingItems =
         [
-            new WidgetQueueItem("12:00", "吃钙片", UiText.Get(UiText.WidgetTodayHealthMetaKey), "NOW"),
-            new WidgetQueueItem("18:30", "准备明日计划", UiText.Get(UiText.WidgetTodayReviewMetaKey), "NEXT")
+            new WidgetQueueItem("12:00", "吃钙片", UiText.Get(UiText.WidgetTodayHealthMetaKey), "NOW", SelectTask),
+            new WidgetQueueItem("18:30", "准备明日计划", UiText.Get(UiText.WidgetTodayReviewMetaKey), "NEXT", SelectTask)
         ];
         AnimeUpcomingItems =
         [
@@ -225,8 +270,20 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
 
     public string PrimaryTaskTimeLabel => _primaryTaskTimeLabel;
 
+    public string SelectedTaskTitle => _selectedTaskItem?.Title ?? (_isLive
+        ? _livePrimaryTask?.Task.Title ?? "暂无 TODAY Task"
+        : _primaryTaskTitle);
+
+    public string SelectedTaskMeta => _selectedTaskItem?.Meta ?? (_isLive
+        ? _livePrimaryTask is null ? "TODAY · 暂无计划" : FormatTaskMeta(_livePrimaryTask)
+        : _primaryTaskMeta);
+
+    public string SelectedTaskTimeLabel => _selectedTaskItem?.Time ?? (_isLive
+        ? _livePrimaryTask is null ? "—" : FormatTaskTime(_livePrimaryTask.Task.TimeSpec)
+        : _primaryTaskTimeLabel);
+
     public string TaskStatusLabel => _isLive
-        ? FormatStatusLabel(_livePrimaryTask)
+        ? FormatStatusLabel(_liveSelectedTask ?? _livePrimaryTask)
         : _isTaskCompleted
             ? UiText.Get(UiText.WidgetTaskCompletedKey)
             : UiText.Get(UiText.WidgetTaskAnytimeKey);
@@ -262,9 +319,9 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         : UiText.WidgetQuickAddToolTip;
 
     public bool IsResultActionsVisible =>
-        _isLive && _livePrimaryTask is { IsRange: true, IsCompleted: false };
+        _isLive && _liveSelectedTask is { IsRange: true, IsCompleted: false };
 
-    public string ResultActionHint => _livePrimaryTask?.IsNeedsReview == true
+    public string ResultActionHint => _liveSelectedTask?.IsNeedsReview == true
         ? UiText.TodayRangeNeedsResult
         : "RANGE · 记录结果";
 
@@ -422,8 +479,6 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
                 .ToArray();
             _livePrimaryTask = openTasks.FirstOrDefault()
                 ?? (readModel.Tasks.Count > 0 ? readModel.Tasks[0] : null);
-            _currentTaskId = _livePrimaryTask?.Task.Id;
-            _isTaskCompleted = _livePrimaryTask?.IsCompleted ?? false;
 
             if (_livePrimaryTask is null)
             {
@@ -439,14 +494,24 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
             }
 
             _todayItems.Clear();
-            foreach (var task in openTasks.Skip(_livePrimaryTask is { IsCompleted: false } ? 1 : 0))
+            foreach (var task in openTasks)
             {
-                _todayItems.Add(ToQueueItem(task));
+                _todayItems.Add(ToQueueItem(task, SelectTask));
             }
+
+            var selectedItem = _selectedTaskItem?.TaskId is { } selectedTaskId
+                ? _todayItems.FirstOrDefault(item => item.TaskId == selectedTaskId)
+                : null;
+            selectedItem ??= _todayItems.FirstOrDefault(item =>
+                item.TaskId == _livePrimaryTask?.Task.Id);
+            SetSelectedTask(selectedItem, _livePrimaryTask);
 
             OnPropertyChanged(nameof(PrimaryTaskTitle));
             OnPropertyChanged(nameof(PrimaryTaskMeta));
             OnPropertyChanged(nameof(PrimaryTaskTimeLabel));
+            OnPropertyChanged(nameof(SelectedTaskTitle));
+            OnPropertyChanged(nameof(SelectedTaskMeta));
+            OnPropertyChanged(nameof(SelectedTaskTimeLabel));
             OnPropertyChanged(nameof(TaskStatusLabel));
             OnPropertyChanged(nameof(OpenTaskCount));
             OnPropertyChanged(nameof(CompletedTaskCount));
@@ -466,6 +531,35 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
     {
         _refreshGate.Dispose();
         GC.SuppressFinalize(this);
+    }
+
+    private void SelectTask(WidgetQueueItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        SetSelectedTask(item, item.ReadModel);
+        TaskFeedback = $"已选中 Task：「{item.Title}」";
+    }
+
+    private void SetSelectedTask(
+        WidgetQueueItem? item,
+        TodayTaskReadModel? fallbackTask)
+    {
+        foreach (var candidate in _todayItems)
+        {
+            candidate.SetSelected(ReferenceEquals(candidate, item));
+        }
+
+        _selectedTaskItem = item;
+        _liveSelectedTask = item?.ReadModel ?? fallbackTask;
+        _currentTaskId = _liveSelectedTask?.Task.Id;
+        _isTaskCompleted = _liveSelectedTask?.IsCompleted ?? false;
+
+        OnPropertyChanged(nameof(SelectedTaskTitle));
+        OnPropertyChanged(nameof(SelectedTaskMeta));
+        OnPropertyChanged(nameof(SelectedTaskTimeLabel));
+        OnPropertyChanged(nameof(TaskStatusLabel));
+        OnPropertyChanged(nameof(IsResultActionsVisible));
+        OnPropertyChanged(nameof(ResultActionHint));
     }
 
     private static string FormatStatusLabel(TodayTaskReadModel? task)
@@ -504,7 +598,9 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
     private static string FormatLocalTime(LocalTime time) =>
         $"{time.Hour:00}:{time.Minute:00}";
 
-    private static WidgetQueueItem ToQueueItem(TodayTaskReadModel task)
+    private static WidgetQueueItem ToQueueItem(
+        TodayTaskReadModel task,
+        Action<WidgetQueueItem> select)
     {
         var marker = task.IsNeedsReview
             ? "REVIEW"
@@ -518,7 +614,10 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
             FormatTaskTime(task.Task.TimeSpec),
             task.Task.Title,
             FormatTaskMeta(task),
-            marker);
+            marker,
+            select,
+            task.Task.Id,
+            task);
     }
 
     private string FormatLiveSummary(bool includeNeedsReview)
@@ -667,25 +766,25 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         TaskResult result,
         string? note)
     {
-        if (_currentTaskId is not { } taskId || _livePrimaryTask is null)
+        if (_currentTaskId is not { } taskId || _liveSelectedTask is null)
         {
             TaskFeedback = "当前没有可记录结果的 TODAY Task。";
             return;
         }
 
-        if (_livePrimaryTask.IsCompleted)
+        if (_liveSelectedTask.IsCompleted)
         {
             TaskFeedback = "该 Task 已有结果，不能重复通过 Widget 记录。";
             return;
         }
 
-        if (result == TaskResult.PARTIAL && !_livePrimaryTask.IsRange)
+        if (result == TaskResult.PARTIAL && !_liveSelectedTask.IsRange)
         {
             TaskFeedback = "PARTIAL 结果只适用于 RANGE Task。";
             return;
         }
 
-        var title = _livePrimaryTask.Task.Title;
+        var title = _liveSelectedTask.Task.Title;
         try
         {
             var recorded = await _taskApplicationService!

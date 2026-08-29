@@ -167,6 +167,53 @@
         <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="{DynamicResource WidgetControlCornerRadius}" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsSelected}"
+                         Value="True">
+                <Setter Property="Background" Value="{DynamicResource WidgetSoftAccentBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                <Setter Property="BorderThickness" Value="2" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="WidgetQueueItemButtonStyle"
+           TargetType="{x:Type Button}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+        <Setter Property="Focusable" Value="True" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type Button}">
+                    <Border x:Name="QueueButtonBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{DynamicResource WidgetControlCornerRadius}"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="QueueButtonBorder"
+                                    Property="BorderBrush"
+                                    Value="{DynamicResource AccessibleFocusBrush}" />
+                            <Setter TargetName="QueueButtonBorder"
+                                    Property="BorderThickness"
+                                    Value="1" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style x:Key="WidgetQueueTimeTextStyle"

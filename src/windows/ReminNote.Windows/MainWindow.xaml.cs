@@ -13,7 +13,9 @@ public partial class MainWindow : Window
 {
     private readonly MainWindowViewModel _viewModel;
     private AnimeDetailsWindow? _animeDetailsWindow;
+    private TodayDetailsWindow? _todayDetailsWindow;
     private IInputElement? _focusedElementBeforeDetails;
+    private IInputElement? _focusedElementBeforeTodayDetails;
 
     public MainWindow(MainWindowViewModel viewModel)
     {
@@ -21,6 +23,7 @@ public partial class MainWindow : Window
         _viewModel = viewModel;
         DataContext = viewModel;
         _viewModel.TodayPage.QuickTaskAdded += OnQuickTaskAdded;
+        _viewModel.TodayPage.DetailsRequested += OnTodayDetailsRequested;
         _viewModel.AnimePage.DetailsRequested += OnDetailsRequested;
         Closed += OnClosed;
     }
@@ -62,11 +65,36 @@ public partial class MainWindow : Window
         detailsWindow.ShowDialog();
     }
 
+    private void OnTodayDetailsRequested(TodayTaskViewModel task)
+    {
+        if (!ReferenceEquals(_viewModel.TodayPage.SelectedTask, task))
+        {
+            return;
+        }
+
+        if (_todayDetailsWindow is { IsVisible: true } existingWindow)
+        {
+            existingWindow.Activate();
+            return;
+        }
+
+        _focusedElementBeforeTodayDetails = Keyboard.FocusedElement;
+        var detailsWindow = new TodayDetailsWindow(_viewModel.TodayPage)
+        {
+            Owner = this
+        };
+        _todayDetailsWindow = detailsWindow;
+        detailsWindow.Closed += OnTodayDetailsClosed;
+        detailsWindow.ShowDialog();
+    }
+
     private void OnClosed(object? sender, EventArgs e)
     {
         _viewModel.TodayPage.QuickTaskAdded -= OnQuickTaskAdded;
+        _viewModel.TodayPage.DetailsRequested -= OnTodayDetailsRequested;
         _viewModel.AnimePage.DetailsRequested -= OnDetailsRequested;
         _animeDetailsWindow?.Close();
+        _todayDetailsWindow?.Close();
     }
 
     private void OnDetailsClosed(object? sender, EventArgs e)
@@ -88,6 +116,27 @@ public partial class MainWindow : Window
         }
 
         _focusedElementBeforeDetails = null;
+    }
+
+    private void OnTodayDetailsClosed(object? sender, EventArgs e)
+    {
+        if (sender is Window detailsWindow)
+        {
+            detailsWindow.Closed -= OnTodayDetailsClosed;
+        }
+
+        _todayDetailsWindow = null;
+        Activate();
+        if (_focusedElementBeforeTodayDetails is UIElement focusTarget && focusTarget.Focusable)
+        {
+            focusTarget.Focus();
+        }
+        else
+        {
+            Focus();
+        }
+
+        _focusedElementBeforeTodayDetails = null;
     }
 
     private static T? FindVisualChild<T>(

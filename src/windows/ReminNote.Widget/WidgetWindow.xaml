@@ -138,11 +138,11 @@
                                         CornerRadius="3" />
                                 <StackPanel Grid.Column="1"
                                             Margin="14,0,12,0">
-                                    <TextBlock Text="{x:Static local:UiText.WidgetPrimaryNextUp}"
+                                    <TextBlock Text="当前选中 Task"
                                                Style="{StaticResource WidgetCardEyebrowTextStyle}" />
-                                    <TextBlock Text="{Binding PrimaryTaskTitle}"
+                                    <TextBlock Text="{Binding SelectedTaskTitle}"
                                                Style="{StaticResource WidgetPrimaryTitleTextStyle}" />
-                                    <TextBlock Text="{Binding PrimaryTaskMeta}"
+                                    <TextBlock Text="{Binding SelectedTaskMeta}"
                                                Style="{StaticResource WidgetMetaTextStyle}"
                                                Visibility="{Binding IsNotCompact, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                     <TextBlock Text="{Binding TaskFeedback}"
@@ -154,45 +154,13 @@
                                     <TextBlock Text="{Binding TaskStatusLabel}"
                                                HorizontalAlignment="Right"
                                                Style="{StaticResource WidgetStatusTextStyle}" />
-                                    <TextBlock Text="{Binding PrimaryTaskTimeLabel}"
+                                    <TextBlock Text="{Binding SelectedTaskTimeLabel}"
                                                HorizontalAlignment="Right"
                                                Style="{StaticResource WidgetTimeTextStyle}" />
                                 </StackPanel>
                             </Grid>
                         </Border>
-                        <StackPanel Grid.Row="1"
-                                    Margin="0,10,0,0"
-                                    Visibility="{Binding IsNotCompact, Converter={StaticResource BooleanToVisibilityConverter}}">
-                            <TextBlock Text="{x:Static local:UiText.WidgetUpcoming}"
-                                       Style="{StaticResource WidgetSectionLabelTextStyle}" />
-                            <ItemsControl ItemsSource="{Binding TodayUpcomingItems}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Style="{StaticResource WidgetQueueItemStyle}">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="58" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding Time}"
-                                                           Style="{StaticResource WidgetQueueTimeTextStyle}" />
-                                                <StackPanel Grid.Column="1">
-                                                    <TextBlock Text="{Binding Title}"
-                                                               Style="{StaticResource WidgetQueueTitleTextStyle}" />
-                                                    <TextBlock Text="{Binding Meta}"
-                                                               Style="{StaticResource WidgetQueueMetaTextStyle}" />
-                                                </StackPanel>
-                                                <TextBlock Grid.Column="2"
-                                                           Text="{Binding Marker}"
-                                                           Style="{StaticResource WidgetQueueMarkerTextStyle}" />
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                        <Grid Grid.Row="2"
+                        <Grid Grid.Row="1"
                               Margin="0,12,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -202,7 +170,7 @@
                             </Grid.ColumnDefinitions>
                             <StackPanel Orientation="Horizontal"
                                         VerticalAlignment="Center">
-                                <TextBlock Text="{x:Static local:UiText.WidgetSummary}"
+                                <TextBlock Text="操作当前选中 Task"
                                            Style="{StaticResource WidgetSectionLabelTextStyle}" />
                                 <TextBlock Text="{Binding TodaySummaryFull}"
                                            Style="{StaticResource WidgetSummaryTextStyle}"
@@ -232,7 +200,7 @@
                                     Visibility="{Binding IsNotCompact, Converter={StaticResource BooleanToVisibilityConverter}}"
                                     AutomationProperties.Name="{x:Static local:UiText.WidgetReschedule}" />
                         </Grid>
-                        <StackPanel Grid.Row="3"
+                        <StackPanel Grid.Row="2"
                                     Margin="0,10,0,0"
                                     Visibility="{Binding IsResultActionsVisible, Converter={StaticResource BooleanToVisibilityConverter}}">
                             <TextBlock Text="{Binding ResultActionHint}"
@@ -249,6 +217,44 @@
                                         Margin="6,0,0,0"
                                         AutomationProperties.Name="记录 MISSED 结果" />
                             </StackPanel>
+                        </StackPanel>
+                        <StackPanel Grid.Row="3"
+                                    Margin="0,10,0,0">
+                            <TextBlock Text="选择任务"
+                                       Style="{StaticResource WidgetSectionLabelTextStyle}" />
+                            <TextBlock Text="点击任意任务后，再使用上方操作按钮"
+                                       Style="{StaticResource WidgetQueueMetaTextStyle}" />
+                            <ItemsControl ItemsSource="{Binding TodayUpcomingItems}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Command="{Binding SelectCommand}"
+                                                Style="{StaticResource WidgetQueueItemButtonStyle}"
+                                                AutomationProperties.Name="{Binding Title}"
+                                                AutomationProperties.HelpText="点击选中此 Task">
+                                            <Border Style="{StaticResource WidgetQueueItemStyle}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="58" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Time}"
+                                                               Style="{StaticResource WidgetQueueTimeTextStyle}" />
+                                                    <StackPanel Grid.Column="1">
+                                                        <TextBlock Text="{Binding Title}"
+                                                                   Style="{StaticResource WidgetQueueTitleTextStyle}" />
+                                                        <TextBlock Text="{Binding Meta}"
+                                                                   Style="{StaticResource WidgetQueueMetaTextStyle}" />
+                                                    </StackPanel>
+                                                    <TextBlock Grid.Column="2"
+                                                               Text="{Binding Marker}"
+                                                               Style="{StaticResource WidgetQueueMarkerTextStyle}" />
+                                                </Grid>
+                                            </Border>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </Grid>
                     <Grid x:Name="AnimePage"
