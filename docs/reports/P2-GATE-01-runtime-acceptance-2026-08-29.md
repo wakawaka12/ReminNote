@@ -179,3 +179,57 @@ ID：01a04bf5-0a65-7cb4-b1a8-6d9a1a3a01f4
 ## 本次报告提交边界
 
 本次只新增本文件 `docs/reports/P2-GATE-01-runtime-acceptance-2026-08-29.md`。临时 clone、数据库、编译产物和 sidecar 均保留在报告列出的路径，未删除；不要将临时数据库或并发 smoke 数据复制回 `D:\Anime`。
+
+## 本轮 rerun 补充证据（仅追加）
+
+本节是 2026-08-29 恢复后的独立一次性临时 clone 补测记录；不改写前文暂停阶段的结论。补测收尾记录时间为 `2026-08-29 14:00:07 +08:00`。本轮开始前只读进程检查结果为 `NO_REMINNOTE_GUI_PROCESSES`，因此本轮只处理随后由本轮创建的进程；最终 `REMAINING_REMINNOTE_GUI_PROCESSES=0`。
+
+### 隔离 clone、构建和启动环境
+
+- 一次性临时 clone：`C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-rerun`；真实 `.git` 和 `ReminNote.sln` 均存在，HEAD 为 `d3754879e53038148e18a13c1acfe2be88f0d374`。
+- 只在该 clone 执行 `dotnet restore ReminNote.sln --locked-mode` 和 `dotnet build ReminNote.sln --configuration Release --no-restore --nologo`，均退出码 0，0 warning、0 error。所有有效启动均显式使用同一个 `--repo-root`，数据库为 `C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-rerun\.devdata\reminnote.sqlite`。
+- 首次启动尝试（Main PID `31984`、Widget PID `32208`）约 3 秒内退出，未创建临时数据库。Windows Application/.NET Runtime 事件记录为 WPF `MS.Internal.FontCache.Util` 的 `UriFormatException`，只读环境检查确认该启动命令未继承 `WINDIR`；这是**环境事件 Fail**，不能归因产品，也没有继续用它冒充启动通过。
+- 在启动子进程明确设置 `WINDIR=C:\WINDOWS`、`SystemRoot=C:\WINDOWS` 后重试成功：Main PID `15108`、Widget PID `34236`，实际窗口标题分别为 `ReminNote`、`ReminNote Widget`；进程路径和命令行均指向上述 rerun clone。
+
+### Main ↔ Widget 双向 Quick Add 与刷新
+
+- Main UIA `QUICK ADD` 的 `ValuePattern` 先确认输入为 `今天 18:20 P2GATE01-Rerun-MainToWidget-20260829`；Main 反馈为 `已添加「P2GATE01-Rerun-MainToWidget-20260829」到本地 Task · TODAY 已刷新`。约 2 秒后，Widget UIA 自动刷新读到同名 Task，窗口标题仍为 `ReminNote Widget`，summary 为 `1 OPEN · 0 DONE`。结论：**Pass（Codex UIA smoke）**。
+- Widget UIA `QUICK ADD` 的 `ValuePattern` 先确认输入为 `今天 18:40 P2GATE01-Rerun-WidgetToMain-20260829`，`添加` 控件变为 enabled，反馈为 `已写入本地 Task：「P2GATE01-Rerun-WidgetToMain-20260829」`。随后 Main UIA 点击真实 `刷新 TODAY`，反馈为 `TODAY 已刷新 · 已重新读取本地 Task`，并读到两条唯一标题。结论：**Pass（Codex UIA smoke）**。
+- 双向写入均落在同一个上述 SQLite 路径；没有使用 `D:\Anime\.devdata\reminnote.sqlite`。
+
+### RANGE、DONE、NEEDS REVIEW 和 History
+
+- Widget Quick Add 实际创建 `今天 09:00-10:00 P2GATE01-Rerun-RangeMissed-20260829` 与 `今天 10:30-11:30 P2GATE01-Rerun-RangePartial-20260829`。创建后 UIA 显示 `4 OPEN · 0 DONE · NEEDS REVIEW · 2` 及 `RANGE 计划已结束 · 请记录 COMPLETED、PARTIAL 或 MISSED 结果`，证明本轮实时状态为 `NEEDS REVIEW`。
+- 点击 `记录 MISSED 结果` 后，UIA 反馈为 `已记录「P2GATE01-Rerun-RangeMissed-20260829」的 MISSED 结果。`，summary 为 `3 OPEN · 1 DONE · NEEDS REVIEW · 1`。
+- 点击 `记录 PARTIAL 结果` 后，UIA 反馈为 `已记录「P2GATE01-Rerun-RangePartial-20260829」的 PARTIAL 结果。`，summary 为 `2 OPEN · 2 DONE`；SQLite 中保留 Widget 写入的结果备注。
+- 随后对 Main→Widget Task 点击 Widget `完成`，UIA 反馈为 `已记录「P2GATE01-Rerun-MainToWidget-20260829」的 COMPLETED 结果。`，summary 为 `1 OPEN · 3 DONE`；Main 点击刷新后也显示 `1 OPEN · 3 DONE` 和 `COMPLETED` 文案。
+- harness `list 2026-08-29` 退出码为 0，共 4 条：Main→Widget `COMPLETED`，Widget→Main 保持未记录的 1 条 OPEN，两个 RANGE 分别为 `MISSED`、`PARTIAL`。只读 SQLite 查询同时确认 `tasks=4`、`task_history=3`、`PRAGMA integrity_check=ok`、`PRAGMA foreign_key_check` 无行。记录的三条 History 对应 `MISSED`、`PARTIAL`、`COMPLETED`，未把计划时间冒充结果记录时间。
+
+最终数据库文件证据（所有 GUI 已退出后读取）：文件长度 `65536` bytes，SHA-256 `39A783CC94473B341ECBB9DC7EBA186643261B17344E125EA4EC96714932A541`；表为 `__EFMigrationsHistory`、`__EFMigrationsLock`、`app_settings`、`task_history`、`tasks`；migration history 为 `20260828025922_InitialTaskSchema`、`20260828120000_P2TaskLoop`、`20260828130000_P2ContinuationDeleteBoundary`。
+
+### 顺序重启和资源释放
+
+- 仅关闭本轮 Widget PID `34236`，`CloseMainWindow=True`、5 秒内退出；在 Main PID `15108` 仍运行时以同一 `--repo-root` 启动 Widget PID `30652`。重启后的 Widget 标题为 `ReminNote Widget`，summary 保持 `1 OPEN · 3 DONE`，开放 Task 保留。
+- 仅关闭本轮 Main PID `15108`，`CloseMainWindow=True`、5 秒内退出；在 Widget PID `30652` 仍运行时以同一 `--repo-root` 启动 Main PID `2208`。重启后的 Main 标题为 `ReminNote`，summary 保持 `1 OPEN · 3 DONE`，开放 Task 保留；SQLite/History 中的已完成结果仍保留。
+- 最终仅关闭本轮 PID `30652`、`2208`，二者均优雅退出；未使用强制终止，剩余同名进程为 0。结论：**Pass（Codex 顺序重启/数据库保留 smoke）**，仍不是用户人工签字。
+
+### 两宿主无效 `--repo-root` 可执行文件
+
+使用不存在且未预先创建的独立路径 `C:\Users\EMT\.codex\temp\ReminNote-P2-GATE-01-2026-08-29-invalid-exe-root`，在无有效 Main/Widget 进程时按 Main 后 Widget 顺序实际运行 Release EXE，工作目录仍为有效 rerun clone：
+
+| 宿主 | 退出码 | 非零 | 无效根目录创建 | 未知数据库创建 |
+|---|---:|---|---|---|
+| Main | `-532462766` | 是 | 否 | 否 |
+| Widget | `1` | 是 | 否 | 否 |
+
+每次退出后同名 GUI 进程均为 0。结论：**Pass（两宿主 EXE 参数失败 smoke）**；该结果只说明无效根目录不会静默创建未知库，不解除用户人工门禁。
+
+### 本轮最终状态分类
+
+| 类别 | 本轮结论 |
+|---|---|
+| Codex smoke Pass | 同一临时库 Main→Widget、Widget→Main Quick Add/刷新；`NEEDS REVIEW`、`MISSED`、`PARTIAL`、`COMPLETED`、History；顺序重启保留；两宿主无效 `--repo-root` 非零且不建未知库；SQLite integrity/FK。 |
+| 环境事件 Fail | 首次未继承 `WINDIR` 的 Main/Widget 启动尝试触发 WPF font-cache `UriFormatException`；明确设置 Windows 根目录变量后有效启动成功。该 Fail 不归因产品。此前报告记录的并发键盘干扰 Fail 仍保留。 |
+| Pending | 真实时钟 `23:00 → 次日 00:30 → 01:00` 未等待、未修改系统时钟；用户正常桌面人工验收与最终签字仍 Pending。Codex UIA/命令/SQLite 证据不能代替用户签字。 |
+
+本轮未删除任何临时目录或数据库；rerun clone、数据库、编译产物和无效路径验证记录均保留，清理前仍需确认没有文件句柄。未修改产品源码、测试、项目配置、既有文档、`reviews/`、`second-review/`，未 push、merge 或 rebase。
