@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <AssemblyName>P25Agent.Harness</AssemblyName>
+    <RootNamespace>ReminNote.P25Agent.Harness</RootNamespace>
+    <DefineConstants>$(DefineConstants);P25_AGENT_HARNESS</DefineConstants>
+    <!-- Keep generated C# entrypoint/assembly files outside the parent test project's glob. -->
+    <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\..\..\..\obj\P25Agent.Harness\</BaseIntermediateOutputPath>
+    <NoWarn>$(NoWarn);MSB3539</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <ProjectReference Include="../../../src/windows/ReminNote.Agent/ReminNote.Agent.csproj" />
+  </ItemGroup>
+</Project>
