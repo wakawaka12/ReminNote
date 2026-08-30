@@ -290,6 +290,53 @@ public sealed class ProtocolEnvelopeTests
     }
 
     [Fact]
+    public void TypedDeserializersRequireTheirOwnMessageType()
+    {
+        AssertMessageTypeContract(
+            ProtocolJson.SerializeRequest(new ProtocolRequest(
+                ProtocolVersion.Current,
+                RequestId,
+                ProtocolClientKinds.Main,
+                ClientInstanceId,
+                SentAtUtc,
+                5_000,
+                ProtocolOperations.TaskCreate,
+                ProtocolJson.ParseObject("{\"title\":\"x\",\"timeSpec\":{}}"),
+                IdempotencyKey,
+                0)),
+            ProtocolMessageTypes.Request,
+            wire => _ = ProtocolJson.DeserializeRequest(wire));
+
+        AssertMessageTypeContract(
+            ProtocolJson.SerializeResponse(new ProtocolResponse(
+                ProtocolVersion.Current,
+                RequestId,
+                ProtocolOperations.TaskCreate,
+                AgentInstanceId,
+                0,
+                ok: true,
+                replayed: false,
+                ProtocolOutcomes.NoOp,
+                committedRevision: 0,
+                ProtocolJson.ParseObject("{}"),
+                error: null)),
+            ProtocolMessageTypes.Response,
+            wire => _ = ProtocolJson.DeserializeResponse(wire));
+
+        AssertMessageTypeContract(
+            ProtocolJson.SerializeEvent(new ProtocolEvent(
+                ProtocolVersion.Current,
+                Guid.Parse("019b2b36-4444-7abc-8def-0123456789af"),
+                ProtocolEventTypes.ChangesAvailable,
+                Guid.Parse(AgentInstanceId),
+                SentAtUtc,
+                1,
+                ProtocolJson.ParseObject("{\"fromRevision\":0,\"toRevision\":1}"))),
+            ProtocolMessageTypes.Event,
+            wire => _ = ProtocolJson.DeserializeEvent(wire));
+    }
+
+    [Fact]
     public void EventRoundTripsOnlyAfterCommitMetadata()
     {
         var @event = new ProtocolEvent(
@@ -326,5 +373,24 @@ public sealed class ProtocolEnvelopeTests
         Assert.Equal(
             ProtocolErrorCodes.InvalidRequest,
             Assert.Throws<ProtocolContractException>(large.Validate).Code);
+    }
+
+    private static void AssertMessageTypeContract(
+        byte[] validWire,
+        string expectedMessageType,
+        Action<byte[]> deserialize)
+    {
+        var validText = Encoding.UTF8.GetString(validWire);
+        var messageType = $"\"messageType\":\"{expectedMessageType}\"";
+
+        var missing = validText.Replace($",{messageType}", string.Empty, StringComparison.Ordinal);
+        var missingException = Assert.Throws<ProtocolContractException>(
+            () => deserialize(Encoding.UTF8.GetBytes(missing)));
+        Assert.Equal(ProtocolErrorCodes.MissingField, missingException.Code);
+
+        var wrong = validText.Replace(messageType, "\"messageType\":\"wrong\"", StringComparison.Ordinal);
+        var wrongException = Assert.Throws<ProtocolContractException>(
+            () => deserialize(Encoding.UTF8.GetBytes(wrong)));
+        Assert.Equal(ProtocolErrorCodes.InvalidRequest, wrongException.Code);
     }
 }

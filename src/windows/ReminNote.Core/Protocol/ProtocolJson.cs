@@ -156,6 +156,7 @@ public static class ProtocolJson
     {
         using var document = StrictJson.Parse(utf8Json);
         var bag = PropertyBag.Create(document.RootElement, RequestFields, rejectUnknown: true);
+        RequireMessageType(bag, ProtocolMessageTypes.Request);
         var operation = bag.RequireString("operation");
         if (!ProtocolOperations.IsMutation(operation) &&
             (bag.Contains("idempotencyKey") || bag.Contains("expectedRevision")))
@@ -184,6 +185,7 @@ public static class ProtocolJson
     {
         using var document = StrictJson.Parse(utf8Json);
         var bag = PropertyBag.Create(document.RootElement, ResponseFields, rejectUnknown: false);
+        RequireMessageType(bag, ProtocolMessageTypes.Response);
         var payloadValue = bag.Require("payload");
         var errorValue = bag.Require("error");
         _ = bag.Require("committedRevision");
@@ -214,6 +216,7 @@ public static class ProtocolJson
     {
         using var document = StrictJson.Parse(utf8Json);
         var bag = PropertyBag.Create(document.RootElement, EventFields, rejectUnknown: false);
+        RequireMessageType(bag, ProtocolMessageTypes.Event);
         var @event = new ProtocolEvent(
             ReadVersion(bag.RequireString("protocolVersion")),
             bag.RequireGuid("eventId"),
@@ -623,6 +626,18 @@ public static class ProtocolJson
         }
 
         return result;
+    }
+
+    private static void RequireMessageType(PropertyBag bag, string expectedMessageType)
+    {
+        var actualMessageType = bag.RequireString("messageType");
+        if (!string.Equals(actualMessageType, expectedMessageType, StringComparison.Ordinal))
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                $"messageType must be '{expectedMessageType}'.",
+                "messageType");
+        }
     }
 
     private static byte[] ReadAll(Stream source)
