@@ -1,11 +1,10 @@
 using System.Runtime.Versioning;
 using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore;
 using ReminNote.Agent.Transport;
 using ReminNote.Core.Protocol;
 using ReminNote.Core.Transport;
-using ReminNote.Infrastructure.Persistence;
 using ReminNote.Infrastructure.Persistence.P25;
+using ReminNote.Infrastructure.Persistence.P275;
 
 namespace ReminNote.Agent.Runtime;
 
@@ -13,7 +12,13 @@ namespace ReminNote.Agent.Runtime;
 internal static class AgentRuntime
 {
     public static async Task<int> RunAsync(string[] args)
+        => await RunAsync(args, AgentMigrationStartupComposition.CreateDefault()).ConfigureAwait(false);
+
+    internal static async Task<int> RunAsync(
+        string[] args,
+        AgentMigrationStartupComposition migrationStartup)
     {
+        ArgumentNullException.ThrowIfNull(migrationStartup);
         if (!OperatingSystem.IsWindows())
         {
             Console.Error.WriteLine("ReminNote Agent requires Windows named pipes and SID ACLs.");
@@ -25,9 +30,51 @@ internal static class AgentRuntime
             var profile = TransportProfileResolver.ResolveForCurrentUser(
                 ParseArguments(args),
                 new ProtocolTransportProfileContractAdapter());
-            Directory.CreateDirectory(Path.GetDirectoryName(profile.DatabasePath)!);
 
-            await using var store = await OpenStoreAsync(profile).ConfigureAwait(false);
+            P275StartupGateResult migration;
+            try
+            {
+                migration = await migrationStartup
+                    .OpenAsync(
+                        profile,
+                        ProtocolIds.NewEventId().ToString("D"))
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                Console.Error.WriteLine(
+                    $"ReminNote Agent startup blocked by migration gate: " +
+                    $"state={P275MigrationState.RecoveryRequired}, " +
+                    $"failure={P275MigrationFailureCodes.PathInvalid}.");
+                return AgentStartupExitCodes.MigrationBlocked;
+            }
+
+            if (!migration.Ready ||
+                !migration.Writable ||
+                migration.Migration.State != P275MigrationState.Ready)
+            {
+                Console.Error.WriteLine(
+                    $"ReminNote Agent startup blocked by migration gate: " +
+                    $"state={migration.Migration.State}, " +
+                    $"failure={migration.Migration.FailureCode ?? "none"}.");
+                return AgentStartupExitCodes.MigrationBlocked;
+            }
+
+            P25StorageStore store;
+            try
+            {
+                store = await OpenReadyStoreAsync(profile).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                Console.Error.WriteLine(
+                    $"ReminNote Agent startup blocked by migration gate: " +
+                    $"state={P275MigrationState.RecoveryRequired}, " +
+                    $"failure={P275MigrationFailureCodes.VerifyFailed}.");
+                return AgentStartupExitCodes.MigrationBlocked;
+            }
+
+            await using var storeLease = store;
             var agentInstanceId = ProtocolIds.NewEventId();
             var limits = AgentTransportDefaults.CreateLimits();
             var businessEndpoint = new NamedPipeTransportEndpoint(profile, NamedPipeEndpointKind.Business);
@@ -208,29 +255,46 @@ internal static class AgentRuntime
         }
     }
 
-    private static async ValueTask<P25StorageStore> OpenStoreAsync(ResolvedTransportProfile profile)
+    private static async ValueTask<P25StorageStore> OpenReadyStoreAsync(ResolvedTransportProfile profile)
     {
         var builder = new SqliteConnectionStringBuilder
         {
             DataSource = profile.DatabasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
+            Mode = SqliteOpenMode.ReadWrite,
             Cache = SqliteCacheMode.Private,
+            Pooling = false,
             ForeignKeys = true
         };
         var connection = new SqliteConnection(builder.ConnectionString);
         try
         {
-            await connection.OpenAsync().ConfigureAwait(false);
-            using (var context = ReminNoteDatabase.CreateContext(connection))
+            await using (var readOnlyHealth = await P25ReadOnlyConnectionFactory
+                             .OpenAsync(profile.DatabasePath)
+                             .ConfigureAwait(false))
             {
-                await context.Database.MigrateAsync().ConfigureAwait(false);
+                // P2.75-03 performs the authoritative post-promote checks;
+                // this read-only probe prevents a later Active open from
+                // turning a missing WAL/foreign-key profile into READY.
             }
 
-            return await P25StorageStore.OpenAsync(
+            await connection.OpenAsync().ConfigureAwait(false);
+            var store = await P25StorageStore.OpenReadyAsync(
                     connection,
-                    profile.ProfileScope,
-                    initializeSchema: false)
+                    profile.ProfileScope)
                 .ConfigureAwait(false);
+            try
+            {
+                // This is a read-only health assertion. It verifies that the
+                // post-promote gate left the P2.5 profile row available before
+                // any pipe can report the Agent as healthy.
+                await store.ReadRevisionStateAsync().ConfigureAwait(false);
+                return store;
+            }
+            catch
+            {
+                await store.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
         }
         catch
         {

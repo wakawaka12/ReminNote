@@ -42,6 +42,28 @@ public sealed class P25StorageStore : IAsyncDisposable
         P25StorageTestHooks? testHooks = null,
         CancellationToken cancellationToken = default)
     {
+        return await OpenInternalAsync(
+                connection,
+                profileScope,
+                utcNow,
+                requireWal,
+                initializeSchema,
+                ensureProfile: true,
+                testHooks,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async ValueTask<P25StorageStore> OpenInternalAsync(
+        SqliteConnection connection,
+        string profileScope,
+        Func<DateTimeOffset>? utcNow,
+        bool requireWal,
+        bool initializeSchema,
+        bool ensureProfile,
+        P25StorageTestHooks? testHooks,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentException.ThrowIfNullOrWhiteSpace(profileScope);
 
@@ -62,7 +84,7 @@ public sealed class P25StorageStore : IAsyncDisposable
                         cancellationToken)
                     .ConfigureAwait(false);
             }
-            else
+            else if (ensureProfile)
             {
                 await P25StorageSchema.EnsureProfileAsync(
                         connection,
@@ -80,6 +102,25 @@ public sealed class P25StorageStore : IAsyncDisposable
 
         return new P25StorageStore(connection, profileScope, utcNow, testHooks);
     }
+
+    /// <summary>
+    /// Opens an Active database only after the P2.75 startup gate has
+    /// completed. This path deliberately performs no schema or profile write;
+    /// the Candidate applier and post-promote verifier own those operations.
+    /// </summary>
+    public static ValueTask<P25StorageStore> OpenReadyAsync(
+        SqliteConnection connection,
+        string profileScope,
+        CancellationToken cancellationToken = default) =>
+        OpenInternalAsync(
+            connection,
+            profileScope,
+            utcNow: null,
+            requireWal: true,
+            initializeSchema: false,
+            ensureProfile: false,
+            testHooks: null,
+            cancellationToken: cancellationToken);
 
     internal SqliteConnection Connection
     {

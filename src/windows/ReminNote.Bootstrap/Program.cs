@@ -116,11 +116,35 @@ internal static class Program
                     "ReminNote.Agent",
                     "net10.0",
                     includeWidgetInstance: false);
-                await control.WaitForHealthyAsync(
+                using var readinessCancellation =
+                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var readiness = control.WaitForHealthyAsync(
                         TimeSpan.FromSeconds(10),
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                        readinessCancellation.Token)
+                    .AsTask();
+                var processExit = candidate.WaitForExitAsync(cancellationToken);
+                var firstCompleted = await Task.WhenAny(readiness, processExit).ConfigureAwait(false);
+                if (firstCompleted == processExit)
+                {
+                    readinessCancellation.Cancel();
+                    await IgnoreReadinessTaskAsync(readiness).ConfigureAwait(false);
+                    await processExit.ConfigureAwait(false);
+                    if (candidate.ExitCode == AgentStartupExitCodes.MigrationBlocked)
+                    {
+                        throw new AgentMigrationBlockedException();
+                    }
+
+                    throw new InvalidOperationException(
+                        $"Agent exited before readiness with code {candidate.ExitCode}.");
+                }
+
+                await readiness.ConfigureAwait(false);
                 return candidate;
+            }
+            catch (AgentMigrationBlockedException)
+            {
+                await StopProcessAsync(candidate).ConfigureAwait(false);
+                throw;
             }
             catch (Exception exception) when (
                 exception is IOException or
@@ -141,6 +165,27 @@ internal static class Program
         throw new InvalidOperationException(
             "Agent did not become healthy after the bounded startup attempts.",
             lastFailure);
+    }
+
+    private static async Task IgnoreReadinessTaskAsync(Task readiness)
+    {
+        try
+        {
+            await readiness.ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Process exit is the authoritative startup result; observe the
+            // canceled/failed health probe so it cannot become unobserved.
+        }
+    }
+
+    private sealed class AgentMigrationBlockedException : InvalidOperationException
+    {
+        public AgentMigrationBlockedException()
+            : base("Agent startup was blocked by the migration gate; Main/Widget were not started.")
+        {
+        }
     }
 
     private static Process StartChild(
