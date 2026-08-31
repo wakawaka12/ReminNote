@@ -158,12 +158,9 @@ public static class ProtocolOperationSchemas
                 fieldName);
         }
 
-        if (fieldName == "timeSpec" && value.ValueKind != JsonValueKind.Object)
+        if (fieldName == "timeSpec")
         {
-            throw ProtocolContractException.Invalid(
-                ProtocolErrorCodes.InvalidRequest,
-                "timeSpec must be a JSON object.",
-                fieldName);
+            ProtocolTimeSpecPayload.Parse(value);
         }
 
         if (operation == ProtocolOperations.SessionHello)

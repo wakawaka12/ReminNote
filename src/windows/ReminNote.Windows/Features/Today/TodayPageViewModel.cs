@@ -3,6 +3,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NodaTime;
 using NodaTime.Text;
+using ReminNote.Agent.Runtime;
 using ReminNote.Core;
 using ReminNote.Core.Application;
 using ReminNote.Core.Tasks;
@@ -564,7 +565,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel, IDisposable
             InteractionMessage = $"无法创建 Task：{exception.Message}";
             return;
         }
-        catch (TaskWriteGateBusyException)
+        catch (AgentCommandException)
         {
             InteractionMessage = LiveWriteFailedMessage;
             return;
@@ -703,7 +704,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel, IDisposable
             InteractionMessage = $"无法改期：{exception.Message}";
             return;
         }
-        catch (TaskWriteGateBusyException)
+        catch (AgentCommandException)
         {
             InteractionMessage = LiveWriteFailedMessage;
             return;
@@ -938,7 +939,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel, IDisposable
                 }
             }
         }
-        catch (TaskWriteGateBusyException)
+        catch (AgentCommandException)
         {
             InteractionMessage = LiveWriteFailedMessage;
             return;
@@ -1078,7 +1079,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel, IDisposable
                 }
             }
         }
-        catch (TaskWriteGateBusyException)
+        catch (AgentCommandException)
         {
             InteractionMessage = LiveWriteFailedMessage;
             return;
@@ -1238,7 +1239,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel, IDisposable
             InteractionMessage = $"无法记录结果：{exception.Message}";
             return;
         }
-        catch (TaskWriteGateBusyException)
+        catch (AgentCommandException)
         {
             InteractionMessage = LiveWriteFailedMessage;
             return;
@@ -1302,7 +1303,7 @@ public sealed class TodayPageViewModel : ShellPageViewModel, IDisposable
             InteractionMessage = $"无法创建继续 Task：{exception.Message}";
             return;
         }
-        catch (TaskWriteGateBusyException)
+        catch (AgentCommandException)
         {
             InteractionMessage = LiveWriteFailedMessage;
             return;

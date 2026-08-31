@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using ReminNote.Core.Protocol;
 
 namespace ReminNote.Tests.P25Contract;
@@ -11,10 +12,10 @@ public sealed class ProtocolCanonicalizationTests
             {
                 "V1",
                 "command.task.create",
-                "{}",
+                "{\"title\":\"x\",\"timeSpec\":{\"type\":\"ANYTIME\",\"localDate\":\"2026-08-30\"}}",
                 0,
-                "{\"expectedRevision\":0,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.create\",\"payload\":{},\"profileScope\":\"p-demo\"}",
-                "c0f918047e32c6ae6ccbd68cdd970083df2ae657cedd3fa8f1816348d9d0ad39"
+                "{\"expectedRevision\":0,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.create\",\"payload\":{\"timeSpec\":{\"localDate\":\"2026-08-30\",\"type\":\"ANYTIME\"},\"title\":\"x\"},\"profileScope\":\"p-demo\"}",
+                "e445f733020bef0299f1f0e797b8aa159120cfe5ea1197d589cecb74fa1b4ebd"
             },
             {
                 "V2",
@@ -26,43 +27,43 @@ public sealed class ProtocolCanonicalizationTests
             },
             {
                 "V3",
-                "command.task.create",
-                "{\"values\":[-0,1.0,1e3,1e-3]}",
+                "command.task.reorder",
+                "{\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"sortOrder\":-0}",
                 7,
-                "{\"expectedRevision\":7,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.create\",\"payload\":{\"values\":[0,1,1000,0.001]},\"profileScope\":\"p-demo\"}",
-                "556d20c33d42ba11a02ea5f4cdbd20a88e25d258dd34d83724205fbdfa7356c2"
+                "{\"expectedRevision\":7,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.reorder\",\"payload\":{\"sortOrder\":0,\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\"},\"profileScope\":\"p-demo\"}",
+                "6549f1026a827c5175d947620278a6d649bb3888a98a5386879fd72a9fba950a"
             },
             {
                 "V4a",
-                "command.task.rename",
-                "{}",
+                "command.task.record_result",
+                "{\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"result\":\"COMPLETED\"}",
                 7,
-                "{\"expectedRevision\":7,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.rename\",\"payload\":{},\"profileScope\":\"p-demo\"}",
-                "923b95058e517a903b7998e2e7d3b227385887a16158bb7a4183cb950e55a484"
+                "{\"expectedRevision\":7,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.record_result\",\"payload\":{\"result\":\"COMPLETED\",\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\"},\"profileScope\":\"p-demo\"}",
+                "9c27378b473c8617021083bc7299cfe59482bfd2ec77207708d2ec6f4b446c3c"
             },
             {
                 "V4b",
-                "command.task.rename",
-                "{\"note\":null}",
+                "command.task.record_result",
+                "{\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"result\":\"COMPLETED\",\"note\":null}",
                 7,
-                "{\"expectedRevision\":7,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.rename\",\"payload\":{\"note\":null},\"profileScope\":\"p-demo\"}",
-                "e3e38311577adcf8a804828b825918c765c757565b9749db9a2bd506e99c0406"
+                "{\"expectedRevision\":7,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.record_result\",\"payload\":{\"note\":null,\"result\":\"COMPLETED\",\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\"},\"profileScope\":\"p-demo\"}",
+                "e4717fdb8bc509fde6683a4712d7979f86c0cb283f28f01768630dde5285b739"
             },
             {
                 "V5",
-                "command.task.create",
-                "{\"values\":[1,2]}",
+                "command.task.reorder",
+                "{\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"sortOrder\":1}",
                 7,
-                "{\"expectedRevision\":7,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.create\",\"payload\":{\"values\":[1,2]},\"profileScope\":\"p-demo\"}",
-                "12a87e535499f5eb72d5be610bf21ba4cb0b506769d1c16954c633e9bd84670c"
+                "{\"expectedRevision\":7,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.reorder\",\"payload\":{\"sortOrder\":1,\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\"},\"profileScope\":\"p-demo\"}",
+                "0904c213f9e3e8f5adab5af5c798df0cc2c051380c676ef3a9c773033b5cf173"
             },
             {
                 "V6",
-                "command.task.create",
-                "{\"values\":[2,1]}",
+                "command.task.reorder",
+                "{\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"sortOrder\":2}",
                 7,
-                "{\"expectedRevision\":7,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.create\",\"payload\":{\"values\":[2,1]},\"profileScope\":\"p-demo\"}",
-                "d7052fbb90bdc033d4fd6980b6d970abced6cbea39d342f0f0721a4bf7838162"
+                "{\"expectedRevision\":7,\"hashVersion\":\"rn-cj-1\",\"operation\":\"command.task.reorder\",\"payload\":{\"sortOrder\":2,\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\"},\"profileScope\":\"p-demo\"}",
+                "43271523dbcee90cccbbe8a150774438034f52167e2d14accf4ab883c0e3d4a0"
             },
         };
 
@@ -150,13 +151,52 @@ public sealed class ProtocolCanonicalizationTests
     [Fact]
     public void ExplicitNullAndMissingPropertyHaveDifferentHashes()
     {
-        var missing = RnCj1Canonicalizer.ComputeHash("p-demo", ProtocolOperations.TaskRename, 7, "{}");
+        var missing = RnCj1Canonicalizer.ComputeHash(
+            "p-demo",
+            ProtocolOperations.TaskRecordResult,
+            7,
+            "{\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"result\":\"COMPLETED\"}");
         var explicitNull = RnCj1Canonicalizer.ComputeHash(
             "p-demo",
-            ProtocolOperations.TaskRename,
+            ProtocolOperations.TaskRecordResult,
             7,
-            "{\"note\":null}");
+            "{\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"result\":\"COMPLETED\",\"note\":null}");
 
         Assert.NotEqual(missing.HashHex, explicitNull.HashHex);
+    }
+
+    [Fact]
+    public void InvalidOperationPayloadIsRejectedBeforeHashing()
+    {
+        var exception = Assert.Throws<ProtocolContractException>(
+            () => RnCj1Canonicalizer.ComputeHash(
+                "p-demo",
+                ProtocolOperations.TaskCreate,
+                0,
+                "{}"));
+
+        Assert.Equal(ProtocolErrorCodes.MissingField, exception.Code);
+    }
+
+    [Fact]
+    public void ProgrammaticJsonElementCannotBypassNestingLimit()
+    {
+        var json = "{}";
+        for (var index = 0; index < ProtocolLimits.MaxJsonNestingDepth + 2; index++)
+        {
+            json = $"{{\"nested\":{json}}}";
+        }
+
+        using var document = JsonDocument.Parse(
+            json,
+            new JsonDocumentOptions
+            {
+                MaxDepth = 128,
+            });
+
+        var exception = Assert.Throws<ProtocolContractException>(
+            () => RnCj1Canonicalizer.Canonicalize(document.RootElement));
+
+        Assert.Equal(ProtocolErrorCodes.InvalidJson, exception.Code);
     }
 }

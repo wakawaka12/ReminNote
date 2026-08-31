@@ -42,6 +42,207 @@ partial class ReminNoteDbContextModelSnapshot : ModelSnapshot
             });
         });
 
+        modelBuilder.Entity("ReminNote.Infrastructure.Persistence.P25.P25RevisionStateEntity", b =>
+        {
+            b.Property<string>("ProfileScope")
+                .HasMaxLength(67)
+                .HasColumnType("TEXT")
+                .HasColumnName("profile_scope");
+
+            b.Property<long>("CurrentRevision")
+                .HasColumnType("INTEGER")
+                .HasColumnName("current_revision");
+
+            b.Property<long>("OldestAvailableRevision")
+                .HasColumnType("INTEGER")
+                .HasColumnName("oldest_available_revision");
+
+            b.HasKey("ProfileScope")
+                .HasName("pk_revision_state");
+
+            b.ToTable("revision_state", null, t =>
+            {
+                t.HasCheckConstraint("ck_revision_state_current_revision", "current_revision >= 0");
+                t.HasCheckConstraint("ck_revision_state_oldest_revision", "oldest_available_revision >= 0");
+                t.HasCheckConstraint("ck_revision_state_revision_order", "oldest_available_revision = 0 OR oldest_available_revision <= current_revision");
+            });
+        });
+
+        modelBuilder.Entity("ReminNote.Infrastructure.Persistence.P25.P25ChangeJournalEntity", b =>
+        {
+            b.Property<string>("ProfileScope")
+                .HasMaxLength(67)
+                .HasColumnType("TEXT")
+                .HasColumnName("profile_scope");
+
+            b.Property<long>("Revision")
+                .HasColumnType("INTEGER")
+                .HasColumnName("revision");
+
+            b.Property<long>("ChangeOrdinal")
+                .HasColumnType("INTEGER")
+                .HasColumnName("change_ordinal");
+
+            b.Property<string>("BatchId")
+                .IsRequired()
+                .HasMaxLength(96)
+                .HasColumnType("TEXT")
+                .HasColumnName("batch_id");
+
+            b.Property<string>("EntityType")
+                .IsRequired()
+                .HasMaxLength(128)
+                .HasColumnType("TEXT")
+                .HasColumnName("entity_type");
+
+            b.Property<string>("EntityId")
+                .IsRequired()
+                .HasMaxLength(256)
+                .HasColumnType("TEXT")
+                .HasColumnName("entity_id");
+
+            b.Property<string>("ChangeKind")
+                .IsRequired()
+                .HasMaxLength(64)
+                .HasColumnType("TEXT")
+                .HasColumnName("change_kind");
+
+            b.Property<string>("ChangedAtUtc")
+                .IsRequired()
+                .HasMaxLength(64)
+                .HasColumnType("TEXT")
+                .HasColumnName("changed_at_utc");
+
+            b.HasKey("ProfileScope", "Revision", "ChangeOrdinal")
+                .HasName("pk_change_journal");
+
+            b.HasIndex("ProfileScope", "Revision", "ChangeOrdinal")
+                .HasDatabaseName("ix_change_journal_profile_revision");
+
+            b.ToTable("change_journal", null, t =>
+            {
+                t.HasCheckConstraint("ck_change_journal_revision", "revision > 0");
+                t.HasCheckConstraint("ck_change_journal_ordinal", "change_ordinal >= 0");
+                t.HasCheckConstraint("ck_change_journal_batch_id", "length(batch_id) BETWEEN 1 AND 96");
+                t.HasCheckConstraint("ck_change_journal_entity_type", "length(entity_type) BETWEEN 1 AND 128");
+                t.HasCheckConstraint("ck_change_journal_entity_id", "length(entity_id) BETWEEN 1 AND 256");
+                t.HasCheckConstraint("ck_change_journal_change_kind", "length(change_kind) BETWEEN 1 AND 64");
+                t.HasCheckConstraint("ck_change_journal_changed_at", "length(changed_at_utc) BETWEEN 1 AND 64");
+            });
+        });
+
+        modelBuilder.Entity("ReminNote.Infrastructure.Persistence.P25.P25CommandReceiptEntity", b =>
+        {
+            b.Property<string>("ActualUserSid")
+                .HasMaxLength(256)
+                .HasColumnType("TEXT")
+                .HasColumnName("actual_user_sid");
+
+            b.Property<string>("ProfileScope")
+                .HasMaxLength(67)
+                .HasColumnType("TEXT")
+                .HasColumnName("profile_scope");
+
+            b.Property<string>("IdempotencyKey")
+                .HasMaxLength(36)
+                .HasColumnType("TEXT")
+                .HasColumnName("idempotency_key");
+
+            b.Property<string>("Operation")
+                .IsRequired()
+                .HasMaxLength(96)
+                .HasColumnType("TEXT")
+                .HasColumnName("operation");
+
+            b.Property<string>("HashVersion")
+                .IsRequired()
+                .HasMaxLength(32)
+                .HasColumnType("TEXT")
+                .HasColumnName("hash_version");
+
+            b.Property<byte[]>("CanonicalPayloadHash")
+                .IsRequired()
+                .HasColumnType("BLOB")
+                .HasColumnName("canonical_payload_hash");
+
+            b.Property<string>("Status")
+                .IsRequired()
+                .HasMaxLength(32)
+                .HasColumnType("TEXT")
+                .HasColumnName("status");
+
+            b.Property<bool>("Changed")
+                .HasColumnType("INTEGER")
+                .HasColumnName("changed");
+
+            b.Property<long?>("CommittedRevision")
+                .HasColumnType("INTEGER")
+                .HasColumnName("committed_revision");
+
+            b.Property<string>("ErrorCode")
+                .HasMaxLength(160)
+                .HasColumnType("TEXT")
+                .HasColumnName("error_code");
+
+            b.Property<string>("FirstAcceptedAtUtc")
+                .IsRequired()
+                .HasMaxLength(64)
+                .HasColumnType("TEXT")
+                .HasColumnName("first_accepted_at_utc");
+
+            b.Property<string>("UpdatedAtUtc")
+                .IsRequired()
+                .HasMaxLength(64)
+                .HasColumnType("TEXT")
+                .HasColumnName("updated_at_utc");
+
+            b.Property<string>("FirstRequestId")
+                .IsRequired()
+                .HasMaxLength(36)
+                .HasColumnType("TEXT")
+                .HasColumnName("first_request_id");
+
+            b.Property<string>("LastRequestId")
+                .IsRequired()
+                .HasMaxLength(36)
+                .HasColumnType("TEXT")
+                .HasColumnName("last_request_id");
+
+            b.Property<int>("AttemptCount")
+                .HasColumnType("INTEGER")
+                .HasColumnName("attempt_count");
+
+            b.Property<string>("AgentInstanceId")
+                .HasMaxLength(36)
+                .HasColumnType("TEXT")
+                .HasColumnName("agent_instance_id");
+
+            b.HasKey("ActualUserSid", "ProfileScope", "IdempotencyKey")
+                .HasName("pk_command_receipt");
+
+            b.HasIndex("ProfileScope", "IdempotencyKey")
+                .HasDatabaseName("ix_command_receipt_profile_key");
+
+            b.ToTable("command_receipt", null, t =>
+            {
+                t.HasCheckConstraint("ck_command_receipt_sid", "length(actual_user_sid) BETWEEN 1 AND 256");
+                t.HasCheckConstraint("ck_command_receipt_idempotency_key", "length(idempotency_key) = 36");
+                t.HasCheckConstraint("ck_command_receipt_operation", "length(operation) BETWEEN 1 AND 96");
+                t.HasCheckConstraint("ck_command_receipt_hash_version", "length(hash_version) BETWEEN 1 AND 32");
+                t.HasCheckConstraint("ck_command_receipt_hash", "length(canonical_payload_hash) = 32");
+                t.HasCheckConstraint("ck_command_receipt_status", "status IN ('PENDING','COMMITTED','REJECTED_STALE','REJECTED','ROLLED_BACK','CANCELLED','TIMED_OUT','UNKNOWN')");
+                t.HasCheckConstraint("ck_command_receipt_changed", "changed IN (0, 1)");
+                t.HasCheckConstraint("ck_command_receipt_committed_revision", "committed_revision IS NULL OR committed_revision >= 0");
+                t.HasCheckConstraint("ck_command_receipt_error_code", "error_code IS NULL OR length(error_code) BETWEEN 1 AND 160");
+                t.HasCheckConstraint("ck_command_receipt_first_accepted", "length(first_accepted_at_utc) BETWEEN 1 AND 64");
+                t.HasCheckConstraint("ck_command_receipt_updated", "length(updated_at_utc) BETWEEN 1 AND 64");
+                t.HasCheckConstraint("ck_command_receipt_first_request_id", "length(first_request_id) = 36");
+                t.HasCheckConstraint("ck_command_receipt_last_request_id", "length(last_request_id) = 36");
+                t.HasCheckConstraint("ck_command_receipt_attempt_count", "attempt_count BETWEEN 1 AND 2");
+                t.HasCheckConstraint("ck_command_receipt_agent_instance_id", "agent_instance_id IS NULL OR length(agent_instance_id) = 36");
+            });
+        });
+
         modelBuilder.Entity("ReminNote.Infrastructure.Persistence.TaskEntity", b =>
         {
             b.Property<string>("Id")
@@ -261,6 +462,24 @@ partial class ReminNoteDbContextModelSnapshot : ModelSnapshot
                 .WithMany()
                 .HasForeignKey("ContinuedFromTaskId")
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity("ReminNote.Infrastructure.Persistence.P25.P25ChangeJournalEntity", b =>
+        {
+            b.HasOne("ReminNote.Infrastructure.Persistence.P25.P25RevisionStateEntity", null)
+                .WithMany()
+                .HasForeignKey("ProfileScope")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
+        });
+
+        modelBuilder.Entity("ReminNote.Infrastructure.Persistence.P25.P25CommandReceiptEntity", b =>
+        {
+            b.HasOne("ReminNote.Infrastructure.Persistence.P25.P25RevisionStateEntity", null)
+                .WithMany()
+                .HasForeignKey("ProfileScope")
+                .OnDelete(DeleteBehavior.Restrict)
+                .IsRequired();
         });
 #pragma warning restore 612, 618
     }

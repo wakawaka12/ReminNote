@@ -9,11 +9,14 @@ namespace ReminNote.Tests;
 
 public sealed class TaskPersistenceTests
 {
-    private static readonly string[] ExpectedP2Tables =
+    private static readonly string[] ExpectedP2AndP25Tables =
     [
         "__EFMigrationsHistory",
         "__EFMigrationsLock",
         "app_settings",
+        "change_journal",
+        "command_receipt",
+        "revision_state",
         "task_history",
         "tasks"
     ];
@@ -38,7 +41,7 @@ public sealed class TaskPersistenceTests
         };
 
     [Fact]
-    public void DatabaseMigrateCreatesOnlyTheP2TaskTablesAndIsIdempotent()
+    public void DatabaseMigrateCreatesP2AndP25TablesAndIsIdempotent()
     {
         using var database = new SqliteTestDatabase();
 
@@ -47,7 +50,7 @@ public sealed class TaskPersistenceTests
         database.Migrate();
         var secondTables = ReadTables(database.Connection);
 
-        Assert.Equal(ExpectedP2Tables, firstTables);
+        Assert.Equal(ExpectedP2AndP25Tables, firstTables);
         Assert.Equal(firstTables, secondTables);
         Assert.DoesNotContain("reminders", secondTables, StringComparer.OrdinalIgnoreCase);
         Assert.DoesNotContain("anime", secondTables, StringComparer.OrdinalIgnoreCase);

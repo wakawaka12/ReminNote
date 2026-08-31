@@ -4,10 +4,10 @@ using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NodaTime;
+using ReminNote.Agent.Runtime;
 using ReminNote.Core.Application;
+using ReminNote.Core.Protocol;
 using ReminNote.Core.Today;
-using ReminNote.Infrastructure.Application;
-using ReminNote.Infrastructure.Persistence;
 using ReminNote.Windows.Features.Anime;
 using ReminNote.Windows.Features.Today;
 using ReminNote.Windows.Startup;
@@ -24,24 +24,31 @@ public partial class App : Application, IDisposable
     {
         base.OnStartup(e);
 
+        var repositoryRoot = ResolveRepositoryRoot(e.Args);
+        Directory.CreateDirectory(Path.Combine(repositoryRoot, ".devdata"));
+        var profileName = ResolveProfileName(e.Args);
+        var agentClient = new AgentTaskClient(
+            repositoryRoot,
+            ProtocolClientKinds.Main,
+            profileName);
         _singleInstance = new SingleInstanceCoordinator(
-            MainInstanceIdentity.MutexName,
-            MainInstanceIdentity.PipeName);
+            MainInstanceIdentity.GetMutexName(agentClient.ProfileScope),
+            MainInstanceIdentity.GetPipeName(agentClient.ProfileScope));
         if (!_singleInstance.IsPrimary)
         {
+            agentClient.Dispose();
             Shutdown(_singleInstance.TryActivateExisting() ? 0 : 1);
             return;
         }
 
-        var repositoryRoot = ResolveRepositoryRoot(e.Args);
         var builder = Host.CreateApplicationBuilder(e.Args);
-        builder.Services.AddSingleton(new TaskWorkspace(repositoryRoot));
+        builder.Services.AddSingleton(agentClient);
         builder.Services.AddSingleton<ITaskApplicationService>(serviceProvider =>
-            serviceProvider.GetRequiredService<TaskWorkspace>());
+            serviceProvider.GetRequiredService<AgentTaskClient>());
         builder.Services.AddSingleton<ITaskQueryService>(serviceProvider =>
-            serviceProvider.GetRequiredService<TaskWorkspace>());
+            serviceProvider.GetRequiredService<AgentTaskClient>());
         builder.Services.AddSingleton<ITodayQueryService>(serviceProvider =>
-            serviceProvider.GetRequiredService<TaskWorkspace>());
+            serviceProvider.GetRequiredService<AgentTaskClient>());
         builder.Services.AddSingleton<IClock>(SystemClock.Instance);
         builder.Services.AddTodayFeature();
         builder.Services.AddAnimeFeature();
@@ -49,7 +56,6 @@ public partial class App : Application, IDisposable
         builder.Services.AddSingleton<MainWindow>();
 
         _host = builder.Build();
-        _host.Services.GetRequiredService<TaskWorkspace>().Initialize();
         _host.Start();
 
         var window = _host.Services.GetRequiredService<MainWindow>();
@@ -115,6 +121,27 @@ public partial class App : Application, IDisposable
             repositoryRoot = args[index];
         }
 
-        return ReminNoteDatabase.ValidateRepositoryRoot(repositoryRoot);
+        return AgentStartupPaths.ValidateRepositoryRoot(repositoryRoot);
+    }
+
+    private static string? ResolveProfileName(string[] args)
+    {
+        string? profile = null;
+        for (var index = 0; index < args.Length; index++)
+        {
+            if (!string.Equals(args[index], "--profile", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (++index >= args.Length || string.IsNullOrWhiteSpace(args[index]))
+            {
+                throw new ArgumentException("--profile 必须带 profile key。", nameof(args));
+            }
+
+            profile = args[index];
+        }
+
+        return profile;
     }
 }

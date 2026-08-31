@@ -1,17 +1,19 @@
 using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using ReminNote.Agent.Runtime;
+using ReminNote.Core.Protocol;
 using ReminNote.Widget.Startup;
 using ReminNote.Widget.ViewModels;
 using NodaTime;
-using ReminNote.Infrastructure.Application;
 
 namespace ReminNote.Widget;
 
 public partial class App : Application, IDisposable
 {
     private WidgetSingleInstanceCoordinator? _singleInstance;
-    private TaskWorkspace? _taskWorkspace;
+    private AgentTaskClient? _agentClient;
     private WidgetViewModel? _viewModel;
     private DispatcherTimer? _refreshTimer;
     private CancellationTokenSource? _lifetimeCancellation;
@@ -21,24 +23,31 @@ public partial class App : Application, IDisposable
     {
         base.OnStartup(e);
 
-        _singleInstance = new WidgetSingleInstanceCoordinator(
-            WidgetInstanceIdentity.MutexName,
-            WidgetInstanceIdentity.PipeName);
-        if (!_singleInstance.IsPrimary)
-        {
-            Shutdown(_singleInstance.TryActivateExisting() ? 0 : 1);
-            return;
-        }
-
         try
         {
             var repositoryRoot = WidgetStartupOptions.ResolveRepositoryRoot(e.Args);
-            _taskWorkspace = new TaskWorkspace(repositoryRoot);
-            _taskWorkspace.Initialize();
+            Directory.CreateDirectory(Path.Combine(repositoryRoot, ".devdata"));
+            var profileName = WidgetStartupOptions.ResolveProfileName(e.Args);
+            var widgetInstanceId = WidgetStartupOptions.ResolveWidgetInstanceId(e.Args);
+            _agentClient = new AgentTaskClient(
+                repositoryRoot,
+                ProtocolClientKinds.Widget,
+                profileName);
+            _singleInstance?.Dispose();
+            _singleInstance = new WidgetSingleInstanceCoordinator(
+                WidgetInstanceIdentity.GetMutexName(_agentClient.ProfileScope, widgetInstanceId),
+                WidgetInstanceIdentity.GetPipeName(_agentClient.ProfileScope, widgetInstanceId));
+            if (!_singleInstance.IsPrimary)
+            {
+                _agentClient.Dispose();
+                _agentClient = null;
+                Shutdown(_singleInstance.TryActivateExisting() ? 0 : 1);
+                return;
+            }
 
             _viewModel = new WidgetViewModel(
-                _taskWorkspace,
-                _taskWorkspace,
+                _agentClient,
+                _agentClient,
                 SystemClock.Instance);
 
             var window = new WidgetWindow(_viewModel);
@@ -77,8 +86,8 @@ public partial class App : Application, IDisposable
         _lifetimeCancellation = null;
         _viewModel?.Dispose();
         _viewModel = null;
-        _taskWorkspace?.Dispose();
-        _taskWorkspace = null;
+        _agentClient?.Dispose();
+        _agentClient = null;
         _singleInstance?.Dispose();
         _singleInstance = null;
         GC.SuppressFinalize(this);

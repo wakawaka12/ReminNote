@@ -59,3 +59,32 @@ public static class ProtocolProfileScope
         return ProtocolValidation.NormalizeUnicode(value, fieldName);
     }
 }
+
+public static class ProtocolPipeNames
+{
+    public static string Business(string profileScope) =>
+        Create("ReminNote.Business", profileScope);
+
+    public static string Control(string profileScope) =>
+        Create("ReminNote.Control", profileScope);
+
+    public static string MainActivation(string profileScope) =>
+        Create("ReminNote.Windows.Main.Activation", profileScope);
+
+    public static string WidgetActivation(string profileScope, string widgetInstanceId)
+    {
+        ProtocolProfileScope.Validate(profileScope);
+        ArgumentException.ThrowIfNullOrWhiteSpace(widgetInstanceId);
+
+        var input = string.Concat("ReminNote.WidgetInstance.v1", '\0', widgetInstanceId);
+        var digest = SHA256.HashData(ProtocolLimits.StrictUtf8.GetBytes(input));
+        var instanceHash = Convert.ToHexString(digest).ToLowerInvariant()[..32];
+        return $"ReminNote.Widget.Activation.{profileScope}.{instanceHash}";
+    }
+
+    private static string Create(string prefix, string profileScope)
+    {
+        ProtocolProfileScope.Validate(profileScope);
+        return $"{prefix}.{profileScope}";
+    }
+}

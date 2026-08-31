@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using ReminNote.Agent.Command;
+using ReminNote.Core.Protocol;
 
 namespace ReminNote.Agent.Writer;
 
@@ -19,7 +20,10 @@ internal sealed class SingleProfileWriterActor : IAsyncDisposable
     private readonly Channel<IQueueItem> queue;
     private readonly object stateLock = new();
     private readonly Dictionary<string, WorkItem> workItems = new(StringComparer.Ordinal);
-    private readonly List<IQueueItem> allQueueItems = new();
+    // This tracks only accepted live queue items. Completed entries are removed
+    // immediately; retaining them for the actor lifetime defeats the bounded
+    // queue contract and leaks every command's cancellation source.
+    private readonly HashSet<IQueueItem> queueItems = new();
     private readonly Task loopTask;
     private int disposed;
 
@@ -32,11 +36,11 @@ internal sealed class SingleProfileWriterActor : IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(profileScope, nameof(profileScope));
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(dispatcher);
-        if (queueCapacity < 1)
+        if (queueCapacity is < 1 or > ProtocolLimits.MaxQueuedRequestsPerProfile)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(queueCapacity),
-                "The writer queue must have positive capacity.");
+                $"The writer queue must be between 1 and {ProtocolLimits.MaxQueuedRequestsPerProfile}.");
         }
 
         this.profileScope = profileScope;
@@ -103,7 +107,7 @@ internal sealed class SingleProfileWriterActor : IAsyncDisposable
                 }
 
                 workItems.Add(request.IdempotencyKey, workItem);
-                allQueueItems.Add(workItem);
+                queueItems.Add(workItem);
                 completion = workItem.Completion.Task;
             }
         }
@@ -146,7 +150,7 @@ internal sealed class SingleProfileWriterActor : IAsyncDisposable
                         WriterReceiptStatus.Unknown);
                 }
 
-                allQueueItems.Add(cancelWorkItem);
+                queueItems.Add(cancelWorkItem);
             }
         }
 
@@ -214,8 +218,8 @@ internal sealed class SingleProfileWriterActor : IAsyncDisposable
         IQueueItem[] allocated;
         lock (stateLock)
         {
-            allocated = allQueueItems.ToArray();
-            allQueueItems.Clear();
+            allocated = queueItems.ToArray();
+            queueItems.Clear();
         }
 
         foreach (var queueItem in allocated)
@@ -248,12 +252,18 @@ internal sealed class SingleProfileWriterActor : IAsyncDisposable
             IQueueItem[] abandoned;
             lock (stateLock)
             {
-                abandoned = allQueueItems.ToArray();
+                abandoned = queueItems.ToArray();
+                queueItems.Clear();
                 workItems.Clear();
                 foreach (var queueItem in abandoned)
                 {
                     queueItem.CompleteUnavailable();
                 }
+            }
+
+            foreach (var queueItem in abandoned)
+            {
+                queueItem.Dispose();
             }
         }
     }
@@ -281,9 +291,12 @@ internal sealed class SingleProfileWriterActor : IAsyncDisposable
             {
                 workItems.Remove(workItem.Request.IdempotencyKey);
             }
+
+            queueItems.Remove(workItem);
         }
 
         workItem.Completion.TrySetResult(response);
+        workItem.Dispose();
     }
 
     private async Task ProcessCancelQueueItemAsync(CancelWorkItem cancelWorkItem)
@@ -315,7 +328,13 @@ internal sealed class SingleProfileWriterActor : IAsyncDisposable
             response = UnavailableCancelResponse();
         }
 
+        lock (stateLock)
+        {
+            queueItems.Remove(cancelWorkItem);
+        }
+
         cancelWorkItem.Completion.TrySetResult(response);
+        cancelWorkItem.Dispose();
     }
 
     private async ValueTask<WriterResponse> ProcessWorkItemAsync(WorkItem workItem)
@@ -580,6 +599,14 @@ internal sealed class SingleProfileWriterActor : IAsyncDisposable
                 .ConfigureAwait(false);
         }
         catch (WriterCommandUnknownException)
+        {
+            return await FinalizeFailureAsync(
+                    workItem,
+                    WriterReceiptStatus.Unknown,
+                    "storage.transaction_failed")
+                .ConfigureAwait(false);
+        }
+        catch (WriterCommitUnknownException)
         {
             return await FinalizeFailureAsync(
                     workItem,

@@ -382,6 +382,14 @@
           "SQLitePCLRaw.core": "2.1.12"
         }
       },
+      "reminnote.agent": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Hosting": "[10.0.11, )",
+          "ReminNote.Core": "[1.0.0, )",
+          "ReminNote.Infrastructure": "[1.0.0, )"
+        }
+      },
       "reminnote.core": {
         "type": "Project",
         "dependencies": {

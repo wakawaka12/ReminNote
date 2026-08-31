@@ -452,7 +452,7 @@ public sealed record ProtocolStatusResponsePayload(
                 ProtocolReceiptStatuses.RolledBack or
                 ProtocolReceiptStatuses.Cancelled or
                 ProtocolReceiptStatuses.TimedOut or
-                ProtocolReceiptStatuses.Unknown) || string.IsNullOrWhiteSpace(Operation))
+                ProtocolReceiptStatuses.Unknown) || !ProtocolOperations.IsMutation(Operation))
         {
             throw ProtocolContractException.Invalid(
                 ProtocolErrorCodes.InvalidRequest,
@@ -483,8 +483,75 @@ public sealed record ProtocolStatusResponsePayload(
         {
             ProtocolErrorValidation.ValidateCode(ErrorCode);
         }
+
+        switch (Status)
+        {
+            case ProtocolReceiptStatuses.Pending:
+                RequireStatus(Changed == false, "PENDING status must have changed=false.");
+                RequireStatus(CommittedRevision is null, "PENDING status must not have committedRevision.");
+                RequireStatus(ErrorCode is null, "PENDING status must not have an error code.");
+                RequireStatus(Retryable, "PENDING status must be retryable.");
+                break;
+
+            case ProtocolReceiptStatuses.Committed:
+                RequireStatus(CommittedRevision is not null, "COMMITTED status requires committedRevision.");
+                RequireStatus(ErrorCode is null, "COMMITTED status must not have an error code.");
+                RequireStatus(!Retryable, "COMMITTED status must not be retryable.");
+                break;
+
+            case ProtocolReceiptStatuses.RejectedStale:
+                RequireStatus(!Changed && CommittedRevision is null, "REJECTED_STALE status cannot commit a change.");
+                RequireStatus(ErrorCode == ProtocolErrorCodes.ExpectedRevisionMismatch, "REJECTED_STALE requires expected mismatch.");
+                RequireStatus(!Retryable, "REJECTED_STALE status must not be retryable.");
+                break;
+
+            case ProtocolReceiptStatuses.Rejected:
+                RequireStatus(!Changed && CommittedRevision is null, "REJECTED status cannot commit a change.");
+                RequireStatus(ErrorCode is not null, "REJECTED status requires an error code.");
+                RequireStatus(
+                    Retryable == GetDefaultRetryable(ErrorCode!),
+                    "REJECTED retryable must match the error-code policy.");
+                break;
+
+            case ProtocolReceiptStatuses.RolledBack:
+                RequireStatus(!Changed && CommittedRevision is null, "ROLLED_BACK status cannot commit a change.");
+                RequireStatus(ErrorCode == ProtocolErrorCodes.TransactionFailed, "ROLLED_BACK requires transaction_failed.");
+                RequireStatus(Retryable, "ROLLED_BACK status must be retryable.");
+                break;
+
+            case ProtocolReceiptStatuses.Cancelled:
+                RequireStatus(!Changed && CommittedRevision is null, "CANCELLED status cannot commit a change.");
+                RequireStatus(ErrorCode == ProtocolErrorCodes.Cancelled, "CANCELLED requires request.cancelled.");
+                RequireStatus(!Retryable, "CANCELLED status must not be retryable.");
+                break;
+
+            case ProtocolReceiptStatuses.TimedOut:
+                RequireStatus(!Changed && CommittedRevision is null, "TIMED_OUT status cannot commit a change.");
+                RequireStatus(ErrorCode == ProtocolErrorCodes.Timeout, "TIMED_OUT requires request.timeout.");
+                RequireStatus(Retryable, "TIMED_OUT status must be retryable.");
+                break;
+
+            case ProtocolReceiptStatuses.Unknown:
+                RequireStatus(!Changed && CommittedRevision is null, "UNKNOWN status cannot claim a committed change.");
+                RequireStatus(ErrorCode is not null, "UNKNOWN status requires an error code.");
+                RequireStatus(Retryable, "UNKNOWN status must be retryable.");
+                break;
+        }
+    }
+
+    private static void RequireStatus(bool condition, string message)
+    {
+        if (!condition)
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                message);
+        }
     }
 
     private static bool IsLowerHex(char character) =>
         character is >= '0' and <= '9' or >= 'a' and <= 'f';
+
+    private static bool GetDefaultRetryable(string errorCode) =>
+        ProtocolErrorCodes.TryGetDefaultRetryable(errorCode, out var retryable) && retryable;
 }

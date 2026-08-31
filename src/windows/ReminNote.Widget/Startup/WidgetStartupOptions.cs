@@ -1,5 +1,5 @@
 using System.IO;
-using ReminNote.Infrastructure.Persistence;
+using ReminNote.Agent.Runtime;
 
 namespace ReminNote.Widget.Startup;
 
@@ -38,6 +38,57 @@ public static class WidgetStartupOptions
             throw new ArgumentException("Widget 正式启动必须提供 --repo-root 路径。", nameof(args));
         }
 
-        return ReminNoteDatabase.ValidateRepositoryRoot(repositoryRoot);
+        return AgentStartupPaths.ValidateRepositoryRoot(repositoryRoot);
+    }
+
+    public static string? ResolveProfileName(IReadOnlyList<string> args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+
+        string? profile = null;
+        for (var index = 0; index < args.Count; index++)
+        {
+            if (!string.Equals(args[index], "--profile", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (++index >= args.Count || string.IsNullOrWhiteSpace(args[index]))
+            {
+                throw new ArgumentException("--profile 必须带 profile key。", nameof(args));
+            }
+
+            profile = args[index];
+        }
+
+        return profile;
+    }
+
+    public static string ResolveWidgetInstanceId(IReadOnlyList<string> args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+
+        var instanceId = "default";
+        for (var index = 0; index < args.Count; index++)
+        {
+            if (!string.Equals(args[index], "--widget-instance", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (++index >= args.Count || string.IsNullOrWhiteSpace(args[index]))
+            {
+                throw new ArgumentException("--widget-instance 必须带实例标识。", nameof(args));
+            }
+
+            instanceId = args[index];
+        }
+
+        if (instanceId.Length > 128 || instanceId.Contains('\0', StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Widget instance 标识长度或字符非法。", nameof(args));
+        }
+
+        return instanceId;
     }
 }

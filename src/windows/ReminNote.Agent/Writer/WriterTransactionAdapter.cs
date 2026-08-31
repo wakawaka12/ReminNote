@@ -38,29 +38,54 @@ internal sealed class WriterTransactionAdapter
 
             // Once the actor marks the commit boundary, a caller cancellation
             // cannot turn a durable commit into a second domain attempt.
-            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            try
+            {
+                await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (WriterCommitRolledBackException commitException)
+            {
+                var recoveryException = await TryRecoverAsync(transaction).ConfigureAwait(false);
+                if (recoveryException is not null)
+                {
+                    throw new WriterTransactionRecoveryException(
+                        commitException,
+                        recoveryException);
+                }
+
+                throw;
+            }
+            catch (Exception commitException)
+            {
+                var recoveryException = await TryRecoverAsync(transaction).ConfigureAwait(false);
+                if (recoveryException is not null)
+                {
+                    throw new WriterTransactionRecoveryException(
+                        commitException,
+                        recoveryException);
+                }
+
+                throw new WriterCommitUnknownException(commitException);
+            }
+
             return result;
+        }
+        catch (WriterCommitUnknownException)
+        {
+            throw;
+        }
+        catch (WriterTransactionRecoveryException)
+        {
+            throw;
+        }
+        catch (WriterCommitRolledBackException)
+        {
+            // The inner commit handler has already attempted the one recovery
+            // path. Do not issue a second rollback/discard sequence.
+            throw;
         }
         catch (Exception transactionException)
         {
-            Exception? recoveryException = null;
-            try
-            {
-                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception rollbackException)
-            {
-                recoveryException = rollbackException;
-            }
-
-            try
-            {
-                transaction.DiscardDirtyState();
-            }
-            catch (Exception discardException)
-            {
-                recoveryException ??= discardException;
-            }
+            var recoveryException = await TryRecoverAsync(transaction).ConfigureAwait(false);
 
             if (recoveryException is not null)
             {
@@ -71,5 +96,29 @@ internal sealed class WriterTransactionAdapter
 
             throw;
         }
+    }
+
+    private static async ValueTask<Exception?> TryRecoverAsync(IWriterTransaction transaction)
+    {
+        Exception? recoveryException = null;
+        try
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception rollbackException)
+        {
+            recoveryException = rollbackException;
+        }
+
+        try
+        {
+            transaction.DiscardDirtyState();
+        }
+        catch (Exception discardException)
+        {
+            recoveryException ??= discardException;
+        }
+
+        return recoveryException;
     }
 }

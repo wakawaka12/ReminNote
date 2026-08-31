@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NodaTime;
+using ReminNote.Agent.Runtime;
 using ReminNote.Core;
 using ReminNote.Core.Application;
 using ReminNote.Core.Tasks;
@@ -801,7 +802,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
 
             QuickAddFeedback = $"已写入本地 Task：「{created.Title}」· TODAY 已刷新";
         }
-        catch (Exception exception) when (exception is DomainValidationException or TaskWriteGateBusyException)
+        catch (Exception exception) when (exception is DomainValidationException or AgentCommandException)
         {
             QuickAddFeedback = $"无法创建 Task：{exception.Message}";
         }
@@ -926,7 +927,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
 
             TaskFeedback = FormatResultFeedback(title, result);
         }
-        catch (Exception exception) when (exception is DomainValidationException or TaskWriteGateBusyException)
+        catch (Exception exception) when (exception is DomainValidationException or AgentCommandException)
         {
             TaskFeedback = $"无法记录结果：{exception.Message}";
         }

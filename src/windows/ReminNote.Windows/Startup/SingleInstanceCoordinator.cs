@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Pipes;
+using ReminNote.Core.Protocol;
 
 namespace ReminNote.Windows.Startup;
 
@@ -7,6 +8,15 @@ internal static class MainInstanceIdentity
 {
     public const string MutexName = @"Local\ReminNote.Windows.Main";
     public const string PipeName = "ReminNote.Windows.Main.Activation";
+
+    public static string GetMutexName(string profileScope)
+    {
+        ProtocolProfileScope.Validate(profileScope);
+        return $@"Local\ReminNote.Windows.Main.{profileScope}";
+    }
+
+    public static string GetPipeName(string profileScope) =>
+        ProtocolPipeNames.MainActivation(profileScope);
 }
 
 internal sealed class SingleInstanceCoordinator : IDisposable

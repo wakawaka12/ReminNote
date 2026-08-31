@@ -38,9 +38,9 @@ internal sealed record NamedPipeEndpointOptions
 }
 
 /// <summary>
-/// Unwired endpoint factory. It knows only the business/control pipe boundary;
-/// Program.cs and host DI remain untouched until the 01/03 contract is
-/// integrated by the serial owner.
+/// Scoped endpoint factory used by the Agent business/control runtime. The
+/// business and control names are resolved from the same profile descriptor,
+/// while their ACLs remain separate.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class NamedPipeTransportEndpoint
@@ -91,7 +91,7 @@ internal sealed class NamedPipeTransportEndpoint
             options.OutputBufferSize,
             security,
             HandleInheritability.None,
-            PipeAccessRights.FullControl);
+            additionalAccessRights: 0);
     }
 
     public NamedPipeClientStream CreateClientStream()

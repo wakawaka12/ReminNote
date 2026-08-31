@@ -5,9 +5,9 @@ using ReminNote.Core.Transport;
 namespace ReminNote.Agent.Transport;
 
 /// <summary>
-/// Unwired raw-frame client for the scoped business or control pipe. It does
-/// not replay frames, mint request identifiers or reconcile response loss;
-/// those decisions belong to the shared command adapter.
+/// Raw-frame client for the scoped business or control pipe. It does not replay
+/// frames, mint request identifiers or reconcile response loss; those
+/// decisions belong to the shared command adapter.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal sealed class NamedPipeTransportClient : ITransportConnection

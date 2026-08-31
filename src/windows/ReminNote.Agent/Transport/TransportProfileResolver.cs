@@ -10,9 +10,8 @@ internal sealed record TransportProfileArguments(
     string? Profile = null);
 
 /// <summary>
-/// Profile data used by the unwired transport endpoint. ProfileScope and the
-/// endpoint names are strings only at this seam; their public contract and
-/// derivation are supplied by the P2.5-01 adapter.
+/// Profile data used by the Agent transport endpoints. ProfileScope and the
+/// endpoint names are supplied by the single P2.5-01 protocol adapter.
 /// </summary>
 internal sealed class ResolvedTransportProfile
 {
@@ -127,8 +126,7 @@ internal static class TransportProfileResolver
             ? CanonicalizeExistingLocalDirectory(arguments.DataRoot!, requireRepositoryMarkers: false)
             : ResolveRepositoryDataRoot(arguments.RepoRoot!);
         var databaseDirectory = ResolveDatabaseDirectory(dataRoot, profileName);
-        var databasePath = NormalizeCanonicalPath(
-            Path.Combine(databaseDirectory, "reminnote.sqlite"));
+        var databasePath = ResolveDatabasePath(dataRoot, databaseDirectory);
         var profileScope = RequireContractValue(
             contractAdapter.GetProfileScope(normalizedSid, databasePath),
             nameof(ITransportProfileContractAdapter.GetProfileScope));
@@ -195,6 +193,80 @@ internal static class TransportProfileResolver
         }
 
         return EnsureWithinRoot(profileDirectory, dataRoot);
+    }
+
+    private static string ResolveDatabasePath(string dataRoot, string databaseDirectory)
+    {
+        var candidate = EnsureWithinRoot(
+            NormalizeCanonicalPath(Path.Combine(databaseDirectory, "reminnote.sqlite")),
+            dataRoot);
+
+        if (Directory.Exists(candidate))
+        {
+            throw new TransportProfileResolutionException(
+                TransportProfileFailureKind.InvalidRoot,
+                "The profile database path must be a file, not a directory.");
+        }
+
+        try
+        {
+            var databaseFile = new FileInfo(candidate);
+            if (!IsReparsePoint(databaseFile))
+            {
+                return candidate;
+            }
+
+            var resolvedTarget = databaseFile.ResolveLinkTarget(returnFinalTarget: true);
+            var finalPath = NormalizeCanonicalPath(
+                resolvedTarget?.FullName ?? databaseFile.FullName);
+            if (Directory.Exists(finalPath))
+            {
+                throw new TransportProfileResolutionException(
+                    TransportProfileFailureKind.InvalidRoot,
+                    "The profile database reparse target must be a file.");
+            }
+
+            return EnsureWithinRoot(finalPath, dataRoot);
+        }
+        catch (TransportProfileResolutionException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is IOException or
+            UnauthorizedAccessException or
+            SecurityException)
+        {
+            throw new TransportProfileResolutionException(
+                TransportProfileFailureKind.InvalidRoot,
+                "The profile database path could not be resolved.");
+        }
+    }
+
+    private static bool IsReparsePoint(FileSystemInfo fileSystemInfo)
+    {
+        // On Windows, FileInfo.Attributes is -1 for a missing file. Treat the
+        // not-yet-created Agent database as an ordinary path so the Agent can
+        // create it and apply the formal EF migration during cold start.
+        if (!fileSystemInfo.Exists)
+        {
+            return false;
+        }
+
+        try
+        {
+            return (fileSystemInfo.Attributes & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (FileNotFoundException)
+        {
+            // A missing database is a valid path for a later Agent-owned
+            // initialization. There is no file reparse target to escape from.
+            return false;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return false;
+        }
     }
 
     private static string CanonicalizeExistingLocalDirectory(

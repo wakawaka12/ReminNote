@@ -43,8 +43,22 @@ internal interface ITransportRequestDispatcher
 }
 
 /// <summary>
-/// Unwired stream session loop. A host decides when to create it and remains
-/// responsible for closing the stream after a fail-closed exception.
+/// Produces a bounded protocol response when the connection has reached its
+/// in-flight limit. The responder owns envelope construction; the session only
+/// validates and writes the returned frame through the same serialized writer
+/// gate as ordinary responses.
+/// </summary>
+internal interface ITransportOverloadResponder
+{
+    ValueTask<ReadOnlyMemory<byte>> CreateAsync(
+        ReadOnlyMemory<byte> requestFrame,
+        TransportPeerIdentity peer);
+}
+
+/// <summary>
+/// Length-prefixed stream session loop used by the Agent's scoped Named Pipe
+/// endpoints. The host decides when to create it and remains responsible for
+/// closing the stream after a fail-closed exception.
 /// </summary>
 internal sealed class NamedPipeTransportSession : IAsyncDisposable
 {
@@ -52,6 +66,7 @@ internal sealed class NamedPipeTransportSession : IAsyncDisposable
     private readonly ITransportPayloadValidator payloadValidator;
     private readonly ITransportHandshake handshake;
     private readonly ITransportRequestDispatcher dispatcher;
+    private readonly ITransportOverloadResponder overloadResponder;
     private readonly TransportLimits limits;
     private readonly TransportWriteGate writeGate = new();
 
@@ -59,12 +74,14 @@ internal sealed class NamedPipeTransportSession : IAsyncDisposable
         ITransportPayloadValidator payloadValidator,
         ITransportHandshake handshake,
         ITransportRequestDispatcher dispatcher,
+        ITransportOverloadResponder overloadResponder,
         TransportLimits limits,
         ITransportFrameCodec? frameCodec = null)
     {
         this.payloadValidator = payloadValidator ?? throw new ArgumentNullException(nameof(payloadValidator));
         this.handshake = handshake ?? throw new ArgumentNullException(nameof(handshake));
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        this.overloadResponder = overloadResponder ?? throw new ArgumentNullException(nameof(overloadResponder));
         this.limits = limits ?? throw new ArgumentNullException(nameof(limits));
         this.limits.Validate();
         this.frameCodec = frameCodec ?? new LengthPrefixedFrameCodec(this.limits);
@@ -128,10 +145,15 @@ internal sealed class NamedPipeTransportSession : IAsyncDisposable
 
                 if (!inFlight.Wait(0, CancellationToken.None))
                 {
-                    throw new TransportFailureException(
-                        TransportFailureKind.Io,
-                        "The transport in-flight request limit was exceeded.",
-                        connectionMustClose: true);
+                    var overloadFrame = await overloadResponder
+                        .CreateAsync(frame, peer)
+                        .ConfigureAwait(false);
+                    payloadValidator.Validate(overloadFrame);
+                    await WriteFrameAsync(
+                        stream,
+                        overloadFrame,
+                        limits.AbsoluteRequestDeadline).ConfigureAwait(false);
+                    continue;
                 }
 
                 if (!freeSlots.TryDequeue(out var slot))

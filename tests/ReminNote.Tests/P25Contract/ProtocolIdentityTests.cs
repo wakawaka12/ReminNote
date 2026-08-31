@@ -15,7 +15,7 @@ public sealed class ProtocolIdentityTests
             new DateTimeOffset(2026, 8, 30, 0, 0, 0, TimeSpan.Zero),
             5_000,
             ProtocolOperations.TaskCreate,
-            ProtocolJson.ParseObject("{\"title\":\"x\",\"timeSpec\":{}}"),
+            ProtocolJson.ParseObject("{\"title\":\"x\",\"timeSpec\":{\"type\":\"ANYTIME\",\"localDate\":\"2026-08-30\"}}"),
             key,
             0);
         var retry = request.CreateRetryAttempt(

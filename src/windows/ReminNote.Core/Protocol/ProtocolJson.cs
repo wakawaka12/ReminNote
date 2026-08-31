@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using ReminNote.Core.Tasks;
 
 namespace ReminNote.Core.Protocol;
 
@@ -451,6 +452,126 @@ public static class ProtocolJson
         });
     }
 
+    public static ProtocolTimeSpecPayload ReadTimeSpecPayload(JsonElement value) =>
+        ProtocolTimeSpecPayload.Parse(value);
+
+    public static JsonElement CreateTimeSpecPayload(TimeSpec timeSpec)
+    {
+        var payload = ProtocolTimeSpecPayload.FromDomain(timeSpec);
+        return CreateObject(writer =>
+        {
+            writer.WriteString("type", payload.Type);
+            writer.WriteString("localDate", payload.LocalDate);
+            if (payload.Time is not null)
+            {
+                writer.WriteString("time", payload.Time);
+            }
+
+            if (payload.Start is not null)
+            {
+                writer.WriteString("start", payload.Start);
+            }
+
+            if (payload.End is not null)
+            {
+                writer.WriteString("end", payload.End);
+            }
+        });
+    }
+
+    public static JsonElement CreateTaskCreatePayload(string title, TimeSpec timeSpec)
+    {
+        ValidateTaskTitle(title);
+        var time = ProtocolTimeSpecPayload.FromDomain(timeSpec);
+        return CreateObject(writer =>
+        {
+            writer.WriteString("title", title);
+            WriteTimeSpec(writer, time);
+        });
+    }
+
+    public static JsonElement CreateTaskRenamePayload(string taskId, string title)
+    {
+        ProtocolValidation.RequireLowercaseUuid(taskId, nameof(taskId));
+        ValidateTaskTitle(title);
+        return CreateObject(writer =>
+        {
+            writer.WriteString("taskId", taskId);
+            writer.WriteString("title", title);
+        });
+    }
+
+    public static JsonElement CreateTaskRecordResultPayload(string taskId, string result, string? note = null)
+    {
+        ProtocolValidation.RequireLowercaseUuid(taskId, nameof(taskId));
+        ProtocolValidation.RequireUtf8ByteLength(result, 32, nameof(result));
+        if (result is not ("COMPLETED" or "MISSED" or "PARTIAL"))
+        {
+            throw ProtocolContractException.Invalid(ProtocolErrorCodes.InvalidRequest, "result is not supported.", nameof(result));
+        }
+
+        if (note is not null)
+        {
+            ProtocolValidation.RequireUtf8ByteLength(note, 512, nameof(note));
+        }
+
+        return CreateObject(writer =>
+        {
+            writer.WriteString("taskId", taskId);
+            writer.WriteString("result", result);
+            if (note is not null)
+            {
+                writer.WriteString("note", note);
+            }
+        });
+    }
+
+    public static JsonElement CreateTaskUpdatePlanPayload(string taskId, string? title, TimeSpec timeSpec)
+    {
+        ProtocolValidation.RequireLowercaseUuid(taskId, nameof(taskId));
+        ValidateTaskTitle(title);
+        var time = ProtocolTimeSpecPayload.FromDomain(timeSpec);
+        return CreateObject(writer =>
+        {
+            writer.WriteString("taskId", taskId);
+            if (title is not null)
+            {
+                writer.WriteString("title", title);
+            }
+
+            WriteTimeSpec(writer, time);
+        });
+    }
+
+    public static JsonElement CreateTaskReorderPayload(string taskId, int sortOrder)
+    {
+        ProtocolValidation.RequireLowercaseUuid(taskId, nameof(taskId));
+        return CreateObject(writer =>
+        {
+            writer.WriteString("taskId", taskId);
+            writer.WriteNumber("sortOrder", sortOrder);
+        });
+    }
+
+    public static JsonElement CreateTaskContinuePayload(string sourceTaskId, string title, TimeSpec timeSpec)
+    {
+        ProtocolValidation.RequireLowercaseUuid(sourceTaskId, nameof(sourceTaskId));
+        ValidateTaskTitle(title);
+        var time = ProtocolTimeSpecPayload.FromDomain(timeSpec);
+        return CreateObject(writer =>
+        {
+            writer.WriteString("sourceTaskId", sourceTaskId);
+            writer.WriteString("title", title);
+            WriteTimeSpec(writer, time);
+        });
+    }
+
+    public static JsonElement CreateTaskDeletePayload(string taskId)
+    {
+        ProtocolValidation.RequireLowercaseUuid(taskId, nameof(taskId));
+        return CreateObject(writer => writer.WriteString("taskId", taskId));
+    }
+
     public static JsonElement CreateStatusResponsePayload(ProtocolStatusResponsePayload status)
     {
         ArgumentNullException.ThrowIfNull(status);
@@ -507,6 +628,45 @@ public static class ProtocolJson
         }
 
         writer.WriteEndObject();
+    }
+
+    private static void WriteTimeSpec(Utf8JsonWriter writer, ProtocolTimeSpecPayload time)
+    {
+        writer.WritePropertyName("timeSpec");
+        writer.WriteStartObject();
+        writer.WriteString("type", time.Type);
+        writer.WriteString("localDate", time.LocalDate);
+        if (time.Time is not null)
+        {
+            writer.WriteString("time", time.Time);
+        }
+
+        if (time.Start is not null)
+        {
+            writer.WriteString("start", time.Start);
+        }
+
+        if (time.End is not null)
+        {
+            writer.WriteString("end", time.End);
+        }
+
+        writer.WriteEndObject();
+    }
+
+    private static void ValidateTaskTitle(string? title)
+    {
+        if (title is null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw ProtocolContractException.Invalid(ProtocolErrorCodes.InvalidRequest, "title is required.", nameof(title));
+        }
+
+        ProtocolValidation.RequireUtf8ByteLength(title, 2_000, nameof(title));
     }
 
     private static void WriteStringArray(Utf8JsonWriter writer, IEnumerable<string> values)

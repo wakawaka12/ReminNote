@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Pipes;
+using ReminNote.Core.Protocol;
 
 namespace ReminNote.Widget.Startup;
 
@@ -7,6 +8,24 @@ internal static class WidgetInstanceIdentity
 {
     public const string MutexName = @"Local\ReminNote.Widget";
     public const string PipeName = "ReminNote.Widget.Activation";
+
+    public static string GetMutexName(string profileScope, string widgetInstanceId)
+    {
+        ProtocolProfileScope.Validate(profileScope);
+        ArgumentException.ThrowIfNullOrWhiteSpace(widgetInstanceId);
+        return $@"Local\ReminNote.Widget.{profileScope}.{GetInstanceHash(widgetInstanceId)}";
+    }
+
+    public static string GetPipeName(string profileScope, string widgetInstanceId) =>
+        ProtocolPipeNames.WidgetActivation(profileScope, widgetInstanceId);
+
+    private static string GetInstanceHash(string widgetInstanceId)
+    {
+        var input = string.Concat("ReminNote.WidgetInstance.v1", '\0', widgetInstanceId);
+        var digest = System.Security.Cryptography.SHA256.HashData(
+            ProtocolLimits.StrictUtf8.GetBytes(input));
+        return Convert.ToHexString(digest).ToLowerInvariant()[..32];
+    }
 }
 
 internal sealed class WidgetSingleInstanceCoordinator : IDisposable

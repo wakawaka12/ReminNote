@@ -323,6 +323,32 @@ internal sealed class WriterCommandUnknownException : Exception
     }
 }
 
+/// <summary>
+/// Commit reported an error after the transaction boundary was entered. The
+/// durable outcome must be reconciled from receipt/revision/journal evidence;
+/// this exception must never be treated as a confirmed rollback.
+/// </summary>
+internal sealed class WriterCommitUnknownException : Exception
+{
+    public WriterCommitUnknownException(Exception innerException)
+        : base("The writer commit outcome could not be confirmed.", innerException)
+    {
+    }
+}
+
+/// <summary>
+/// The transaction adapter has an explicit guarantee that the commit did not
+/// become durable. This is distinct from an ordinary commit exception, whose
+/// outcome must be reconciled as UNKNOWN.
+/// </summary>
+internal sealed class WriterCommitRolledBackException : Exception
+{
+    public WriterCommitRolledBackException(Exception innerException)
+        : base("The writer commit was confirmed rolled back.", innerException)
+    {
+    }
+}
+
 internal sealed class WriterTransactionRecoveryException : Exception
 {
     public WriterTransactionRecoveryException(

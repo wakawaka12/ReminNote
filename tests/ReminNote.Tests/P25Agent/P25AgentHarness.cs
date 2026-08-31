@@ -4,13 +4,48 @@
 #pragma warning disable xUnit1051 // Cancellation paths are part of the seam under test.
 
 using ReminNote.Agent.Command;
+using ReminNote.Agent.Transport;
 using ReminNote.Agent.Writer;
+using ReminNote.Core.Protocol;
+using ReminNote.Core.Transport;
 using Xunit;
 
 namespace ReminNote.P25Agent.Harness;
 
 public sealed class P25AgentWriterTests
 {
+    [Fact]
+    public void ProtocolAdapterKeepsAttemptAndLogicalIdentitySeparate()
+    {
+        const string userSid = "S-1-5-21-100-200-300-400";
+        var profileScope = ProtocolProfileScope.Derive(
+            userSid,
+            @"C:\data\reminnote.sqlite");
+        var request = ProtocolRequest.CreateMutationAttempt(
+            ProtocolClientKinds.Widget,
+            ProtocolIds.NewClientInstanceId(),
+            DateTimeOffset.UtcNow,
+            timeoutMs: 5_000,
+            ProtocolOperations.TaskRename,
+            ProtocolJson.ParseObject(
+                "{\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"title\":\"new\"}"),
+            ProtocolIds.NewIdempotencyKey(),
+            expectedRevision: 0);
+
+        var first = WriterCommandRequest.FromProtocolRequest(request, userSid, profileScope);
+        var retryRequest = request.CreateRetryAttempt(DateTimeOffset.UtcNow, timeoutMs: 2_000);
+        var retry = WriterCommandRequest.FromProtocolRequest(retryRequest, userSid, profileScope);
+
+        Assert(first.RequestId == request.RequestId, "adapter must preserve the wire attempt ID");
+        Assert(retry.RequestId == retryRequest.RequestId, "retry adapter must preserve its new attempt ID");
+        Assert(first.RequestId != retry.RequestId, "each retry must use a new RequestId");
+        Assert(first.IdempotencyKey == retry.IdempotencyKey, "retry must preserve idempotency key");
+        Assert(first.HasSameHash(retry.CanonicalPayloadHash.Span), "retry must preserve canonical hash");
+        Assert(first.ActualUserSid == userSid, "adapter must bind the observed user SID");
+        Assert(first.ProfileScope == profileScope, "adapter must bind the resolved profile scope");
+        Assert(first.Payload is { } payload && payload.GetProperty("title").GetString() == "new", "payload must cross the adapter");
+    }
+
     [Fact]
     public Task DispatcherRejectsUnknownOperationAsync()
     {
@@ -255,6 +290,32 @@ public sealed class P25AgentWriterTests
         var replay = await actor.ExecuteAsync(command).ConfigureAwait(false);
         Assert(replay.Replayed, "successful retry should become terminal replay");
         AssertEqual(2, executor.Calls, "terminal replay must not execute again");
+    }
+
+    [Fact]
+    public async Task CommitExceptionAfterDurableApplyReconcilesAsCommittedAsync()
+    {
+        var persistence = new InMemoryWriterPersistence { FailAfterDomainApplyCount = 1 };
+        var executor = ChangedExecutor("task-ambiguous", "update");
+        await using var actor = new SingleProfileWriterActor(
+            "profile-a",
+            persistence,
+            CreateDispatcher("command.test", executor));
+        var command = Command("command.test", "key-ambiguous", expectedRevision: 0);
+
+        var response = await actor.ExecuteAsync(command).ConfigureAwait(false);
+        var receipt = persistence.FindReceipt(command.IdempotencyKey);
+        var replay = await actor.ExecuteAsync(command).ConfigureAwait(false);
+
+        Assert(response.Ok, "a post-commit exception must reconcile the durable result");
+        AssertEqual(WriterOutcome.Changed, response.Outcome, "ambiguous commit outcome");
+        AssertEqual(WriterReceiptStatus.Committed, response.ReceiptStatus, "ambiguous commit receipt");
+        AssertEqual(1L, response.CommittedRevision, "ambiguous commit revision");
+        AssertEqual(WriterReceiptStatus.Committed, receipt?.Status, "durable receipt must remain committed");
+        AssertEqual(1L, persistence.CurrentRevision, "ambiguous commit must allocate one revision");
+        AssertEqual(1, persistence.CommittedBatchCount, "ambiguous commit must persist one domain batch");
+        Assert(replay.Replayed, "a reconciled command must replay without a second domain attempt");
+        AssertEqual(1, executor.Calls, "ambiguous commit must not rerun the executor");
     }
 
     [Fact]
@@ -755,6 +816,245 @@ public sealed class P25AgentWriterTests
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 }
 
+public sealed class P25AgentTransportTests
+{
+    [Fact]
+    public async Task InFlightOverflowReturnsBoundedProtocolErrorAsync()
+    {
+        var agentInstanceId = Guid.Parse("019b2b36-4444-7abc-8def-0123456789af");
+        var hello = ProtocolRequest.CreateReadAttempt(
+            ProtocolClientKinds.Widget,
+            ProtocolIds.NewClientInstanceId(),
+            DateTimeOffset.UtcNow,
+            timeoutMs: 2_000,
+            ProtocolOperations.SessionHello,
+            ProtocolJson.CreateHelloPayload(
+                new ProtocolHelloPayload(
+                    [ProtocolVersion.Current],
+                    [],
+                    [])));
+        var firstCommand = ProtocolRequest.CreateMutationAttempt(
+            ProtocolClientKinds.Widget,
+            ProtocolIds.NewClientInstanceId(),
+            DateTimeOffset.UtcNow,
+            timeoutMs: 5_000,
+            ProtocolOperations.TaskRename,
+            ProtocolJson.ParseObject(
+                "{\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"title\":\"first\"}"),
+            ProtocolIds.NewIdempotencyKey(),
+            expectedRevision: 0);
+        var secondCommand = ProtocolRequest.CreateMutationAttempt(
+            ProtocolClientKinds.Widget,
+            ProtocolIds.NewClientInstanceId(),
+            DateTimeOffset.UtcNow,
+            timeoutMs: 5_000,
+            ProtocolOperations.TaskRename,
+            ProtocolJson.ParseObject(
+                "{\"taskId\":\"019b2b36-4444-7abc-8def-0123456789ac\",\"title\":\"second\"}"),
+            ProtocolIds.NewIdempotencyKey(),
+            expectedRevision: 0);
+        var helloResponse = new ProtocolResponse(
+            ProtocolVersion.Current,
+            hello.RequestId,
+            ProtocolOperations.SessionHello,
+            agentInstanceId.ToString("D"),
+            serverRevision: 7,
+            ok: true,
+            replayed: false,
+            ProtocolOutcomes.NoOp,
+            committedRevision: null,
+            ProtocolJson.ParseObject("{}"),
+            error: null);
+        var firstResponse = new ProtocolResponse(
+            ProtocolVersion.Current,
+            firstCommand.RequestId,
+            ProtocolOperations.TaskRename,
+            agentInstanceId.ToString("D"),
+            serverRevision: 7,
+            ok: true,
+            replayed: false,
+            ProtocolOutcomes.NoOp,
+            committedRevision: 7,
+            ProtocolJson.ParseObject("{}"),
+            error: null);
+        var codec = new ScriptedFrameCodec(
+            ProtocolJson.SerializeRequest(hello),
+            ProtocolJson.SerializeRequest(firstCommand),
+            ProtocolJson.SerializeRequest(secondCommand),
+            null);
+        var dispatcher = new BlockingTransportDispatcher(
+            codec,
+            ProtocolJson.SerializeResponse(firstResponse));
+        var release = NewSignal();
+        dispatcher.Release = release;
+
+        await using var session = new NamedPipeTransportSession(
+            new NoOpPayloadValidator(),
+            new ReadyHandshake(ProtocolJson.SerializeResponse(helloResponse)),
+            dispatcher,
+            new ProtocolOverloadResponder(agentInstanceId, () => 7),
+            new TransportLimits(new HarnessTransportLimitSource { MaxInFlightRequests = 1 }),
+            codec);
+
+        var runTask = session.RunAsync(
+            new MemoryStream(),
+            new TransportPeerIdentity("S-1-5-21-100-200-300-400", "p1-test"))
+            .AsTask();
+        await dispatcher.Started.Task.ConfigureAwait(false);
+        await codec.SecondWrite.Task.ConfigureAwait(false);
+        release.TrySetResult(true);
+        await runTask.ConfigureAwait(false);
+
+        var overload = ProtocolJson.DeserializeResponse(codec.Writes[1]);
+        Assert.Equal(secondCommand.RequestId, overload.RequestId);
+        Assert.Equal(ProtocolOperations.TaskRename, overload.Operation);
+        Assert.False(overload.Ok);
+        Assert.Equal(ProtocolOutcomes.Rejected, overload.Outcome);
+        Assert.NotNull(overload.Error);
+        Assert.Equal(ProtocolErrorCodes.Overloaded, overload.Error!.Code);
+        Assert.True(overload.Error.Retryable);
+        Assert.Null(overload.Payload);
+    }
+
+    private static TaskCompletionSource<bool> NewSignal() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private sealed class NoOpPayloadValidator : ITransportPayloadValidator
+    {
+        public void Validate(ReadOnlyMemory<byte> frame) => Assert.NotEmpty(frame.ToArray());
+    }
+
+    private sealed class ReadyHandshake : ITransportHandshake
+    {
+        private readonly ReadOnlyMemory<byte> response;
+
+        public ReadyHandshake(ReadOnlyMemory<byte> response)
+        {
+            this.response = response;
+        }
+
+        public ValueTask<TransportHandshakeResult> HandleAsync(
+            ReadOnlyMemory<byte> firstOrPendingFrame,
+            TransportPeerIdentity peer,
+            CancellationToken cancellationToken)
+        {
+            _ = firstOrPendingFrame;
+            _ = peer;
+            _ = cancellationToken;
+            return ValueTask.FromResult(new TransportHandshakeResult(
+                Ready: true,
+                CloseConnection: false,
+                ResponseFrame: response));
+        }
+    }
+
+    private sealed class BlockingTransportDispatcher : ITransportRequestDispatcher
+    {
+        private readonly ScriptedFrameCodec codec;
+        private readonly ReadOnlyMemory<byte> response;
+
+        public BlockingTransportDispatcher(
+            ScriptedFrameCodec codec,
+            ReadOnlyMemory<byte> response)
+        {
+            this.codec = codec;
+            this.response = response;
+        }
+
+        public TaskCompletionSource<bool> Started { get; } = NewSignal();
+
+        public TaskCompletionSource<bool>? Release { get; set; }
+
+        public async ValueTask<ReadOnlyMemory<byte>> DispatchAsync(
+            ReadOnlyMemory<byte> requestFrame,
+            TransportPeerIdentity peer)
+        {
+            _ = codec;
+            _ = requestFrame;
+            _ = peer;
+            Started.TrySetResult(true);
+            await Release!.Task.ConfigureAwait(false);
+            return response;
+        }
+    }
+
+    private sealed class ScriptedFrameCodec : ITransportFrameCodec
+    {
+        private readonly Queue<byte[]?> frames;
+        private readonly object gate = new();
+
+        public ScriptedFrameCodec(params byte[]?[] frames)
+        {
+            this.frames = new Queue<byte[]?>(frames);
+        }
+
+        public List<byte[]> Writes { get; } = [];
+
+        public TaskCompletionSource<bool> SecondWrite { get; } = NewSignal();
+
+        public ValueTask<byte[]?> ReadAsync(
+            Stream stream,
+            TimeSpan timeout,
+            CancellationToken cancellationToken = default)
+        {
+            _ = stream;
+            _ = timeout;
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(frames.Dequeue());
+        }
+
+        public ValueTask WriteAsync(
+            Stream stream,
+            ReadOnlyMemory<byte> frame,
+            TimeSpan timeout,
+            CancellationToken cancellationToken = default)
+        {
+            _ = stream;
+            _ = timeout;
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (gate)
+            {
+                Writes.Add(frame.ToArray());
+                if (Writes.Count == 2)
+                {
+                    SecondWrite.TrySetResult(true);
+                }
+            }
+
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class HarnessTransportLimitSource : ITransportLimitSource
+    {
+        public int MaxFrameBytes { get; } = ProtocolLimits.MaxFrameBytes;
+
+        public int MaxCommandPayloadBytes { get; } = ProtocolLimits.MaxWriteCommandPayloadBytes;
+
+        public int MaxEventPayloadBytes { get; } = ProtocolLimits.MaxEventPayloadBytes;
+
+        public int MaxErrorDetailsBytes { get; } = ProtocolLimits.MaxErrorDetailsBytes;
+
+        public int MaxSuccessPayloadBytes { get; } = ProtocolLimits.MaxSuccessPayloadBytes;
+
+        public int MaxJsonDepth { get; } = ProtocolLimits.MaxJsonNestingDepth;
+
+        public int MaxInFlightRequests { get; init; } = ProtocolLimits.MaxInFlightPerConnection;
+
+        public int MaxQueuedRequests { get; } = ProtocolLimits.MaxQueuedRequestsPerProfile;
+
+        public TimeSpan ConnectDeadline { get; } = TimeSpan.FromMilliseconds(ProtocolLimits.ConnectDeadlineMilliseconds);
+
+        public TimeSpan HelloQueryStatusDeadline { get; } = TimeSpan.FromMilliseconds(ProtocolLimits.ReadDeadlineMilliseconds);
+
+        public TimeSpan DefaultMutationTimeout { get; } = TimeSpan.FromMilliseconds(ProtocolLimits.DefaultMutationTimeoutMilliseconds);
+
+        public TimeSpan CancelTimeout { get; } = TimeSpan.FromSeconds(1);
+
+        public TimeSpan AbsoluteRequestDeadline { get; } = TimeSpan.FromMilliseconds(ProtocolLimits.MaxRequestDeadlineMilliseconds);
+    }
+}
+
 internal sealed class InMemoryWriterPersistence : IWriterPersistence
 {
     private readonly object gate = new();
@@ -763,6 +1063,7 @@ internal sealed class InMemoryWriterPersistence : IWriterPersistence
     private int failPersistDomainCount;
     private int failStoreReceiptCount;
     private int failDomainCommitCount;
+    private int failAfterDomainApplyCount;
     private int blockNextDomainCommit;
 
     private long currentRevision;
@@ -789,6 +1090,12 @@ internal sealed class InMemoryWriterPersistence : IWriterPersistence
     {
         get => Volatile.Read(ref failDomainCommitCount);
         set => Volatile.Write(ref failDomainCommitCount, value);
+    }
+
+    public int FailAfterDomainApplyCount
+    {
+        get => Volatile.Read(ref failAfterDomainApplyCount);
+        set => Volatile.Write(ref failAfterDomainApplyCount, value);
     }
 
     public int ReceiptCount
@@ -935,6 +1242,9 @@ internal sealed class InMemoryWriterPersistence : IWriterPersistence
 
     internal bool ConsumeFailPersistDomain() =>
         Consume(ref failPersistDomainCount);
+
+    internal bool ConsumeFailAfterDomainApply() =>
+        Consume(ref failAfterDomainApplyCount);
 
     internal bool ConsumeFailStoreReceipt() =>
         Consume(ref failStoreReceiptCount);
@@ -1088,10 +1398,17 @@ internal sealed class InMemoryWriterPersistence : IWriterPersistence
             if (Kind == WriterTransactionKind.Domain &&
                 persistence.ConsumeFailDomainCommit())
             {
-                throw new InvalidOperationException("Injected commit failure.");
+                throw new WriterCommitRolledBackException(
+                    new InvalidOperationException("Injected commit failure."));
             }
 
             persistence.Apply(this);
+
+            if (Kind == WriterTransactionKind.Domain &&
+                persistence.ConsumeFailAfterDomainApply())
+            {
+                throw new InvalidOperationException("Injected post-commit failure.");
+            }
         }
 
         public ValueTask RollbackAsync(CancellationToken cancellationToken = default)

@@ -33,6 +33,7 @@ public static class RnCj1Canonicalizer
                 "Undefined JSON is not a wire value.");
         }
 
+        ValidateNestingDepth(value);
         var builder = new StringBuilder();
         WriteCanonicalValue(value, builder);
         return ProtocolLimits.StrictUtf8.GetBytes(builder.ToString());
@@ -55,6 +56,10 @@ public static class RnCj1Canonicalizer
                 nameof(effectivePayload));
         }
 
+        // Hashing is the final step of the request validation pipeline. Keeping
+        // the operation schema check here prevents callers that bypass the wire
+        // envelope validator from creating durable hashes for invalid commands.
+        ProtocolOperationSchemas.ValidatePayload(operation, effectivePayload);
         var payload = Canonicalize(effectivePayload);
         if (payload.Length > ProtocolLimits.MaxWriteCommandPayloadBytes)
         {
@@ -182,6 +187,42 @@ public static class RnCj1Canonicalizer
                 throw ProtocolContractException.Invalid(
                     ProtocolErrorCodes.InvalidJson,
                     "Unsupported JSON value kind.");
+        }
+    }
+
+    private static void ValidateNestingDepth(JsonElement root)
+    {
+        var pending = new Stack<(JsonElement Value, int Depth)>();
+        pending.Push((root, 0));
+
+        while (pending.Count > 0)
+        {
+            var (value, depth) = pending.Pop();
+            if (depth > ProtocolLimits.MaxJsonNestingDepth)
+            {
+                throw ProtocolContractException.Invalid(
+                    ProtocolErrorCodes.InvalidJson,
+                    "JSON nesting depth exceeds the protocol limit.");
+            }
+
+            switch (value.ValueKind)
+            {
+                case JsonValueKind.Object:
+                    foreach (var property in value.EnumerateObject())
+                    {
+                        pending.Push((property.Value, depth + 1));
+                    }
+
+                    break;
+
+                case JsonValueKind.Array:
+                    foreach (var item in value.EnumerateArray())
+                    {
+                        pending.Push((item, depth + 1));
+                    }
+
+                    break;
+            }
         }
     }
 

@@ -105,6 +105,8 @@ internal static class ProtocolEnvelopeValidator
                 nameof(response.CommittedRevision));
         }
 
+        ValidateResponseOutcome(response);
+
         if (response.Ok)
         {
             if (response.Error is not null || response.Payload is not { } payload ||
@@ -117,6 +119,11 @@ internal static class ProtocolEnvelopeValidator
             }
 
             ProtocolJsonValueValidation.RequireObject(payload, nameof(response.Payload));
+            if (response.Operation == ProtocolOperations.CommandStatus)
+            {
+                ValidateStatusResponsePayload(payload);
+            }
+
             var payloadBytes = RnCj1Canonicalizer.Canonicalize(payload);
             if (payloadBytes.Length > ProtocolLimits.MaxSuccessPayloadBytes)
             {
@@ -177,8 +184,75 @@ internal static class ProtocolEnvelopeValidator
                 nameof(@event.Payload));
         }
 
-        RequireJsonNonNegativeRevision(fromRevision, "fromRevision");
-        RequireJsonNonNegativeRevision(toRevision, "toRevision");
+        var from = RequireJsonNonNegativeRevision(fromRevision, "fromRevision");
+        var to = RequireJsonNonNegativeRevision(toRevision, "toRevision");
+        if (from > to || @event.Revision != to)
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "changes.available revision metadata must be ordered and end at the event revision.",
+                nameof(@event.Payload));
+        }
+    }
+
+    private static void ValidateResponseOutcome(ProtocolResponse response)
+    {
+        if (response.Replayed != (response.Outcome == ProtocolOutcomes.Replayed))
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "replayed must match the response outcome.",
+                nameof(response.Replayed));
+        }
+
+        if (response.CommittedRevision is { } committedRevision &&
+            committedRevision > response.ServerRevision)
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "committedRevision cannot be ahead of serverRevision.",
+                nameof(response.CommittedRevision));
+        }
+
+        if (response.Ok)
+        {
+            if (ProtocolOperations.IsMutation(response.Operation) &&
+                (response.Outcome is not (ProtocolOutcomes.Changed or ProtocolOutcomes.NoOp or ProtocolOutcomes.Replayed) ||
+                 response.CommittedRevision is null))
+            {
+                throw ProtocolContractException.Invalid(
+                    ProtocolErrorCodes.InvalidRequest,
+                    "A successful response must describe a committed or replayed business result.",
+                    nameof(response.Outcome));
+            }
+        }
+        else if (response.Outcome is ProtocolOutcomes.Changed or ProtocolOutcomes.NoOp)
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "A failed response cannot describe a changed or no-op result.",
+                nameof(response.Outcome));
+        }
+        else if (response.CommittedRevision is not null)
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "A failed response cannot carry committedRevision.",
+                nameof(response.CommittedRevision));
+        }
+    }
+
+    private static void ValidateStatusResponsePayload(JsonElement payload)
+    {
+        var result = new ProtocolStatusResponsePayload(
+            RequireStringProperty(payload, "status"),
+            RequireStringProperty(payload, "operation"),
+            RequireStringProperty(payload, "canonicalPayloadHash"),
+            RequireBooleanProperty(payload, "changed"),
+            RequireNullableNonNegativeRevision(payload, "committedRevision"),
+            RequireNullableStringProperty(payload, "errorCode"),
+            RequireBooleanProperty(payload, "retryable"));
+        result.Validate();
     }
 
     public static void Validate(ProtocolError error)
@@ -271,6 +345,36 @@ internal static class ProtocolEnvelopeValidator
         }
 
         return text;
+    }
+
+    private static bool RequireBooleanProperty(JsonElement objectValue, string name)
+    {
+        var value = RequireProperty(objectValue, name);
+        if (value.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                $"Property '{name}' must be a boolean.",
+                name);
+        }
+
+        return value.GetBoolean();
+    }
+
+    private static string? RequireNullableStringProperty(JsonElement objectValue, string name)
+    {
+        var value = RequireProperty(objectValue, name);
+        return value.ValueKind == JsonValueKind.Null
+            ? null
+            : RequireStringProperty(objectValue, name);
+    }
+
+    private static long? RequireNullableNonNegativeRevision(JsonElement objectValue, string name)
+    {
+        var value = RequireProperty(objectValue, name);
+        return value.ValueKind == JsonValueKind.Null
+            ? null
+            : RequireJsonNonNegativeRevision(value, name);
     }
 
     private static long RequireJsonNonNegativeRevision(JsonElement value, string fieldName)

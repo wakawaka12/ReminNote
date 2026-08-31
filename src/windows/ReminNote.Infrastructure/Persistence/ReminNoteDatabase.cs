@@ -64,4 +64,15 @@ public static class ReminNoteDatabase
         var connectionString = CreateDevelopmentConnectionString(repositoryRoot);
         return ReminNoteDbContext.CreateOptions(connectionString);
     }
+
+    public static ReminNoteDbContext CreateContext(SqliteConnection connection)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        if (connection.State != System.Data.ConnectionState.Open)
+        {
+            throw new InvalidOperationException("The supplied SQLite connection must already be open.");
+        }
+
+        return new ReminNoteDbContext(ReminNoteDbContext.CreateOptions(connection));
+    }
 }

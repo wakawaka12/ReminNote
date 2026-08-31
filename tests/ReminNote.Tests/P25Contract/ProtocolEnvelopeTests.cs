@@ -25,7 +25,7 @@ public sealed class ProtocolEnvelopeTests
             SentAtUtc,
             5_000,
             ProtocolOperations.TaskCreate,
-            ProtocolJson.ParseObject("{\"title\":\"整理房间\",\"timeSpec\":{}}"),
+            ProtocolJson.ParseObject("{\"title\":\"整理房间\",\"timeSpec\":{\"type\":\"ANYTIME\",\"localDate\":\"2026-08-30\"}}"),
             IdempotencyKey,
             7);
 
@@ -33,7 +33,7 @@ public sealed class ProtocolEnvelopeTests
         var text = Encoding.UTF8.GetString(wire);
 
         Assert.Equal(
-            "{\"protocolVersion\":\"1.0\",\"messageType\":\"request\",\"requestId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"clientKind\":\"main\",\"clientInstanceId\":\"019b2b36-4444-7abc-8def-0123456789ac\",\"sentAtUtc\":\"2026-08-30T00:00:00.0000000Z\",\"timeoutMs\":5000,\"operation\":\"command.task.create\",\"payload\":{\"timeSpec\":{},\"title\":\"整理房间\"},\"idempotencyKey\":\"019b2b36-4444-7abc-8def-0123456789ae\",\"expectedRevision\":7}",
+            "{\"protocolVersion\":\"1.0\",\"messageType\":\"request\",\"requestId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"clientKind\":\"main\",\"clientInstanceId\":\"019b2b36-4444-7abc-8def-0123456789ac\",\"sentAtUtc\":\"2026-08-30T00:00:00.0000000Z\",\"timeoutMs\":5000,\"operation\":\"command.task.create\",\"payload\":{\"timeSpec\":{\"localDate\":\"2026-08-30\",\"type\":\"ANYTIME\"},\"title\":\"整理房间\"},\"idempotencyKey\":\"019b2b36-4444-7abc-8def-0123456789ae\",\"expectedRevision\":7}",
             text);
 
         var roundTrip = ProtocolJson.DeserializeRequest(wire);
@@ -260,7 +260,7 @@ public sealed class ProtocolEnvelopeTests
         responseText = responseText.Insert(responseText.Length - 1, ",\"futureField\":1");
         Assert.NotNull(ProtocolJson.DeserializeResponse(Encoding.UTF8.GetBytes(responseText)));
 
-        var requestText = "{\"protocolVersion\":\"1.0\",\"messageType\":\"request\",\"requestId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"clientKind\":\"main\",\"clientInstanceId\":\"019b2b36-4444-7abc-8def-0123456789ac\",\"sentAtUtc\":\"2026-08-30T00:00:00Z\",\"timeoutMs\":5000,\"operation\":\"command.task.create\",\"payload\":{\"title\":\"x\",\"timeSpec\":{}},\"idempotencyKey\":\"019b2b36-4444-7abc-8def-0123456789ae\",\"expectedRevision\":0,\"futureField\":1}";
+        var requestText = "{\"protocolVersion\":\"1.0\",\"messageType\":\"request\",\"requestId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"clientKind\":\"main\",\"clientInstanceId\":\"019b2b36-4444-7abc-8def-0123456789ac\",\"sentAtUtc\":\"2026-08-30T00:00:00Z\",\"timeoutMs\":5000,\"operation\":\"command.task.create\",\"payload\":{\"title\":\"x\",\"timeSpec\":{\"type\":\"ANYTIME\",\"localDate\":\"2026-08-30\"}},\"idempotencyKey\":\"019b2b36-4444-7abc-8def-0123456789ae\",\"expectedRevision\":0,\"futureField\":1}";
         var exception = Assert.Throws<ProtocolContractException>(
             () => ProtocolJson.DeserializeRequest(Encoding.UTF8.GetBytes(requestText)));
         Assert.Equal(ProtocolErrorCodes.UnknownField, exception.Code);
@@ -301,7 +301,7 @@ public sealed class ProtocolEnvelopeTests
                 SentAtUtc,
                 5_000,
                 ProtocolOperations.TaskCreate,
-                ProtocolJson.ParseObject("{\"title\":\"x\",\"timeSpec\":{}}"),
+                ProtocolJson.ParseObject("{\"title\":\"x\",\"timeSpec\":{\"type\":\"ANYTIME\",\"localDate\":\"2026-08-30\"}}"),
                 IdempotencyKey,
                 0)),
             ProtocolMessageTypes.Request,
@@ -353,6 +353,102 @@ public sealed class ProtocolEnvelopeTests
         Assert.Equal(@event.AgentInstanceId, roundTrip.AgentInstanceId);
         Assert.Equal(43, roundTrip.Revision);
         Assert.Equal(42, roundTrip.Payload.GetProperty("fromRevision").GetInt64());
+    }
+
+    [Fact]
+    public void ResponseOutcomeMatrixRejectsContradictorySuccessMetadata()
+    {
+        var missingCommit = new ProtocolResponse(
+            ProtocolVersion.Current,
+            RequestId,
+            ProtocolOperations.TaskCreate,
+            AgentInstanceId,
+            0,
+            ok: true,
+            replayed: false,
+            ProtocolOutcomes.Changed,
+            committedRevision: null,
+            ProtocolJson.ParseObject("{}"),
+            error: null);
+        var mismatchedReplay = new ProtocolResponse(
+            ProtocolVersion.Current,
+            RequestId,
+            ProtocolOperations.TaskCreate,
+            AgentInstanceId,
+            1,
+            ok: true,
+            replayed: false,
+            ProtocolOutcomes.Replayed,
+            committedRevision: 1,
+            ProtocolJson.ParseObject("{}"),
+            error: null);
+        var ahead = new ProtocolResponse(
+            ProtocolVersion.Current,
+            RequestId,
+            ProtocolOperations.TaskCreate,
+            AgentInstanceId,
+            0,
+            ok: true,
+            replayed: false,
+            ProtocolOutcomes.Changed,
+            committedRevision: 1,
+            ProtocolJson.ParseObject("{}"),
+            error: null);
+
+        Assert.Equal(
+            ProtocolErrorCodes.InvalidRequest,
+            Assert.Throws<ProtocolContractException>(missingCommit.Validate).Code);
+        Assert.Equal(
+            ProtocolErrorCodes.InvalidRequest,
+            Assert.Throws<ProtocolContractException>(mismatchedReplay.Validate).Code);
+        Assert.Equal(
+            ProtocolErrorCodes.InvalidRequest,
+            Assert.Throws<ProtocolContractException>(ahead.Validate).Code);
+    }
+
+    [Fact]
+    public void EventRevisionRangeMustBeOrderedAndEndAtEventRevision()
+    {
+        var reversed = new ProtocolEvent(
+            ProtocolVersion.Current,
+            Guid.Parse("019b2b36-4444-7abc-8def-0123456789af"),
+            ProtocolEventTypes.ChangesAvailable,
+            Guid.Parse(AgentInstanceId),
+            SentAtUtc,
+            4,
+            ProtocolJson.ParseObject("{\"fromRevision\":5,\"toRevision\":4}"));
+        var mismatchedEnd = new ProtocolEvent(
+            ProtocolVersion.Current,
+            Guid.Parse("019b2b36-4444-7abc-8def-0123456789af"),
+            ProtocolEventTypes.ChangesAvailable,
+            Guid.Parse(AgentInstanceId),
+            SentAtUtc,
+            5,
+            ProtocolJson.ParseObject("{\"fromRevision\":4,\"toRevision\":6}"));
+
+        Assert.Equal(
+            ProtocolErrorCodes.InvalidRequest,
+            Assert.Throws<ProtocolContractException>(reversed.Validate).Code);
+        Assert.Equal(
+            ProtocolErrorCodes.InvalidRequest,
+            Assert.Throws<ProtocolContractException>(mismatchedEnd.Validate).Code);
+    }
+
+    [Fact]
+    public void StatusPayloadMatrixRejectsCommittedWithoutRevision()
+    {
+        var status = new ProtocolStatusResponsePayload(
+            ProtocolReceiptStatuses.Committed,
+            ProtocolOperations.TaskCreate,
+            new string('a', 64),
+            Changed: true,
+            CommittedRevision: null,
+            ErrorCode: null,
+            Retryable: false);
+
+        Assert.Equal(
+            ProtocolErrorCodes.InvalidRequest,
+            Assert.Throws<ProtocolContractException>(status.Validate).Code);
     }
 
     [Fact]

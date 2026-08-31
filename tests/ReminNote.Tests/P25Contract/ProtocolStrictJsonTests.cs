@@ -6,7 +6,7 @@ namespace ReminNote.Tests.P25Contract;
 public sealed class ProtocolStrictJsonTests
 {
     private const string ValidMutationRequest =
-        "{\"protocolVersion\":\"1.0\",\"messageType\":\"request\",\"requestId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"clientKind\":\"main\",\"clientInstanceId\":\"019b2b36-4444-7abc-8def-0123456789ac\",\"sentAtUtc\":\"2026-08-30T00:00:00Z\",\"timeoutMs\":5000,\"operation\":\"command.task.create\",\"payload\":{\"title\":\"x\",\"timeSpec\":{}},\"idempotencyKey\":\"019b2b36-4444-7abc-8def-0123456789ae\",\"expectedRevision\":0}";
+        "{\"protocolVersion\":\"1.0\",\"messageType\":\"request\",\"requestId\":\"019b2b36-4444-7abc-8def-0123456789ab\",\"clientKind\":\"main\",\"clientInstanceId\":\"019b2b36-4444-7abc-8def-0123456789ac\",\"sentAtUtc\":\"2026-08-30T00:00:00Z\",\"timeoutMs\":5000,\"operation\":\"command.task.create\",\"payload\":{\"title\":\"x\",\"timeSpec\":{\"type\":\"ANYTIME\",\"localDate\":\"2026-08-30\"}},\"idempotencyKey\":\"019b2b36-4444-7abc-8def-0123456789ae\",\"expectedRevision\":0}";
 
     [Theory]
     [InlineData("timeoutMs", "0", ProtocolErrorCodes.InvalidRequest)]
@@ -54,7 +54,7 @@ public sealed class ProtocolStrictJsonTests
     public void RequestRejectsMissingRequiredFieldsAndUnknownWritePayloadFields()
     {
         var missing = ValidMutationRequest.Replace(
-            ",\"timeSpec\":{}",
+            ",\"timeSpec\":{\"type\":\"ANYTIME\",\"localDate\":\"2026-08-30\"}",
             string.Empty,
             StringComparison.Ordinal);
         var missingException = Assert.Throws<ProtocolContractException>(
@@ -62,8 +62,8 @@ public sealed class ProtocolStrictJsonTests
         Assert.Equal(ProtocolErrorCodes.MissingField, missingException.Code);
 
         var unknown = ValidMutationRequest.Replace(
-            "\"timeSpec\":{}",
-            "\"timeSpec\":{},\"notAllowed\":true",
+            "\"timeSpec\":{\"type\":\"ANYTIME\",\"localDate\":\"2026-08-30\"}",
+            "\"timeSpec\":{\"type\":\"ANYTIME\",\"localDate\":\"2026-08-30\"},\"notAllowed\":true",
             StringComparison.Ordinal);
         var unknownException = Assert.Throws<ProtocolContractException>(
             () => ProtocolJson.DeserializeRequest(Encoding.UTF8.GetBytes(unknown)));

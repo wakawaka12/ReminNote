@@ -4,9 +4,10 @@ using Microsoft.Data.Sqlite;
 namespace ReminNote.Infrastructure.Persistence.P25;
 
 /// <summary>
-/// Creates the P2.5 storage fixture schema. This is intentionally separate
-/// from ReminNoteDbContext and EF migrations; the integration window must
-/// review and wire a real migration later.
+/// Provides the test-fixture initializer and post-migration profile bootstrap
+/// for P2.5 storage. Production first applies the formal EF migration and then
+/// calls EnsureProfileAsync; InitializeAsync remains available for isolated
+/// storage tests that intentionally do not use the product DbContext.
 /// </summary>
 public static class P25StorageSchema
 {
@@ -98,32 +99,7 @@ public static class P25StorageSchema
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        await ExecuteNonQueryAsync(
-                connection,
-                "PRAGMA foreign_keys = ON;",
-                transaction: null,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        var journalMode = await ExecuteScalarStringAsync(
-                connection,
-                "PRAGMA journal_mode = WAL;",
-                transaction: null,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        if (requireWal && !string.Equals(journalMode, "wal", StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException(
-                $"P2.5 storage requires WAL, but SQLite reported '{journalMode}'.");
-        }
-
-        await ExecuteNonQueryAsync(
-                connection,
-                "PRAGMA busy_timeout = 5000;",
-                transaction: null,
-                cancellationToken)
-            .ConfigureAwait(false);
+        await ConfigureConnectionAsync(connection, requireWal, cancellationToken).ConfigureAwait(false);
 
         using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
         try
@@ -161,6 +137,87 @@ public static class P25StorageSchema
             transaction.Rollback();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Configures an already migrated database and creates the resolved
+    /// profile's initial revision row without issuing any DDL. Production
+    /// composition calls this after EF has applied the additive migration;
+    /// fixture composition continues to use InitializeAsync above.
+    /// </summary>
+    public static async ValueTask EnsureProfileAsync(
+        SqliteConnection connection,
+        string profileScope,
+        bool requireWal = true,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentException.ThrowIfNullOrWhiteSpace(profileScope);
+
+        if (connection.State != System.Data.ConnectionState.Open)
+        {
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await ConfigureConnectionAsync(connection, requireWal, cancellationToken).ConfigureAwait(false);
+        using var transaction = connection.BeginTransaction(IsolationLevel.Serializable);
+        try
+        {
+            await ExecuteNonQueryAsync(
+                    connection,
+                    """
+                    INSERT INTO revision_state (
+                        profile_scope,
+                        current_revision,
+                        oldest_available_revision
+                    )
+                    VALUES ($profileScope, 0, 0)
+                    ON CONFLICT (profile_scope) DO NOTHING;
+                    """,
+                    transaction,
+                    cancellationToken,
+                    command => command.Parameters.AddWithValue("$profileScope", profileScope))
+                .ConfigureAwait(false);
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.Rollback();
+            throw;
+        }
+    }
+
+    private static async ValueTask ConfigureConnectionAsync(
+        SqliteConnection connection,
+        bool requireWal,
+        CancellationToken cancellationToken)
+    {
+        await ExecuteNonQueryAsync(
+                connection,
+                "PRAGMA foreign_keys = ON;",
+                transaction: null,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var journalMode = await ExecuteScalarStringAsync(
+                connection,
+                "PRAGMA journal_mode = WAL;",
+                transaction: null,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (requireWal && !string.Equals(journalMode, "wal", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"P2.5 storage requires WAL, but SQLite reported '{journalMode}'.");
+        }
+
+        await ExecuteNonQueryAsync(
+                connection,
+                "PRAGMA busy_timeout = 5000;",
+                transaction: null,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static async ValueTask<int> ExecuteNonQueryAsync(
