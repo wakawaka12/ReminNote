@@ -133,3 +133,12 @@
 - 决策：P2 每完成一个可独立验收的大模块就创建一个本地 Git commit。提交前必须同步 Slice/报告记录实现范围、实际构建与测试证据、人工验收步骤、失败判定和剩余风险；提交只代表当前工作树的本地检查点。除非用户另行明确授权，任何检查点都不自动 push、tag、release 或合并到远端。
 - 原因：让长周期 P2 开发具备可回溯、可审查的边界，同时保留用户对公开 GitHub 时间点的明确控制；“最终严格开源”是项目发布方向，不自动改变当前发布授权。
 - 结果：P2-00、Today/Parser/持久化、Main TODAY、Widget、最终验收分别形成可识别的本地提交；若某模块验证失败，不得伪装为完成提交，必须在记录中写明失败并继续修复或报告阻塞。
+
+## ADR-0018：P2.75 采用候选库迁移与 fail-closed 数据安全门禁
+
+- 日期：2026-08-31
+- 状态：冻结候选，待总成审查接受
+- 决策：P2.75 固定执行 `Resolve → Quiesce/Lock → Backup → Stage → Forward Migration → Verify → Atomic Promote → Startup`。已有 Active DB 时，先生成可独立读取、带 manifest/hash 的 Safety Backup，再从该快照创建 Candidate；所有 migration 只修改 Candidate，只有 schema/history、SQLite integrity、foreign key、关键旧数据和 artifact 校验均通过后才允许 atomic promote。Active DB、backup、失败 Candidate 和状态 marker 在失败时保留，禁止 EF `Down`、删库重建、破坏性原地修复和 P2 direct-writer fallback。
+- 决策：迁移状态保存在 profile 外部的 `runtime/migration-state.json`，状态至少区分 `READY`、`MIGRATION_REQUIRED`、`BACKUP_FAILED`、`MIGRATION_FAILED`、`VERIFY_FAILED`、`PROMOTION_UNKNOWN`、`RECOVERY_REQUIRED` 和 `RECOVERY_FAILED`；任何非 `READY` 状态都不允许普通业务写入。用户只能通过 bounded `recovery-status` 和明确确认的已验证 backup restore 进入最小恢复路径，数据库操作仍由 Agent recovery actor 负责，Bootstrap 不打开业务库。
+- 原因：P2.5 已建立 Agent 唯一 writer、显式 profile/root 和 SQLite consistency 基础，但当前 Agent 启动仍在安全门禁前直接打开活动库并执行 migration。候选库与原始快照分离可以把复制、迁移、验证、切换和失败重启分别验收，避免把唯一原文件当作修复现场；外部 marker 让未迁移/损坏数据库仍有可解释的启动状态。
+- 结果：备份命名/manifest/hash、原库保护、failure code/state、verify checklist、恢复入口、forward upgrade、人工回滚和证据分类统一记录在 [P2.75-00 契约冻结](docs/slices/P2.75-00-contract-freeze.md)。P2.75 不引入完整 Recovery Center、自动 retention、加密、智能合并或 updater；这些变更必须另建安全契约。本文和 ADR 在总成接受前仅作为 non-runnable 实现输入。

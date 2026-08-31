@@ -58,6 +58,49 @@ P2 手工验收必须在同一仓库根目录分别启动 Main 和 Widget，确�
 
 自动化或手工失败包括：未来任务进入 Today、已完成历史任务误显示、跨午夜换日丢失或换组、RANGE 自动变 `MISSED`、Parser 静默丢弃标签/优先级、结果或计划历史缺失、已有结果仍可改时间、继续关系错误、排序改写计划时间、写门超时静默覆盖、ViewModel 直写数据库、migration 删除原库、Main 仍以 Mock 作为 P2 真实入口，或审查材料被修改。
 
+## P2.75 最低迁移与数据安全门禁
+
+P2.75-00 的状态、路径、备份命名、失败 code、Candidate、恢复入口、升级/回滚和完整
+验收矩阵以 [`docs/slices/P2.75-00-contract-freeze.md`](docs/slices/P2.75-00-contract-freeze.md)
+为准。本节只保留测试执行边界：
+
+- 自动化、CLI/harness、隔离真实进程和用户正常桌面证据必须分开记录；fake 或 CLI 不等于
+  用户签字；
+- 所有迁移验证都使用新的临时 `data-root`/profile 或隔离 clone；禁止读取或写入
+  `D:\Anime\.devdata\reminnote.sqlite`，禁止把测试数据复制回任何正式 `.devdata`；
+- 正常路径必须证明 `Backup → Stage → Forward Migration → Verify → Atomic Promote → Startup`；
+  失败路径必须证明 Active DB、Safety Backup、失败 Candidate 和 marker 保留且普通写入停止；
+- 只读 SQL 断言至少包括 `PRAGMA integrity_check` 精确为 `ok`、`PRAGMA foreign_key_check` 零行、
+  `__EFMigrationsHistory` 顺序、schema allow-list 和 P1/P2/P2.5 关键行数/ID 保留；
+- 第二次启动不得重复 migration history、Task、History、revision、journal 或 receipt；恢复
+  必须先把 backup 放入 Candidate 并验证，不能直接覆盖 Active DB、执行 EF `Down` 或删库重建。
+
+### P2.75 隔离人工验收
+
+环境准备（仅示例；具体 Bootstrap option 由 P2.75-02/03 接入后执行）：
+
+```powershell
+$testRoot = Join-Path ([IO.Path]::GetTempPath()) ('ReminNote-P275-' + [Guid]::NewGuid().ToString('N'))
+$testDataRoot = Join-Path $testRoot 'data'
+New-Item -ItemType Directory -Path $testDataRoot -Force | Out-Null
+```
+
+使用 `--data-root $testDataRoot --profile p275-gate` 准备带旧 Task/Result/History 的 seed，
+然后依次执行：
+
+1. 启动 migration gate，确认先有可读 backup/manifest，再有 Candidate migration 和 verify；
+   verify 前 Active DB hash/长度/sidecar generation 不变。
+2. 观察成功后 Agent 才报告 `ready=true,writable=true`，再启动 Main/Widget；第二次启动核对
+   history、关键行数/ID 和业务事实没有重复。
+3. 注入 backup 目录权限/空间失败、lock 失败、schema/apply 失败、integrity/FK/history
+   verify 失败和 promote unknown；每次确认状态 code 明确、普通写入 disabled、没有 P2 fallback。
+4. 运行 `--recovery-status`，再明确 `--recovery-restore <backup-artifact-id> --confirm`；
+   确认恢复先生成/验证 Candidate，成功后才 atomic promote，失败仍停在 recovery 状态。
+5. 关闭并清理本次创建且已核对绝对路径的临时目录；不要清理仓库 `.devdata` 作为修复手段。
+
+任一备份缺失、原库被覆盖/删除、验证被跳过、未 ready 仍可写、恢复接受任意路径、marker
+损坏却被当作 READY，或把 CLI/fake 记录成用户签字，均为 P2.75 gate 失败。
+
 ## P0-07 自动验证补充
 
 ```powershell

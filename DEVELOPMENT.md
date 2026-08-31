@@ -26,6 +26,17 @@ SDK 版本由 `global.json` 固定到 .NET 10.0.100，并允许同一 LTS 小版
 
 `verify-p0-07.ps1` 检查 `global.json`、解决方案 Widget 登记、所有项目 lock 文件、默认资源键/非空值、Shell/TODAY/ANIME/Widget 的基础 UI Automation 标记和开发数据清理边界。它不能替代真实 UI 操作测试。
 
+## P2.75 当前开发边界
+
+P2.75-00 只冻结最低迁移与数据安全契约，不在本窗口接入生产 migration runner、backup
+实现或 Recovery UI。后续实现必须使用独立临时 `data-root`/profile；不得读取或写入
+`D:\Anime\.devdata\reminnote.sqlite`，也不得把测试库复制回仓库 `.devdata`。
+
+迁移固定遵循 `Backup → Stage → Forward Migration → Verify → Atomic Promote → Startup`：
+Active DB 在 Candidate 验证成功前不得被写、删或覆盖，失败时 Agent not-ready、普通写入
+停止，Bootstrap 不打开业务库，Main/Widget 不得恢复 P2 direct writer。完整状态和验收矩阵
+见 [`docs/slices/P2.75-00-contract-freeze.md`](docs/slices/P2.75-00-contract-freeze.md)。
+
 ## 已冻结依赖边界
 
 - `CommunityToolkit.Mvvm` 8.4.2：用于 ObservableObject 和 RelayCommand；MIT；Microsoft/.NET Foundation 维护。

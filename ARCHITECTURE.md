@@ -42,6 +42,24 @@ Core 必须独立于 WPF、EF Core、Serilog 和 Windows API。Infrastructure �
 
 P2.5 完成后，Agent 是唯一业务写入者；Main App 通过 IPC 发命令并使用安全的只读查询路径。
 
+## P2.75 最低迁移与恢复边界
+
+P2.75 的迁移/恢复由 Agent 的 storage/recovery actor 负责。Bootstrap 只负责启动协调、
+读取不含业务内容的 runtime marker、向用户暴露状态和进入 recovery mode；它不得打开业务
+SQLite、创建 DbContext、执行 EF migration、复制/恢复数据库或提交业务命令。
+
+已有 Active DB 必须先生成独立可读的 Safety Backup，再从该快照建立 Candidate。Forward
+migration、schema 初始化和验证只允许作用于 Candidate；`integrity_check`、foreign-key、
+migration history、schema 和关键旧数据验证全部通过后才可原子切换 Active DB。切换失败、
+状态不明或 marker 不可解释时，Agent 报 not-ready，Main/Widget 只读或 unavailable，不能
+恢复 P2 `TaskWorkspace`、跨进程写门或其他 direct-writer fallback。
+
+P2.75 的失败状态位于 profile 的 `runtime/migration-state.json`，不依赖可能损坏或尚未迁移
+的业务库。安全备份、失败 Candidate、原始 generation 和 manifest 保留；回滚只能从已验证
+的迁移前备份创建新的 Candidate 后再切换，不执行 EF `Down` 或删库重建。完整 Recovery
+Center、加密、智能合并、自动 retention 和 updater 不属于该边界，详见
+[`docs/slices/P2.75-00-contract-freeze.md`](docs/slices/P2.75-00-contract-freeze.md)。
+
 ## P2 本地 Task loop 边界
 
 P2 在 Agent 迁移前允许 Main 和 Widget 通过同一组
