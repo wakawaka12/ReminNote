@@ -27,6 +27,11 @@ internal static class AgentRuntime
 
         try
         {
+            if (AgentRecoveryCommandLine.IsRecoveryInvocation(args))
+            {
+                return await RunRecoveryCommandAsync(args).ConfigureAwait(false);
+            }
+
             var profile = TransportProfileResolver.ResolveForCurrentUser(
                 ParseArguments(args),
                 new ProtocolTransportProfileContractAdapter());
@@ -148,6 +153,59 @@ internal static class AgentRuntime
             Console.Error.WriteLine($"ReminNote Agent failed: {exception.Message}");
             return 1;
         }
+    }
+
+    private static async Task<int> RunRecoveryCommandAsync(string[] args)
+    {
+        try
+        {
+            var command = AgentRecoveryCommandLine.Parse(args);
+            var executor = new AgentRecoveryCommandExecutor(new RecoveryActorNotConfigured());
+            var result = await executor.ExecuteAsync(command).ConfigureAwait(false);
+            if (result.Status is { } status)
+            {
+                WriteRecoveryStatus(status);
+            }
+            else if (result.FailureCode is { } failureCode)
+            {
+                Console.Error.WriteLine($"failureCode={failureCode}");
+            }
+
+            return result.ExitCode;
+        }
+        catch (AgentRecoveryCommandException exception)
+        {
+            Console.Error.WriteLine($"failureCode={exception.FailureCode}");
+            return 2;
+        }
+        catch (OperationCanceledException)
+        {
+            return 1;
+        }
+        catch (Exception)
+        {
+            Console.Error.WriteLine(
+                $"failureCode={P275MigrationFailureCodes.RecoveryRequired}");
+            return 1;
+        }
+    }
+
+    private static void WriteRecoveryStatus(P275RecoveryStatus status)
+    {
+        Console.WriteLine($"mode={status.Mode}");
+        Console.WriteLine($"state={P275MigrationStateNames.ToValue(status.State)}");
+        Console.WriteLine($"ready={status.Ready.ToString().ToLowerInvariant()}");
+        Console.WriteLine($"writable={status.Writable.ToString().ToLowerInvariant()}");
+        Console.WriteLine($"recoveryRequired={status.RecoveryRequired.ToString().ToLowerInvariant()}");
+        Console.WriteLine($"failureCode={status.FailureCode ?? string.Empty}");
+        Console.WriteLine($"runId={status.RunId ?? string.Empty}");
+        Console.WriteLine($"profileScope={status.ProfileScope ?? string.Empty}");
+        Console.WriteLine($"sourceSchema={string.Join(',', status.SourceSchema)}");
+        Console.WriteLine($"targetSchema={string.Join(',', status.TargetSchema)}");
+        Console.WriteLine($"backupArtifact={status.BackupArtifact ?? string.Empty}");
+        Console.WriteLine($"backupHashStatus={status.BackupHashStatus}");
+        Console.WriteLine($"candidateArtifact={status.CandidateArtifact ?? string.Empty}");
+        Console.WriteLine($"nextAction={status.NextAction}");
     }
 
     private static async Task IgnorePipeTaskAsync(Task pipeTask)
@@ -336,5 +394,18 @@ internal static class AgentRuntime
         }
 
         return new TransportProfileArguments(dataRoot, repoRoot, profile);
+    }
+
+    private sealed class RecoveryActorNotConfigured : IAgentRecoveryActor
+    {
+        public ValueTask<AgentRecoveryOperationResult> RestoreAsync(
+            AgentRecoveryRestoreRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            _ = request;
+            _ = cancellationToken;
+            return ValueTask.FromResult(
+                AgentRecoveryOperationResult.Failed(P275MigrationFailureCodes.RecoveryRequired));
+        }
     }
 }

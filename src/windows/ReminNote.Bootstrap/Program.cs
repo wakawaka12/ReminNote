@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using ReminNote.Agent.Runtime;
+using ReminNote.Infrastructure.Persistence.P275;
 
 namespace ReminNote.Bootstrap;
 
@@ -24,6 +25,11 @@ internal static class Program
 
         try
         {
+            if (AgentRecoveryCommandLine.IsRecoveryInvocation(args))
+            {
+                return await RunRecoveryCommandAsync(args).ConfigureAwait(false);
+            }
+
             var options = BootstrapOptions.Parse(args);
             Directory.CreateDirectory(Path.Combine(options.RepositoryRoot, ".devdata"));
 
@@ -98,6 +104,113 @@ internal static class Program
             Console.Error.WriteLine($"ReminNote Bootstrap failed: {exception.Message}");
             return 1;
         }
+    }
+
+    private static async Task<int> RunRecoveryCommandAsync(string[] args)
+    {
+        try
+        {
+            var command = AgentRecoveryCommandLine.Parse(args);
+            var adapter = new AgentRecoveryCommandAdapter();
+            var profile = adapter.ResolveProfile(command);
+            if (command.Kind == AgentRecoveryCommandKind.Status)
+            {
+                var status = await AgentRecoveryCommandAdapter.ReadStatusAsync(profile).ConfigureAwait(false);
+                WriteRecoveryStatus(status);
+                return status.Mode == P275RecoveryStatusMode.Unavailable
+                    ? 1
+                    : 0;
+            }
+
+            _ = AgentRecoveryCommandAdapter.CreateRestoreRequest(profile, command);
+            using var agent = StartRecoveryAgent(command, args);
+            var errorOutputTask = agent.StandardError.ReadToEndAsync();
+            await agent.WaitForExitAsync().ConfigureAwait(false);
+            var errorOutput = await errorOutputTask.ConfigureAwait(false);
+            WriteRecoveryAgentFailure(errorOutput, agent.ExitCode);
+            return agent.ExitCode;
+        }
+        catch (AgentRecoveryCommandException exception)
+        {
+            Console.Error.WriteLine($"failureCode={exception.FailureCode}");
+            return 2;
+        }
+        catch (Exception)
+        {
+            Console.Error.WriteLine(
+                $"failureCode={P275MigrationFailureCodes.RecoveryRequired}");
+            return 1;
+        }
+    }
+
+    private static Process StartRecoveryAgent(
+        AgentRecoveryCommandLine command,
+        IReadOnlyList<string> originalArguments)
+    {
+        var searchRoot = command.RepoRoot ?? Directory.GetCurrentDirectory();
+        var executable = ResolveExecutable(searchRoot, "ReminNote.Agent", "net10.0");
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = executable,
+            WorkingDirectory = Directory.Exists(searchRoot)
+                ? Path.GetFullPath(searchRoot)
+                : AppContext.BaseDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardError = true
+        };
+        foreach (var argument in originalArguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        return Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start the Agent recovery actor.");
+    }
+
+    private static void WriteRecoveryAgentFailure(string output, int exitCode)
+    {
+        if (exitCode == 0)
+        {
+            return;
+        }
+
+        foreach (var line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            const string prefix = "failureCode=";
+            if (!line.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var failureCode = line[prefix.Length..];
+            if (P275MigrationFailureCodes.IsKnown(failureCode))
+            {
+                Console.Error.WriteLine($"failureCode={failureCode}");
+                return;
+            }
+        }
+
+        Console.Error.WriteLine($"failureCode={P275MigrationFailureCodes.RestoreFailed}");
+    }
+
+    private static void WriteRecoveryStatus(
+        P275RecoveryStatus status)
+    {
+        Console.WriteLine($"mode={status.Mode}");
+        Console.WriteLine($"state={P275MigrationStateNames.ToValue(status.State)}");
+        Console.WriteLine($"ready={status.Ready.ToString().ToLowerInvariant()}");
+        Console.WriteLine($"writable={status.Writable.ToString().ToLowerInvariant()}");
+        Console.WriteLine($"recoveryRequired={status.RecoveryRequired.ToString().ToLowerInvariant()}");
+        Console.WriteLine($"failureCode={status.FailureCode ?? string.Empty}");
+        Console.WriteLine($"runId={status.RunId ?? string.Empty}");
+        Console.WriteLine($"profileScope={status.ProfileScope ?? string.Empty}");
+        Console.WriteLine($"sourceSchema={string.Join(',', status.SourceSchema)}");
+        Console.WriteLine($"targetSchema={string.Join(',', status.TargetSchema)}");
+        Console.WriteLine($"backupArtifact={status.BackupArtifact ?? string.Empty}");
+        Console.WriteLine($"backupHashStatus={status.BackupHashStatus}");
+        Console.WriteLine($"candidateArtifact={status.CandidateArtifact ?? string.Empty}");
+        Console.WriteLine($"nextAction={status.NextAction}");
     }
 
     private static async Task<Process> StartAgentWithReadinessAsync(
