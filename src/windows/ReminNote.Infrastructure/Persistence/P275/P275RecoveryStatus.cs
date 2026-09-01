@@ -214,7 +214,17 @@ public sealed class P275RecoveryStatusReader
             }
 
             var manifest = DeserializeManifest(payload);
+            P275RecoveryBackupReader.ValidateManifest(
+                manifest,
+                marker.ProfileScope,
+                marker.BackupArtifact);
             var artifactPath = layout.GetBackupPath(marker.BackupArtifact);
+            if (!P275FileSafety.IsRegularFile(artifactPath) ||
+                P275CandidateSidecarFinalizer.EnumerateSidecars(artifactPath).Count != 0)
+            {
+                throw new FormatException("The backup artifact is not a standalone file.");
+            }
+
             var artifactLength = new FileInfo(artifactPath).Length;
             var matches =
                 string.Equals(manifest.ContractVersion, SafetyBackupContract.ContractVersion, StringComparison.Ordinal) &&

@@ -1,5 +1,8 @@
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using ReminNote.Core.Protocol;
+using ReminNote.Infrastructure.Persistence.Backup;
 using ReminNote.Infrastructure.Persistence.P275;
 
 namespace ReminNote.Tests.P275;
@@ -231,6 +234,95 @@ public sealed class P275MigrationStateTests
             Assert.False(status.Writable);
             Assert.Equal(P275MigrationFailureCodes.RecoveryBackupInvalid, status.FailureCode);
             Assert.Equal(P275MigrationNextActions.ViewStatus, status.NextAction);
+        }
+        finally
+        {
+            DeleteTempRoot(root);
+        }
+    }
+
+    [Fact]
+    public async Task ReadyWithMalformedBackupManifestIsForcedToRecoveryRequired()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var root = CreateTempRoot();
+        try
+        {
+            var layout = new P275ProfileLayout(root);
+            var profileScope = CreateProfileScope(root);
+            Directory.CreateDirectory(layout.BackupsDirectory);
+            var artifact = "migration-empty-target-20260831T000000000Z-00000000-0000-0000-0000-000000000000.sqlite";
+            var artifactBytes = new byte[] { 1, 2, 3 };
+            var artifactSha256 = Convert.ToHexString(SHA256.HashData(artifactBytes)).ToLowerInvariant();
+            await File.WriteAllBytesAsync(
+                layout.GetBackupPath(artifact),
+                artifactBytes,
+                cancellationToken);
+
+            var marker = CreateMarker(
+                profileScope,
+                P275MigrationState.Ready,
+                failureCode: null,
+                P275MigrationNextActions.None,
+                backupArtifact: artifact,
+                backupSha256: artifactSha256);
+            await new P275MigrationStateStore(layout).WriteAsync(marker, cancellationToken);
+
+            var manifest = new SafetyBackupManifest(
+                SafetyBackupContract.ContractVersion,
+                marker.RunId.ToString("D"),
+                marker.ProfileScope,
+                marker.SourceSchema,
+                marker.TargetSchema,
+                "2026-09-01T00:00:00.0000000Z",
+                artifact,
+                artifactBytes.Length,
+                artifactSha256,
+                new SafetyBackupSourceFingerprint(
+                    artifactBytes.Length,
+                    artifactSha256,
+                    new string('a', 64),
+                    new SafetyBackupSidecarFingerprint(false, 0, null),
+                    new SafetyBackupSidecarFingerprint(false, 0, null),
+                    new SafetyBackupSidecarFingerprint(false, 0, null)),
+                SafetyBackupContract.VerifiedResult);
+            var manifestPath = layout.GetManifestPath(Path.ChangeExtension(artifact, ".json"));
+            await File.WriteAllTextAsync(
+                manifestPath,
+                JsonSerializer.Serialize(manifest),
+                cancellationToken);
+
+            var valid = await new P275RecoveryStatusReader(layout).ReadAsync(
+                profileScope,
+                cancellationToken);
+            Assert.Equal(P275RecoveryStatusMode.Ready, valid.Mode);
+            Assert.Equal(P275BackupManifestStatus.Matches, valid.ManifestStatus);
+
+            var sidecarPath = layout.GetBackupPath(artifact) + "-wal";
+            await File.WriteAllBytesAsync(sidecarPath, [9], cancellationToken);
+            var sidecarStatus = await new P275RecoveryStatusReader(layout).ReadAsync(
+                profileScope,
+                cancellationToken);
+            Assert.Equal(P275RecoveryStatusMode.RecoveryRequired, sidecarStatus.Mode);
+            Assert.Equal(P275BackupManifestStatus.Unreadable, sidecarStatus.ManifestStatus);
+            Assert.False(sidecarStatus.Ready);
+            Assert.False(sidecarStatus.Writable);
+            File.Delete(sidecarPath);
+
+            var malformed = manifest with { CreatedAtUtc = "2026-09-01T00:00:00Z" };
+            await File.WriteAllTextAsync(
+                manifestPath,
+                JsonSerializer.Serialize(malformed),
+                cancellationToken);
+
+            var status = await new P275RecoveryStatusReader(layout).ReadAsync(
+                profileScope,
+                cancellationToken);
+            Assert.Equal(P275RecoveryStatusMode.RecoveryRequired, status.Mode);
+            Assert.Equal(P275BackupManifestStatus.Unreadable, status.ManifestStatus);
+            Assert.False(status.Ready);
+            Assert.False(status.Writable);
+            Assert.Equal(P275MigrationFailureCodes.RecoveryBackupInvalid, status.FailureCode);
         }
         finally
         {

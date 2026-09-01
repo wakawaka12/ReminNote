@@ -179,7 +179,7 @@ public sealed class P275RecoveryBackupReader
                ?? throw new FormatException("The backup manifest is empty.");
     }
 
-    private static void ValidateManifest(
+    internal static void ValidateManifest(
         SafetyBackupManifest manifest,
         string expectedProfileScope,
         string artifactId)
