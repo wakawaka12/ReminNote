@@ -126,10 +126,13 @@ public sealed class StartupAndMainUiInteractionTests
         using var primary = new SingleInstanceCoordinator(
             $"Local\\ReminNote.Tests.Main.{suffix}",
             $"ReminNote.Tests.Main.{suffix}");
-        using var secondary = await Task.Run(
+        using var secondary = await Task.Factory.StartNew(
             () => new SingleInstanceCoordinator(
                 $"Local\\ReminNote.Tests.Main.{suffix}",
-                $"ReminNote.Tests.Main.{suffix}"));
+                $"ReminNote.Tests.Main.{suffix}"),
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
         var activated = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         Assert.True(primary.IsPrimary);
@@ -147,10 +150,13 @@ public sealed class StartupAndMainUiInteractionTests
         using var primary = new WidgetSingleInstanceCoordinator(
             $"Local\\ReminNote.Tests.Widget.{suffix}",
             $"ReminNote.Tests.Widget.{suffix}");
-        using var secondary = await Task.Run(
+        using var secondary = await Task.Factory.StartNew(
             () => new WidgetSingleInstanceCoordinator(
                 $"Local\\ReminNote.Tests.Widget.{suffix}",
-                $"ReminNote.Tests.Widget.{suffix}"));
+                $"ReminNote.Tests.Widget.{suffix}"),
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
         var activated = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         Assert.True(primary.IsPrimary);
