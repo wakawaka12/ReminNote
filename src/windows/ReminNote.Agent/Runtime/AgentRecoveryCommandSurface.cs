@@ -332,9 +332,11 @@ public sealed class AgentRecoveryCommandExecutor
 
         var restoreRequest = AgentRecoveryCommandAdapter.CreateRestoreRequest(profile, command);
         var result = await recoveryActor.RestoreAsync(restoreRequest, cancellationToken).ConfigureAwait(false);
+        var restoreStatus = await AgentRecoveryCommandAdapter.ReadStatusAsync(profile, cancellationToken)
+            .ConfigureAwait(false);
         return new(
             result.Succeeded ? 0 : 1,
-            Status: null,
+            restoreStatus,
             result.FailureCode);
     }
 }

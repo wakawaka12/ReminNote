@@ -115,3 +115,68 @@ public sealed class P275FileMigrationLockProvider : IP275MigrationLockProvider
         }
     }
 }
+
+/// <summary>
+/// Profile-local quiescence lease. The Agent acquires it before any business
+/// endpoint is started; the same lease is available to the future P2.5 writer
+/// adapter so a writer cannot run while a migration owns the profile.
+/// </summary>
+public sealed class P275FileWriterQuiescence : IP275WriterQuiescence
+{
+    public ValueTask<IP275WriterQuiescenceLease> AcquireAsync(
+        P275ProfilePaths paths,
+        string runId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(runId);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            paths.EnsureRuntimeDirectories();
+            var stream = new FileStream(
+                paths.WriterQuiescencePath,
+                FileMode.OpenOrCreate,
+                FileAccess.ReadWrite,
+                FileShare.None,
+                bufferSize: 128,
+                options: FileOptions.WriteThrough);
+            var bytes = System.Text.Encoding.UTF8.GetBytes(runId);
+            stream.SetLength(0);
+            stream.Write(bytes, 0, bytes.Length);
+            stream.Flush(flushToDisk: true);
+            return ValueTask.FromResult<IP275WriterQuiescenceLease>(
+                new P275FileWriterQuiescenceLease(stream));
+        }
+        catch (IOException)
+        {
+            return ValueTask.FromResult<IP275WriterQuiescenceLease>(null!);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return ValueTask.FromResult<IP275WriterQuiescenceLease>(null!);
+        }
+    }
+
+    private sealed class P275FileWriterQuiescenceLease : IP275WriterQuiescenceLease
+    {
+        private readonly FileStream stream;
+        private int disposed;
+
+        public P275FileWriterQuiescenceLease(FileStream stream)
+        {
+            this.stream = stream;
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref disposed, 1) != 0)
+            {
+                return;
+            }
+
+            await stream.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+}

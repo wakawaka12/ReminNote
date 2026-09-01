@@ -1,13 +1,13 @@
+using System.Runtime.Versioning;
 using ReminNote.Agent.Transport;
 using ReminNote.Infrastructure.Persistence.P275;
 
 namespace ReminNote.Agent.Runtime;
 
 /// <summary>
-/// Adapter seam between the Agent host and the P2.75-01/03 providers. The
-/// providers are intentionally not duplicated in this slice. Until the total
-/// assembly supplies them, the default composition returns a stable
-/// fail-closed recovery-required result.
+/// The single Agent composition root for the P2.75 migration and recovery
+/// actors. Provider implementations remain in Infrastructure; this class is
+/// the only place that assembles them into the Agent runtime.
 /// </summary>
 internal sealed class AgentMigrationStartupComposition
 {
@@ -15,8 +15,7 @@ internal sealed class AgentMigrationStartupComposition
         [
             "20260828025922_InitialTaskSchema",
             "20260828120000_P2TaskLoop",
-            "20260828130000_P2ContinuationDeleteBoundary",
-            "20260831090000_P25StorageConsistency"
+            "20260828130000_P2ContinuationDeleteBoundary"
         ],
         [
             "20260828025922_InitialTaskSchema",
@@ -25,16 +24,16 @@ internal sealed class AgentMigrationStartupComposition
             "20260831090000_P25StorageConsistency"
         ]);
 
-    private readonly P275StartupGate startupGate;
+    private readonly Func<ResolvedTransportProfile, IP275MigrationRunner> runnerFactory;
     private readonly P275MigrationPlan migrationPlan;
     private readonly TimeSpan lockTimeout;
 
     private AgentMigrationStartupComposition(
-        P275StartupGate startupGate,
+        Func<ResolvedTransportProfile, IP275MigrationRunner> runnerFactory,
         P275MigrationPlan migrationPlan,
         TimeSpan lockTimeout)
     {
-        this.startupGate = startupGate ?? throw new ArgumentNullException(nameof(startupGate));
+        this.runnerFactory = runnerFactory ?? throw new ArgumentNullException(nameof(runnerFactory));
         this.migrationPlan = migrationPlan ?? throw new ArgumentNullException(nameof(migrationPlan));
         if (lockTimeout <= TimeSpan.Zero || lockTimeout > TimeSpan.FromSeconds(30))
         {
@@ -46,7 +45,7 @@ internal sealed class AgentMigrationStartupComposition
 
     internal static AgentMigrationStartupComposition CreateDefault() =>
         new(
-            new P275StartupGate(new P275MigrationAssemblyUnavailable()),
+            CreateProductionRunner,
             DefaultPlan,
             TimeSpan.FromSeconds(10));
 
@@ -60,7 +59,7 @@ internal sealed class AgentMigrationStartupComposition
         IP275MigrationRunner migrationRunner,
         P275MigrationPlan migrationPlan,
         TimeSpan lockTimeout) =>
-        new(new P275StartupGate(migrationRunner), migrationPlan, lockTimeout);
+        new(_ => migrationRunner, migrationPlan, lockTimeout);
 
     internal async ValueTask<P275StartupGateResult> OpenAsync(
         ResolvedTransportProfile profile,
@@ -77,22 +76,85 @@ internal sealed class AgentMigrationStartupComposition
             runId,
             migrationPlan,
             lockTimeout);
-        return await startupGate.OpenAsync(request, cancellationToken).ConfigureAwait(false);
+        var runner = runnerFactory(profile);
+        return await new P275StartupGate(runner)
+            .OpenAsync(request, cancellationToken)
+            .ConfigureAwait(false);
     }
 
-    private sealed class P275MigrationAssemblyUnavailable : IP275MigrationRunner
+    [SupportedOSPlatform("windows")]
+    internal static async Task<int> RunRecoveryCommandAsync(
+        string[] args,
+        CancellationToken cancellationToken = default)
     {
-        public ValueTask<P275MigrationResult> RunAsync(
-            P275MigrationRequest request,
-            CancellationToken cancellationToken = default)
+        try
         {
-            ArgumentNullException.ThrowIfNull(request);
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(
-                P275MigrationResult.Failure(
-                    request.RunId,
-                    P275MigrationState.RecoveryRequired,
-                    P275MigrationFailureCodes.RecoveryRequired));
+            var command = AgentRecoveryCommandLine.Parse(args);
+            var executor = new AgentRecoveryCommandExecutor(
+                new P275RecoveryActor(DefaultPlan));
+            var result = await executor.ExecuteAsync(command, cancellationToken)
+                .ConfigureAwait(false);
+            if (result.Status is { } status)
+            {
+                WriteRecoveryStatus(status);
+            }
+            else if (result.FailureCode is { } failureCode)
+            {
+                Console.Error.WriteLine($"failureCode={failureCode}");
+            }
+
+            return result.ExitCode;
         }
+        catch (AgentRecoveryCommandException exception)
+        {
+            Console.Error.WriteLine($"failureCode={exception.FailureCode}");
+            return 2;
+        }
+        catch (OperationCanceledException)
+        {
+            return 1;
+        }
+        catch (Exception)
+        {
+            Console.Error.WriteLine($"failureCode={P275MigrationFailureCodes.RecoveryRequired}");
+            return 1;
+        }
+    }
+
+    private static P275MigrationRunner CreateProductionRunner(
+        ResolvedTransportProfile profile)
+    {
+        var paths = new P275ProfilePaths(profile.DataRoot, profile.ProfileName);
+        return new P275MigrationRunner(
+            new P275ActiveSourceReader(),
+            new P275SafetyBackupProvider(),
+            new P275FileWriterQuiescence(),
+            new P275FileMigrationLockProvider(),
+            new P275EfForwardMigrationApplier(),
+            new P275CandidateSidecarFinalizer(),
+            new P275ProductionCandidateVerifier(),
+            new P275AtomicFilePromoter(),
+            new P275ProductionMigrationStatePort(new P275ProfileLayout(paths.ProfileRoot)));
+    }
+
+    private static void WriteRecoveryStatus(P275RecoveryStatus status)
+    {
+        Console.WriteLine($"mode={status.Mode}");
+        Console.WriteLine($"state={P275MigrationStateNames.ToValue(status.State)}");
+        Console.WriteLine($"ready={status.Ready.ToString().ToLowerInvariant()}");
+        Console.WriteLine($"writable={status.Writable.ToString().ToLowerInvariant()}");
+        Console.WriteLine($"recoveryRequired={status.RecoveryRequired.ToString().ToLowerInvariant()}");
+        Console.WriteLine($"failureCode={status.FailureCode ?? string.Empty}");
+        Console.WriteLine($"runId={status.RunId ?? string.Empty}");
+        Console.WriteLine($"profileScope={status.ProfileScope ?? string.Empty}");
+        Console.WriteLine($"sourceSchema={string.Join(',', status.SourceSchema)}");
+        Console.WriteLine($"targetSchema={string.Join(',', status.TargetSchema)}");
+        Console.WriteLine($"backupArtifact={status.BackupArtifact ?? string.Empty}");
+        Console.WriteLine($"backupHashStatus={status.BackupHashStatus}");
+        Console.WriteLine($"manifestStatus={status.ManifestStatus}");
+        Console.WriteLine($"manifestArtifact={status.ManifestArtifact ?? string.Empty}");
+        Console.WriteLine($"backupByteLength={status.BackupByteLength?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}");
+        Console.WriteLine($"candidateArtifact={status.CandidateArtifact ?? string.Empty}");
+        Console.WriteLine($"nextAction={status.NextAction}");
     }
 }

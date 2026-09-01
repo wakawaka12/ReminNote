@@ -189,6 +189,7 @@ public sealed class P275ProfilePaths
         HistoryDirectory = CanonicalizeChild(Path.Combine(RecoveryDirectory, "history"), DataRoot);
         RuntimeDirectory = CanonicalizeChild(Path.Combine(ProfileRoot, "runtime"), DataRoot);
         MigrationLockPath = CanonicalizeChild(Path.Combine(RuntimeDirectory, "migration.lock"), DataRoot);
+        WriterQuiescencePath = CanonicalizeChild(Path.Combine(RuntimeDirectory, "writer-quiescence.lock"), DataRoot);
     }
 
     public string DataRoot { get; }
@@ -212,6 +213,8 @@ public sealed class P275ProfilePaths
     public string RuntimeDirectory { get; }
 
     public string MigrationLockPath { get; }
+
+    public string WriterQuiescencePath { get; }
 
     public P275CandidatePaths CreateCandidatePaths(string runId)
     {
@@ -483,7 +486,8 @@ public sealed class P275SourceInventory
     public P275SourceInventory(
         bool exists,
         IEnumerable<string> appliedMigrations,
-        P275SourceFingerprint fingerprint)
+        P275SourceFingerprint fingerprint,
+        P275VerificationBaseline? verificationBaseline = null)
     {
         ArgumentNullException.ThrowIfNull(appliedMigrations);
         Fingerprint = fingerprint ?? throw new ArgumentNullException(nameof(fingerprint));
@@ -494,6 +498,7 @@ public sealed class P275SourceInventory
         }
 
         Exists = exists;
+        VerificationBaseline = verificationBaseline ?? P275VerificationBaseline.Empty;
     }
 
     public bool Exists { get; }
@@ -501,6 +506,19 @@ public sealed class P275SourceInventory
     public IReadOnlyList<string> AppliedMigrations { get; }
 
     public P275SourceFingerprint Fingerprint { get; }
+
+    public P275VerificationBaseline VerificationBaseline { get; }
+}
+
+/// <summary>
+/// Data facts captured from the source before any Candidate work starts. They
+/// are carried into post-migration verification so a production verifier does
+/// not derive its preservation expectations from the already-mutated Candidate.
+/// </summary>
+public sealed record P275VerificationBaseline(
+    IReadOnlyList<P275KeyTableExpectation> KeyTables)
+{
+    public static P275VerificationBaseline Empty { get; } = new([]);
 }
 
 /// <summary>
@@ -592,7 +610,10 @@ public sealed record P275VerificationRequest(
     P275Candidate? Candidate,
     P275MigrationPlan Plan,
     P275VerificationPhase Phase,
-    string DatabasePath);
+    string DatabasePath,
+    P275ProfilePaths? Paths = null,
+    P275VerificationBaseline? Baseline = null,
+    string? RunId = null);
 
 public sealed record P275PromotionRequest(
     P275ProfilePaths Paths,
@@ -662,7 +683,11 @@ public sealed record P275MigrationStateSnapshot(
     string? CandidateArtifact,
     string? FailureCode,
     bool Retryable,
-    string NextAction);
+    string NextAction,
+    string? BackupSha256 = null,
+    DateTimeOffset? StartedAtUtc = null,
+    DateTimeOffset? UpdatedAtUtc = null,
+    string? LastAgentInstanceId = null);
 
 public sealed record P275MigrationResult(
     string RunId,
@@ -899,6 +924,30 @@ public static class P275ArtifactNames
         }
 
         return normalized;
+    }
+
+    public static string ValidateManifestArtifactId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) ||
+            value.Length > P275MigrationContract.MaxArtifactBytes ||
+            value is "." or ".." ||
+            value.Contains('\0') ||
+            value.Contains('/') ||
+            value.Contains('\\') ||
+            !value.EndsWith(".json", StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The manifest artifact id is invalid.", nameof(value));
+        }
+
+        foreach (var character in value)
+        {
+            if (!IsSafeArtifactCharacter(character))
+            {
+                throw new ArgumentException("The manifest artifact id is invalid.", nameof(value));
+            }
+        }
+
+        return value;
     }
 
     private static bool IsSafeArtifactCharacter(char value) =>

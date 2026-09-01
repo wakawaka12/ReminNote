@@ -165,6 +165,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                         P275VerificationPhase.AlreadyReady,
                         paths.ActiveDatabasePath,
                         plan,
+                        source.VerificationBaseline,
                         cancellationToken)
                     .ConfigureAwait(false);
                 if (!activeVerification.IsValid)
@@ -204,6 +205,19 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                         cancellationToken)
                     .ConfigureAwait(false);
                 ValidateVerifiedBackup(paths, source, backup);
+            }
+            catch (P275MigrationOperationException exception)
+            {
+                return await FailAsync(
+                        request,
+                        P275MigrationState.BackupFailed,
+                        exception.FailureCode,
+                        source,
+                        backup,
+                        candidate,
+                        promoted,
+                        historyDirectoryPath)
+                    .ConfigureAwait(false);
             }
             catch (P275BackupValidationException)
             {
@@ -350,6 +364,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                     P275VerificationPhase.Candidate,
                     candidate.Files.CandidateDatabasePath,
                     plan,
+                    source.VerificationBaseline,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (!candidateVerification.IsValid)
@@ -489,6 +504,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                     P275VerificationPhase.PostPromote,
                     paths.ActiveDatabasePath,
                     plan,
+                    source.VerificationBaseline,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (!postPromoteVerification.IsValid)
@@ -592,13 +608,21 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
         P275VerificationPhase phase,
         string databasePath,
         P275MigrationPlan plan,
+        P275VerificationBaseline? baseline,
         CancellationToken cancellationToken)
     {
         try
         {
             var result = await candidateVerifier
                 .VerifyAsync(
-                    new P275VerificationRequest(candidate, plan, phase, databasePath),
+                    new P275VerificationRequest(
+                        candidate,
+                        plan,
+                        phase,
+                        databasePath,
+                        request.Paths,
+                        baseline,
+                        request.RunId),
                     cancellationToken)
                 .ConfigureAwait(false);
             return result ?? P275VerificationResult.Invalid();
@@ -928,7 +952,10 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
             candidateArtifact,
             failureCode,
             Retryable(failureCode),
-            NextAction(failureCode));
+            NextAction(failureCode),
+            backup?.Sha256,
+            DateTimeOffset.UtcNow,
+            DateTimeOffset.UtcNow);
     }
 
     private static bool HasSameSource(P275SourceInventory expected, P275SourceInventory actual) =>
@@ -960,9 +987,9 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
         P275MigrationFailureCodes.BackupFailed or
         P275MigrationFailureCodes.SourceChanged or
         P275MigrationFailureCodes.ApplyFailed => "retry",
-        P275MigrationFailureCodes.PromoteUnknown => "status-or-restore",
+        P275MigrationFailureCodes.PromoteUnknown => P275MigrationNextActions.RestoreBackup,
         _ when failureCode is null => "none",
-        _ => "status-or-restore"
+        _ => P275MigrationNextActions.RestoreBackup
     };
 
     private static P275MigrationState StateForException(P275MigrationState phase) => phase switch

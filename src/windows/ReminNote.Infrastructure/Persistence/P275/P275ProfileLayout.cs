@@ -38,6 +38,7 @@ public sealed class P275ProfileLayout
         StagingDirectory = Path.Combine(RecoveryDirectory, "staging");
         FailedDirectory = Path.Combine(RecoveryDirectory, "failed");
         MigrationStatePath = Path.Combine(RuntimeDirectory, "migration-state.json");
+        ActiveDatabasePath = Path.Combine(ProfileRoot, "reminnote.sqlite");
 
         EnsureWithinProfile(ProfileRoot, RuntimeDirectory);
         EnsureWithinProfile(ProfileRoot, BackupsDirectory);
@@ -45,6 +46,7 @@ public sealed class P275ProfileLayout
         EnsureWithinProfile(ProfileRoot, StagingDirectory);
         EnsureWithinProfile(ProfileRoot, FailedDirectory);
         EnsureWithinProfile(ProfileRoot, MigrationStatePath);
+        EnsureWithinProfile(ProfileRoot, ActiveDatabasePath);
     }
 
     public string ProfileRoot { get; }
@@ -61,6 +63,8 @@ public sealed class P275ProfileLayout
 
     public string MigrationStatePath { get; }
 
+    public string ActiveDatabasePath { get; }
+
     public string GetCandidatePath(Guid runId)
     {
         if (runId == Guid.Empty)
@@ -75,6 +79,15 @@ public sealed class P275ProfileLayout
 
     public static string GetCandidateArtifact(Guid runId) =>
         $"recovery/staging/{runId:D}/candidate.sqlite";
+
+    public static string GetActiveArtifact() => "reminnote.sqlite";
+
+    public void EnsureActiveForRead()
+    {
+        EnsureProfileRootForRead();
+        EnsureExistingFile(ActiveDatabasePath);
+        EnsureNotReparse(ActiveDatabasePath);
+    }
 
     public string GetBackupPath(string artifactId)
     {

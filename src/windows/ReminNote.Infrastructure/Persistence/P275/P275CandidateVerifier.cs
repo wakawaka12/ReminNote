@@ -206,7 +206,8 @@ public sealed class P275CandidateVerificationExpectations
 public sealed record P275CandidateVerificationRequest(
     P275ProfileLayout Layout,
     Guid RunId,
-    P275CandidateVerificationExpectations Expectations)
+    P275CandidateVerificationExpectations Expectations,
+    string? DatabasePath = null)
 {
     public void Validate()
     {
@@ -217,6 +218,21 @@ public sealed record P275CandidateVerificationRequest(
         }
 
         ArgumentNullException.ThrowIfNull(Expectations);
+
+        if (DatabasePath is null)
+        {
+            return;
+        }
+
+        var expectedActivePath = Path.GetFullPath(Layout.ActiveDatabasePath);
+        var actualPath = Path.GetFullPath(DatabasePath);
+        var comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+        if (!string.Equals(actualPath, expectedActivePath, comparison))
+        {
+            throw new P275PathValidationException(P275MigrationFailureCodes.PathInvalid);
+        }
     }
 }
 
@@ -276,7 +292,9 @@ public sealed class P275CandidateVerifier
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var candidateArtifact = P275ProfileLayout.GetCandidateArtifact(request.RunId);
+        var candidateArtifact = request.DatabasePath is null
+            ? P275ProfileLayout.GetCandidateArtifact(request.RunId)
+            : P275ProfileLayout.GetActiveArtifact();
         var checks = new P275CandidateVerificationChecks(
             StandaloneFile: false,
             IntegrityCheck: false,
@@ -288,13 +306,22 @@ public sealed class P275CandidateVerifier
         try
         {
             request.Validate();
-            request.Layout.EnsureCandidateForRead(request.RunId);
-            var candidatePath = request.Layout.GetCandidatePath(request.RunId);
+            var databasePath = request.DatabasePath;
+            if (databasePath is null)
+            {
+                request.Layout.EnsureCandidateForRead(request.RunId);
+                databasePath = request.Layout.GetCandidatePath(request.RunId);
+            }
+            else
+            {
+                request.Layout.EnsureActiveForRead();
+            }
+
             // Sidecar lifecycle belongs to the migration/promote owner. A
             // read-only WAL open may create its own shared-memory sidecar;
             // V15 is enforced here by stable Candidate main-file size/hash
             // across the closed verification handle.
-            var before = ReadFileFingerprint(candidatePath);
+            var before = ReadFileFingerprint(databasePath);
             checks = checks with { StandaloneFile = before.IsSqliteHeader };
             if (!before.IsSqliteHeader)
             {
@@ -326,7 +353,7 @@ public sealed class P275CandidateVerifier
 
             var connectionString = new SqliteConnectionStringBuilder
             {
-                DataSource = candidatePath,
+                DataSource = databasePath,
                 Mode = SqliteOpenMode.ReadOnly,
                 Cache = SqliteCacheMode.Private,
                 ForeignKeys = true
@@ -428,7 +455,7 @@ public sealed class P275CandidateVerifier
                 checks = checks with { KeyTables = true };
             }
 
-            var after = ReadFileFingerprint(candidatePath);
+            var after = ReadFileFingerprint(databasePath);
             if (!after.IsSqliteHeader ||
                 before.ByteLength != after.ByteLength ||
                 !string.Equals(before.Sha256, after.Sha256, StringComparison.Ordinal))

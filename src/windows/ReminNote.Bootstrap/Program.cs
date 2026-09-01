@@ -209,6 +209,9 @@ internal static class Program
         Console.WriteLine($"targetSchema={string.Join(',', status.TargetSchema)}");
         Console.WriteLine($"backupArtifact={status.BackupArtifact ?? string.Empty}");
         Console.WriteLine($"backupHashStatus={status.BackupHashStatus}");
+        Console.WriteLine($"manifestStatus={status.ManifestStatus}");
+        Console.WriteLine($"manifestArtifact={status.ManifestArtifact ?? string.Empty}");
+        Console.WriteLine($"backupByteLength={status.BackupByteLength?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty}");
         Console.WriteLine($"candidateArtifact={status.CandidateArtifact ?? string.Empty}");
         Console.WriteLine($"nextAction={status.NextAction}");
     }
