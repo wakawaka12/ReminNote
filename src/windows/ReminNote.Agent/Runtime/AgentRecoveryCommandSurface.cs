@@ -7,7 +7,8 @@ namespace ReminNote.Agent.Runtime;
 public enum AgentRecoveryCommandKind
 {
     Status,
-    Restore
+    Restore,
+    Retry
 }
 
 /// <summary>
@@ -26,7 +27,9 @@ public sealed record AgentRecoveryCommandLine(
     {
         ArgumentNullException.ThrowIfNull(args);
         return args.Any(argument =>
-            argument is "--recovery-status" or "--recovery-restore");
+            argument is "--recovery-status" or
+                "--recovery-restore" or
+                "--recovery-retry");
     }
 
     public static AgentRecoveryCommandLine Parse(IReadOnlyList<string> args)
@@ -38,6 +41,7 @@ public sealed record AgentRecoveryCommandLine(
         string? profileName = null;
         string? artifactId = null;
         var status = false;
+        var retry = false;
         var confirm = false;
         for (var index = 0; index < args.Count; index++)
         {
@@ -69,7 +73,7 @@ public sealed record AgentRecoveryCommandLine(
                     profileName = ReadValue(args, ref index, option);
                     break;
                 case "--recovery-status":
-                    if (status || artifactId is not null)
+                    if (status || retry || artifactId is not null)
                     {
                         throw new AgentRecoveryCommandException(P275MigrationFailureCodes.ArgumentsInvalid);
                     }
@@ -77,7 +81,7 @@ public sealed record AgentRecoveryCommandLine(
                     status = true;
                     break;
                 case "--recovery-restore":
-                    if (status || artifactId is not null)
+                    if (status || retry || artifactId is not null)
                     {
                         throw new AgentRecoveryCommandException(P275MigrationFailureCodes.ArgumentsInvalid);
                     }
@@ -95,6 +99,14 @@ public sealed record AgentRecoveryCommandLine(
                     }
 
                     break;
+                case "--recovery-retry":
+                    if (status || retry || artifactId is not null)
+                    {
+                        throw new AgentRecoveryCommandException(P275MigrationFailureCodes.ArgumentsInvalid);
+                    }
+
+                    retry = true;
+                    break;
                 case "--confirm":
                     if (confirm)
                     {
@@ -109,9 +121,10 @@ public sealed record AgentRecoveryCommandLine(
         }
 
         if ((dataRoot is not null && repoRoot is not null) ||
-            (!status && artifactId is null) ||
+            (!status && !retry && artifactId is null) ||
             (artifactId is not null && !confirm) ||
-            (status && confirm))
+            (status && confirm) ||
+            (retry && confirm))
         {
             throw new AgentRecoveryCommandException(P275MigrationFailureCodes.ArgumentsInvalid);
         }
@@ -120,7 +133,11 @@ public sealed record AgentRecoveryCommandLine(
             dataRoot,
             repoRoot,
             profileName,
-            artifactId is null ? AgentRecoveryCommandKind.Status : AgentRecoveryCommandKind.Restore,
+            status
+                ? AgentRecoveryCommandKind.Status
+                : retry
+                    ? AgentRecoveryCommandKind.Retry
+                    : AgentRecoveryCommandKind.Restore,
             artifactId,
             confirm);
     }

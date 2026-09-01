@@ -247,6 +247,29 @@ public sealed class P275AtomicFilePromoter : IP275AtomicPromoter
     {
         try
         {
+            if (!HasSqliteHeader(databasePath))
+            {
+                // The integrated runner has already rejected a non-SQLite
+                // Active/Candidate before reaching this seam. Keep the
+                // deterministic file-only promoter usable for its isolated
+                // tests without pretending an arbitrary file was checkpointed.
+                foreach (var sidecar in P275CandidateSidecarFinalizer.EnumerateSidecars(databasePath))
+                {
+                    if (!P275FileSafety.IsRegularFile(sidecar))
+                    {
+                        return false;
+                    }
+
+                    File.Delete(sidecar);
+                    if (File.Exists(sidecar))
+                    {
+                        return false;
+                    }
+                }
+
+                return P275CandidateSidecarFinalizer.EnumerateSidecars(databasePath).Count == 0;
+            }
+
             var connectionString = new SqliteConnectionStringBuilder
             {
                 DataSource = databasePath,

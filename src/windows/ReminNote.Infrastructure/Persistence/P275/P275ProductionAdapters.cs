@@ -510,6 +510,11 @@ public sealed class P275ProductionMigrationStatePort : IP275MigrationStatePort
             snapshot.LastAgentInstanceId);
         await store.WriteAsync(marker, cancellationToken).ConfigureAwait(false);
     }
+
+    public ValueTask<P275MigrationStateReadResult> ReadAsync(
+        string expectedProfileScope,
+        CancellationToken cancellationToken = default) =>
+        store.ReadAsync(expectedProfileScope, cancellationToken);
 }
 
 /// <summary>

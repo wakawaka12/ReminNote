@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using ReminNote.Agent.Transport;
+using ReminNote.Core.Protocol;
 using ReminNote.Infrastructure.Persistence.P275;
 
 namespace ReminNote.Agent.Runtime;
@@ -61,9 +62,20 @@ internal sealed class AgentMigrationStartupComposition
         TimeSpan lockTimeout) =>
         new(_ => migrationRunner, migrationPlan, lockTimeout);
 
+    internal ValueTask<P275StartupGateResult> OpenAsync(
+        ResolvedTransportProfile profile,
+        string runId,
+        CancellationToken cancellationToken = default) =>
+        OpenAsync(
+            profile,
+            runId,
+            allowRetry: false,
+            cancellationToken: cancellationToken);
+
     internal async ValueTask<P275StartupGateResult> OpenAsync(
         ResolvedTransportProfile profile,
         string runId,
+        bool allowRetry,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(profile);
@@ -75,7 +87,8 @@ internal sealed class AgentMigrationStartupComposition
             profile.ProfileScope,
             runId,
             migrationPlan,
-            lockTimeout);
+            lockTimeout,
+            allowRetry);
         var runner = runnerFactory(profile);
         return await new P275StartupGate(runner)
             .OpenAsync(request, cancellationToken)
@@ -90,6 +103,11 @@ internal sealed class AgentMigrationStartupComposition
         try
         {
             var command = AgentRecoveryCommandLine.Parse(args);
+            if (command.Kind == AgentRecoveryCommandKind.Retry)
+            {
+                return await RunExplicitRetryAsync(command, cancellationToken).ConfigureAwait(false);
+            }
+
             var executor = new AgentRecoveryCommandExecutor(
                 new P275RecoveryActor(DefaultPlan));
             var result = await executor.ExecuteAsync(command, cancellationToken)
@@ -119,6 +137,42 @@ internal sealed class AgentMigrationStartupComposition
             Console.Error.WriteLine($"failureCode={P275MigrationFailureCodes.RecoveryRequired}");
             return 1;
         }
+    }
+
+    [SupportedOSPlatform("windows")]
+    private static async Task<int> RunExplicitRetryAsync(
+        AgentRecoveryCommandLine command,
+        CancellationToken cancellationToken)
+    {
+        var adapter = new AgentRecoveryCommandAdapter();
+        var profile = adapter.ResolveProfile(command);
+        var resolvedProfile = TransportProfileResolver.ResolveForCurrentUser(
+            new TransportProfileArguments(
+                profile.DataRoot,
+                null,
+                profile.ProfileName),
+            new ProtocolTransportProfileContractAdapter());
+        var migration = await CreateDefault()
+            .OpenAsync(
+                resolvedProfile,
+                ProtocolIds.NewEventId().ToString("D"),
+                allowRetry: true,
+                cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+        if (!migration.Ready ||
+            !migration.Writable ||
+            migration.Migration.State != P275MigrationState.Ready)
+        {
+            Console.Error.WriteLine(
+                $"failureCode={migration.Migration.FailureCode ?? P275MigrationFailureCodes.RecoveryRequired}");
+            return 1;
+        }
+
+        WriteRecoveryStatus(
+            await AgentRecoveryCommandAdapter
+                .ReadStatusAsync(profile, cancellationToken)
+                .ConfigureAwait(false));
+        return 0;
     }
 
     private static P275MigrationRunner CreateProductionRunner(

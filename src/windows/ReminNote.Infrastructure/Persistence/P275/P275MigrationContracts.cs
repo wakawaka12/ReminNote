@@ -791,6 +791,10 @@ public interface IP275MigrationStatePort
     ValueTask RecordAsync(
         P275MigrationStateSnapshot snapshot,
         CancellationToken cancellationToken = default);
+
+    ValueTask<P275MigrationStateReadResult> ReadAsync(
+        string expectedProfileScope,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IP275MigrationLockProvider
@@ -816,7 +820,8 @@ public sealed record P275MigrationRequest(
     string ProfileScope,
     string RunId,
     P275MigrationPlan Plan,
-    TimeSpan LockTimeout);
+    TimeSpan LockTimeout,
+    bool AllowRetry = false);
 
 public static class P275MigrationNextActions
 {

@@ -64,17 +64,6 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
         try
         {
             paths.EnsureRuntimeDirectories();
-            if (!await TryRecordAsync(
-                    CreateSnapshot(request, currentPhase, failureCode: null, backup, candidate),
-                    cancellationToken)
-                .ConfigureAwait(false))
-            {
-                return P275MigrationResult.Failure(
-                    runId,
-                    P275MigrationState.RecoveryRequired,
-                    P275MigrationFailureCodes.StateUnwritable);
-            }
-
             migrationLock = await lockProvider.AcquireAsync(
                     new P275MigrationLockRequest(paths, runId, request.LockTimeout),
                     cancellationToken)
@@ -91,6 +80,26 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                         promoted,
                         historyDirectoryPath)
                     .ConfigureAwait(false);
+            }
+
+            var previousAttempt = await GuardPreviousAttemptAsync(
+                    request,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (previousAttempt is not null)
+            {
+                return previousAttempt;
+            }
+
+            if (!await TryRecordAsync(
+                    CreateSnapshot(request, currentPhase, failureCode: null, backup, candidate),
+                    cancellationToken)
+                .ConfigureAwait(false))
+            {
+                return P275MigrationResult.Failure(
+                    runId,
+                    P275MigrationState.RecoveryRequired,
+                    P275MigrationFailureCodes.StateUnwritable);
             }
 
             quiescence = await writerQuiescence
@@ -581,6 +590,145 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
         }
     }
 
+    private async ValueTask<P275MigrationResult?> GuardPreviousAttemptAsync(
+        P275MigrationRequest request,
+        CancellationToken cancellationToken)
+    {
+        P275MigrationStateReadResult previousRead;
+        try
+        {
+            previousRead = await statePort
+                .ReadAsync(request.ProfileScope, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return P275MigrationResult.Failure(
+                request.RunId,
+                P275MigrationState.RecoveryRequired,
+                P275MigrationFailureCodes.StateUnwritable);
+        }
+
+        if (previousRead.Status == P275MarkerReadStatus.Missing)
+        {
+            return null;
+        }
+
+        if (!previousRead.IsUsable || previousRead.Marker is null)
+        {
+            return P275MigrationResult.Failure(
+                request.RunId,
+                P275MigrationState.RecoveryRequired,
+                P275MigrationFailureCodes.RecoveryRequired);
+        }
+
+        var previous = previousRead.Marker;
+        if (previous.State == P275MigrationState.Ready)
+        {
+            return null;
+        }
+
+        if (request.AllowRetry && IsExplicitRetryAllowed(previous))
+        {
+            return null;
+        }
+
+        if (previous.State == P275MigrationState.PromotionInProgress)
+        {
+            var recorded = await TryRecordAsync(
+                    SnapshotFromPrevious(
+                        previous,
+                        P275MigrationState.PromotionUnknown,
+                        P275MigrationFailureCodes.PromoteUnknown,
+                        retryable: false,
+                        P275MigrationNextActions.RestoreBackup),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            if (!recorded)
+            {
+                return P275MigrationResult.Failure(
+                    request.RunId,
+                    P275MigrationState.RecoveryRequired,
+                    P275MigrationFailureCodes.StateUnwritable);
+            }
+
+            return P275MigrationResult.Failure(
+                previous.RunId.ToString("D"),
+                P275MigrationState.PromotionUnknown,
+                P275MigrationFailureCodes.PromoteUnknown,
+                previous.BackupArtifact);
+        }
+
+        if (previous.State is
+                P275MigrationState.BackupInProgress or
+                P275MigrationState.MigrationInProgress or
+                P275MigrationState.VerifyInProgress or
+                P275MigrationState.RecoveryInProgress ||
+            previous.State == P275MigrationState.MigrationRequired &&
+                previous.FailureCode is null)
+        {
+            var recorded = await TryRecordAsync(
+                    SnapshotFromPrevious(
+                        previous,
+                        P275MigrationState.RecoveryRequired,
+                        P275MigrationFailureCodes.RecoveryRequired,
+                        retryable: false,
+                        P275MigrationNextActions.ViewStatus),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+            if (!recorded)
+            {
+                return P275MigrationResult.Failure(
+                    request.RunId,
+                    P275MigrationState.RecoveryRequired,
+                    P275MigrationFailureCodes.StateUnwritable);
+            }
+
+            return P275MigrationResult.Failure(
+                previous.RunId.ToString("D"),
+                P275MigrationState.RecoveryRequired,
+                P275MigrationFailureCodes.RecoveryRequired,
+                previous.BackupArtifact);
+        }
+
+        return P275MigrationResult.Failure(
+            previous.RunId.ToString("D"),
+            previous.State,
+            previous.FailureCode ?? P275MigrationFailureCodes.RecoveryRequired,
+            previous.BackupArtifact);
+    }
+
+    private static bool IsExplicitRetryAllowed(P275MigrationStateMarker marker) =>
+        marker.State is
+            (P275MigrationState.MigrationRequired or
+            P275MigrationState.BackupFailed or
+            P275MigrationState.MigrationFailed or
+            P275MigrationState.RecoveryRequired) &&
+        marker.Retryable &&
+        marker.NextAction == P275MigrationNextActions.Retry;
+
+    private static P275MigrationStateSnapshot SnapshotFromPrevious(
+        P275MigrationStateMarker previous,
+        P275MigrationState state,
+        string failureCode,
+        bool retryable,
+        string nextAction) =>
+        new(
+            previous.RunId.ToString("D"),
+            previous.ProfileScope,
+            state,
+            previous.SourceSchema,
+            previous.TargetSchema,
+            previous.BackupArtifact,
+            previous.CandidateArtifact,
+            failureCode,
+            retryable,
+            nextAction,
+            previous.BackupSha256,
+            previous.StartedAtUtc,
+            DateTimeOffset.UtcNow,
+            previous.LastAgentInstanceId);
+
     private async ValueTask<P275SourceInventory> ReadSourceAsync(
         P275MigrationRequest request,
         CancellationToken cancellationToken)
@@ -985,6 +1133,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
     {
         P275MigrationFailureCodes.Locked or
         P275MigrationFailureCodes.BackupFailed or
+        P275MigrationFailureCodes.BackupUnreadable or
         P275MigrationFailureCodes.SourceChanged or
         P275MigrationFailureCodes.ApplyFailed => "retry",
         P275MigrationFailureCodes.PromoteUnknown => P275MigrationNextActions.RestoreBackup,

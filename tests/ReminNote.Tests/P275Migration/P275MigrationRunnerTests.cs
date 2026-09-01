@@ -161,6 +161,150 @@ public sealed class P275MigrationRunnerTests
     }
 
     [Fact]
+    public async Task PreviousPromotionMarkerBecomesUnknownBeforeAnyNewAttempt()
+    {
+        await using var fixture = await P275Fixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        fixture.StatePort.Previous = P275MigrationStateReadResult.Valid(
+            new P275MigrationStateMarker(
+                P275MigrationState.PromotionInProgress,
+                Guid.Parse(fixture.RunId),
+                "p1-" + new string('a', 64),
+                fixture.Source.AppliedMigrations,
+                CreatePlan().ApprovedTargetMigrations,
+                backupArtifact: null,
+                backupSha256: null,
+                candidateArtifact: null,
+                startedAtUtc: now,
+                updatedAtUtc: now,
+                failureCode: null,
+                retryable: false,
+                nextAction: P275MigrationNextActions.None,
+                lastKnownGoodSchema: fixture.Source.AppliedMigrations));
+        var backupProvider = new CountingBackupProvider(fixture.CreateBackup());
+        var applier = new CountingApplier();
+        var runner = fixture.CreateRunner(
+            new SequenceSourceReader(fixture.Source),
+            backupProvider,
+            migrationApplier: applier);
+
+        var result = await runner.RunAsync(
+            fixture.CreateRequest(TimeSpan.FromSeconds(2)),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(result.Ready);
+        Assert.Equal(P275MigrationState.PromotionUnknown, result.State);
+        Assert.Equal(P275MigrationFailureCodes.PromoteUnknown, result.FailureCode);
+        Assert.Equal(0, backupProvider.CallCount);
+        Assert.Equal(0, applier.CallCount);
+        Assert.Equal(P275MigrationState.PromotionUnknown, fixture.StatePort.Last!.State);
+        Assert.Equal(
+            P275MigrationNextActions.RestoreBackup,
+            fixture.StatePort.Last.NextAction);
+    }
+
+    [Fact]
+    public async Task FailedAttemptRequiresExplicitRetryBeforeRunningAgain()
+    {
+        await using var fixture = await P275Fixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        fixture.StatePort.Previous = P275MigrationStateReadResult.Valid(
+            new P275MigrationStateMarker(
+                P275MigrationState.MigrationFailed,
+                Guid.Parse(fixture.RunId),
+                "p1-" + new string('a', 64),
+                fixture.Source.AppliedMigrations,
+                CreatePlan().ApprovedTargetMigrations,
+                backupArtifact: null,
+                backupSha256: null,
+                candidateArtifact: null,
+                startedAtUtc: now,
+                updatedAtUtc: now,
+                failureCode: P275MigrationFailureCodes.ApplyFailed,
+                retryable: true,
+                nextAction: P275MigrationNextActions.Retry,
+                lastKnownGoodSchema: fixture.Source.AppliedMigrations));
+        var backupProvider = new CountingBackupProvider(fixture.CreateBackup());
+        var applier = new CountingApplier();
+        var runner = fixture.CreateRunner(
+            new SequenceSourceReader(fixture.Source),
+            backupProvider,
+            migrationApplier: applier,
+            promoter: new P275AtomicFilePromoter());
+
+        var blocked = await runner.RunAsync(
+            fixture.CreateRequest(TimeSpan.FromSeconds(2)),
+            TestContext.Current.CancellationToken);
+
+        Assert.False(blocked.Ready);
+        Assert.Equal(P275MigrationState.MigrationFailed, blocked.State);
+        Assert.Equal(P275MigrationFailureCodes.ApplyFailed, blocked.FailureCode);
+        Assert.Equal(0, backupProvider.CallCount);
+        Assert.Equal(0, applier.CallCount);
+
+        var retried = await runner.RunAsync(
+            fixture.CreateRequest(TimeSpan.FromSeconds(2)) with
+            {
+                RunId = Guid.NewGuid().ToString("D"),
+                AllowRetry = true
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(retried.Ready);
+        Assert.True(retried.Writable);
+        Assert.Equal(1, backupProvider.CallCount);
+        Assert.Equal(1, applier.CallCount);
+    }
+
+    [Fact]
+    public async Task RetryableSourceChangeFailureCanBeRetriedExplicitly()
+    {
+        await using var fixture = await P275Fixture.CreateAsync();
+        var now = DateTimeOffset.UtcNow;
+        fixture.StatePort.Previous = P275MigrationStateReadResult.Valid(
+            new P275MigrationStateMarker(
+                P275MigrationState.RecoveryRequired,
+                Guid.Parse(fixture.RunId),
+                "p1-" + new string('a', 64),
+                fixture.Source.AppliedMigrations,
+                CreatePlan().ApprovedTargetMigrations,
+                backupArtifact: null,
+                backupSha256: null,
+                candidateArtifact: null,
+                startedAtUtc: now,
+                updatedAtUtc: now,
+                failureCode: P275MigrationFailureCodes.SourceChanged,
+                retryable: true,
+                nextAction: P275MigrationNextActions.Retry,
+                lastKnownGoodSchema: fixture.Source.AppliedMigrations));
+        var backupProvider = new CountingBackupProvider(fixture.CreateBackup());
+        var applier = new CountingApplier();
+        var runner = fixture.CreateRunner(
+            new SequenceSourceReader(fixture.Source),
+            backupProvider,
+            migrationApplier: applier,
+            promoter: new P275AtomicFilePromoter());
+
+        var blocked = await runner.RunAsync(
+            fixture.CreateRequest(TimeSpan.FromSeconds(2)),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(P275MigrationFailureCodes.SourceChanged, blocked.FailureCode);
+        Assert.Equal(0, applier.CallCount);
+
+        var retried = await runner.RunAsync(
+            fixture.CreateRequest(TimeSpan.FromSeconds(2)) with
+            {
+                RunId = Guid.NewGuid().ToString("D"),
+                AllowRetry = true
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(retried.Ready);
+        Assert.Equal(1, applier.CallCount);
+    }
+
+    [Fact]
     public async Task AlreadyAtTargetStillNeedsVerificationBeforeReady()
     {
         await using var fixture = await P275Fixture.CreateAsync();
@@ -238,9 +382,11 @@ public sealed class P275MigrationRunnerTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal(P275PromotionOutcome.Succeeded, promotion.Outcome);
-        Assert.Equal("candidate", await File.ReadAllTextAsync(
-            fixture.Paths.ActiveDatabasePath,
-            TestContext.Current.CancellationToken));
+        Assert.Equal(
+            "candidate",
+            await File.ReadAllTextAsync(
+                fixture.Paths.ActiveDatabasePath,
+                TestContext.Current.CancellationToken));
         Assert.False(File.Exists(fixture.Paths.ActiveDatabasePath + "-wal"));
         Assert.False(File.Exists(fixture.Paths.ActiveDatabasePath + "-shm"));
         Assert.NotNull(promotion.HistoryDirectoryPath);
@@ -248,10 +394,10 @@ public sealed class P275MigrationRunnerTests
             Path.Combine(promotion.HistoryDirectoryPath!, "active.sqlite"),
             TestContext.Current.CancellationToken));
         Assert.Equal("active-wal", await File.ReadAllTextAsync(
-            Path.Combine(promotion.HistoryDirectoryPath!, "reminnote.sqlite-wal"),
+            Path.Combine(promotion.HistoryDirectoryPath!, "active.sqlite-wal"),
             TestContext.Current.CancellationToken));
         Assert.Equal("active-shm", await File.ReadAllTextAsync(
-            Path.Combine(promotion.HistoryDirectoryPath!, "reminnote.sqlite-shm"),
+            Path.Combine(promotion.HistoryDirectoryPath!, "active.sqlite-shm"),
             TestContext.Current.CancellationToken));
     }
 
@@ -575,6 +721,9 @@ public sealed class P275MigrationRunnerTests
     {
         public P275MigrationStateSnapshot? Last { get; private set; }
 
+        public P275MigrationStateReadResult Previous { get; set; } =
+            P275MigrationStateReadResult.Missing();
+
         public ValueTask RecordAsync(
             P275MigrationStateSnapshot snapshot,
             CancellationToken cancellationToken = default)
@@ -582,6 +731,15 @@ public sealed class P275MigrationRunnerTests
             cancellationToken.ThrowIfCancellationRequested();
             Last = snapshot;
             return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<P275MigrationStateReadResult> ReadAsync(
+            string expectedProfileScope,
+            CancellationToken cancellationToken = default)
+        {
+            _ = expectedProfileScope;
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(Previous);
         }
     }
 

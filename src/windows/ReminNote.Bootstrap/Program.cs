@@ -122,7 +122,11 @@ internal static class Program
                     : 0;
             }
 
-            _ = AgentRecoveryCommandAdapter.CreateRestoreRequest(profile, command);
+            if (command.Kind == AgentRecoveryCommandKind.Restore)
+            {
+                _ = AgentRecoveryCommandAdapter.CreateRestoreRequest(profile, command);
+            }
+
             using var agent = StartRecoveryAgent(command, args);
             var errorOutputTask = agent.StandardError.ReadToEndAsync();
             await agent.WaitForExitAsync().ConfigureAwait(false);

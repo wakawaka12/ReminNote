@@ -74,6 +74,35 @@ public sealed class P275RecoveryCommandTests
     }
 
     [Fact]
+    public void RetryCommandRequiresAnExplicitRecoveryRetryFlag()
+    {
+        var command = AgentRecoveryCommandLine.Parse(
+        [
+            "--data-root",
+            "C:\\isolated-data",
+            "--profile",
+            "default",
+            "--recovery-retry"
+        ]);
+
+        Assert.Equal(AgentRecoveryCommandKind.Retry, command.Kind);
+        Assert.Null(command.BackupArtifactId);
+        Assert.False(command.Confirm);
+
+        foreach (var invalid in new[]
+                 {
+                     new[] { "--data-root", "C:\\isolated-data", "--recovery-retry", "--confirm" },
+                     new[] { "--data-root", "C:\\isolated-data", "--recovery-retry", "--recovery-status" },
+                     new[] { "--data-root", "C:\\isolated-data", "--recovery-retry", "--recovery-restore", "backup.sqlite", "--confirm" }
+                 })
+        {
+            var exception = Assert.Throws<AgentRecoveryCommandException>(() =>
+                AgentRecoveryCommandLine.Parse(invalid));
+            Assert.Equal(P275MigrationFailureCodes.ArgumentsInvalid, exception.FailureCode);
+        }
+    }
+
+    [Fact]
     public void RestoreRequestUsesProfileLocalBackupPathWithoutOpeningBusinessDatabase()
     {
         var root = Path.Combine(

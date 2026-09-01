@@ -57,6 +57,8 @@ public sealed record P275RecoveryBackup(
 /// </summary>
 public sealed class P275RecoveryBackupReader
 {
+    private const string ManifestTimestampFormat = "yyyy-MM-dd'T'HH:mm:ss.fffffff'Z'";
+
     private static readonly JsonSerializerOptions ManifestSerializerOptions = new()
     {
         PropertyNameCaseInsensitive = false,
@@ -87,8 +89,8 @@ public sealed class P275RecoveryBackupReader
 
             var manifestArtifact = Path.ChangeExtension(artifactId, ".json");
             P275ArtifactNames.ValidateManifestArtifactId(manifestArtifact);
-            layout.EnsureBackupForRead(manifestArtifact);
-            var manifestPath = layout.GetBackupPath(manifestArtifact);
+            layout.EnsureManifestForRead(manifestArtifact);
+            var manifestPath = layout.GetManifestPath(manifestArtifact);
             var payload = await ReadBoundedAsync(
                     manifestPath,
                     SafetyBackupContract.MaxManifestBytes,
@@ -205,13 +207,13 @@ public sealed class P275RecoveryBackupReader
         ValidateSchema(manifest.TargetSchema, allowEmpty: false);
         if (!DateTimeOffset.TryParseExact(
                 manifest.CreatedAtUtc,
-                "yyyy-MM-dd'T'HH:mm:ss.fff'Z'",
+                ManifestTimestampFormat,
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
                 out var createdAt) ||
             !string.Equals(
                 createdAt.ToUniversalTime().ToString(
-                    "yyyy-MM-dd'T'HH:mm:ss.fff'Z'",
+                    ManifestTimestampFormat,
                     CultureInfo.InvariantCulture),
                 manifest.CreatedAtUtc,
                 StringComparison.Ordinal))
