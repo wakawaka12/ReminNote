@@ -117,14 +117,27 @@ public sealed class P275AtomicFilePromoter : IP275AtomicPromoter
         var files = request.Candidate.Files;
         if (!IsWithinProfile(files.CandidateDatabasePath, paths.ProfileRoot) ||
             !IsWithinProfile(paths.ActiveDatabasePath, paths.ProfileRoot) ||
-            !P275FileSafety.IsRegularFile(files.CandidateDatabasePath) ||
-            P275CandidateSidecarFinalizer.EnumerateSidecars(files.CandidateDatabasePath).Count != 0)
+            !P275FileSafety.IsRegularFile(files.CandidateDatabasePath))
         {
             return ValueTask.FromResult(P275PromotionResult.ExplicitFailure());
         }
 
         try
         {
+            var candidateSidecars = P275CandidateSidecarFinalizer
+                .EnumerateSidecars(files.CandidateDatabasePath);
+            if (candidateSidecars.Any(sidecar => !P275FileSafety.IsRegularFile(sidecar)) ||
+                candidateSidecars.Count != 0 &&
+                !CheckpointAndRemoveSidecars(files.CandidateDatabasePath))
+            {
+                return ValueTask.FromResult(P275PromotionResult.ExplicitFailure());
+            }
+
+            if (P275CandidateSidecarFinalizer.EnumerateSidecars(files.CandidateDatabasePath).Count != 0)
+            {
+                return ValueTask.FromResult(P275PromotionResult.ExplicitFailure());
+            }
+
             Directory.CreateDirectory(files.HistoryDirectory);
             if (Directory.EnumerateFileSystemEntries(files.HistoryDirectory).Any())
             {
@@ -170,7 +183,7 @@ public sealed class P275AtomicFilePromoter : IP275AtomicPromoter
             try
             {
                 if (activeExists && activeSidecars.Count != 0 &&
-                    !CheckpointAndRemoveActiveSidecars(paths.ActiveDatabasePath))
+                    !CheckpointAndRemoveSidecars(paths.ActiveDatabasePath))
                 {
                     return ValueTask.FromResult(P275PromotionResult.ExplicitFailure());
                 }
@@ -230,13 +243,13 @@ public sealed class P275AtomicFilePromoter : IP275AtomicPromoter
         }
     }
 
-    private static bool CheckpointAndRemoveActiveSidecars(string activeDatabasePath)
+    private static bool CheckpointAndRemoveSidecars(string databasePath)
     {
         try
         {
             var connectionString = new SqliteConnectionStringBuilder
             {
-                DataSource = activeDatabasePath,
+                DataSource = databasePath,
                 Mode = SqliteOpenMode.ReadWrite,
                 Cache = SqliteCacheMode.Private,
                 Pooling = false,
@@ -257,7 +270,7 @@ public sealed class P275AtomicFilePromoter : IP275AtomicPromoter
                 }
             }
 
-            foreach (var sidecar in P275CandidateSidecarFinalizer.EnumerateSidecars(activeDatabasePath))
+            foreach (var sidecar in P275CandidateSidecarFinalizer.EnumerateSidecars(databasePath))
             {
                 if (!P275FileSafety.IsRegularFile(sidecar))
                 {
@@ -271,7 +284,7 @@ public sealed class P275AtomicFilePromoter : IP275AtomicPromoter
                 }
             }
 
-            return P275CandidateSidecarFinalizer.EnumerateSidecars(activeDatabasePath).Count == 0;
+            return P275CandidateSidecarFinalizer.EnumerateSidecars(databasePath).Count == 0;
         }
         catch (SqliteException)
         {

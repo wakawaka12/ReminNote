@@ -429,7 +429,13 @@ public sealed class P275ProductionCandidateVerifier : IP275CandidateVerifier
                 request.Baseline ?? P275VerificationBaseline.Empty,
                 cancellationToken)
             .ConfigureAwait(false);
-        var databasePath = request.DatabasePath;
+        // Candidate verification resolves the fixed staging path from the
+        // run id. DatabasePath is reserved for the Active post-promote and
+        // already-ready checks; passing a staging path here would make the
+        // verifier's Active-path guard reject every normal migration.
+        var databasePath = request.Phase is P275VerificationPhase.Candidate
+            ? null
+            : request.DatabasePath;
         var candidateRequest = new P275CandidateVerificationRequest(
             layout,
             runId,

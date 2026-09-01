@@ -181,7 +181,7 @@ public sealed class P275RecoveryStatusReader
             P275ArtifactNames.ValidateBackupArtifactId(marker.BackupArtifact);
             manifestArtifact = Path.ChangeExtension(marker.BackupArtifact, ".json");
             P275ArtifactNames.ValidateManifestArtifactId(manifestArtifact);
-            layout.EnsureBackupForRead(manifestArtifact);
+            layout.EnsureManifestForRead(manifestArtifact);
         }
         catch (P275PathValidationException)
         {
@@ -201,7 +201,7 @@ public sealed class P275RecoveryStatusReader
         try
         {
             var payload = await ReadBoundedAsync(
-                    layout.GetBackupPath(manifestArtifact),
+                    layout.GetManifestPath(manifestArtifact),
                     SafetyBackupContract.MaxManifestBytes,
                     cancellationToken)
                 .ConfigureAwait(false);

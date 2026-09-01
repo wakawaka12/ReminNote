@@ -356,6 +356,7 @@ public sealed class P275CandidateVerifier
                 DataSource = databasePath,
                 Mode = SqliteOpenMode.ReadOnly,
                 Cache = SqliteCacheMode.Private,
+                Pooling = false,
                 ForeignKeys = true
             }.ToString();
 

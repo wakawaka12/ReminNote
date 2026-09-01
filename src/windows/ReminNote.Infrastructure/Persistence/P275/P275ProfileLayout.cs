@@ -105,6 +105,22 @@ public sealed class P275ProfileLayout
         return path;
     }
 
+    public string GetManifestPath(string artifactId)
+    {
+        try
+        {
+            P275ArtifactNames.ValidateManifestArtifactId(artifactId);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new P275PathValidationException(P275MigrationFailureCodes.PathInvalid, exception);
+        }
+
+        var path = Path.Combine(BackupsDirectory, artifactId);
+        EnsureWithinProfile(ProfileRoot, path);
+        return path;
+    }
+
     public void EnsureProfileRootForRead()
     {
         EnsureExistingDirectory(ProfileRoot);
@@ -137,6 +153,16 @@ public sealed class P275ProfileLayout
         EnsureExistingDirectory(BackupsDirectory);
         EnsureNotReparse(BackupsDirectory);
         var path = GetBackupPath(artifactId);
+        EnsureExistingFile(path);
+        EnsureNotReparse(path);
+    }
+
+    public void EnsureManifestForRead(string artifactId)
+    {
+        EnsureProfileRootForRead();
+        EnsureExistingDirectory(BackupsDirectory);
+        EnsureNotReparse(BackupsDirectory);
+        var path = GetManifestPath(artifactId);
         EnsureExistingFile(path);
         EnsureNotReparse(path);
     }
