@@ -451,6 +451,7 @@ public static class ReminderExportValidator
                 "state"));
         }
 
+        var knownState = IsScheduleState(schedule.State);
         var pending = string.Equals(schedule.State, ReminderExportValues.SchedulePending, StringComparison.Ordinal);
         if (pending && (schedule.TerminalReason is not null || schedule.TerminalAtUtc is not null || schedule.ReplacementScheduleId is not null))
         {
@@ -461,6 +462,67 @@ public static class ReminderExportValidator
                 entityId,
                 "state"));
         }
+
+        if (knownState && !pending)
+        {
+            if (schedule.TerminalReason is null || !IsScheduleTerminalReason(schedule.TerminalReason))
+            {
+                issues.Add(Issue(
+                    schedule.TerminalReason is null
+                        ? ReminderExportErrorCodes.InvalidState
+                        : ReminderExportErrorCodes.InvalidEnum,
+                    "终态 schedule 必须携带 P3-00 定义的 terminalReason。",
+                    ReminderExportEntityKind.Schedule,
+                    entityId,
+                    "terminalReason"));
+            }
+
+            if (schedule.TerminalAtUtc is null)
+            {
+                issues.Add(Issue(
+                    ReminderExportErrorCodes.InvalidState,
+                    "终态 schedule 必须携带 terminalAtUtc。",
+                    ReminderExportEntityKind.Schedule,
+                    entityId,
+                    "terminalAtUtc"));
+            }
+
+            if (string.Equals(schedule.State, ReminderExportValues.ScheduleConsumed, StringComparison.Ordinal) &&
+                (!string.Equals(schedule.TerminalReason, ReminderExportValues.ScheduleReasonDueConsumed, StringComparison.Ordinal) ||
+                 schedule.ReplacementScheduleId is not null))
+            {
+                issues.Add(Issue(
+                    ReminderExportErrorCodes.InvalidState,
+                    "CONSUMED schedule 必须使用 DUE_CONSUMED 且不得有 replacementScheduleId。",
+                    ReminderExportEntityKind.Schedule,
+                    entityId,
+                    "state"));
+            }
+
+            if (string.Equals(schedule.State, ReminderExportValues.ScheduleSuperseded, StringComparison.Ordinal) &&
+                schedule.ReplacementScheduleId is null)
+            {
+                issues.Add(Issue(
+                    ReminderExportErrorCodes.InvalidState,
+                    "SUPERSEDED schedule 必须有 replacementScheduleId。",
+                    ReminderExportEntityKind.Schedule,
+                    entityId,
+                    "replacementScheduleId"));
+            }
+
+            if ((string.Equals(schedule.State, ReminderExportValues.ScheduleCancelled, StringComparison.Ordinal) ||
+                 string.Equals(schedule.State, ReminderExportValues.ScheduleExpired, StringComparison.Ordinal)) &&
+                schedule.ReplacementScheduleId is not null)
+            {
+                issues.Add(Issue(
+                    ReminderExportErrorCodes.InvalidState,
+                    "CANCELLED/EXPIRED schedule 不得有 replacementScheduleId。",
+                    ReminderExportEntityKind.Schedule,
+                    entityId,
+                    "replacementScheduleId"));
+            }
+        }
+
         if (schedule.ReplacementScheduleId is not null)
         {
             ValidateUuid(schedule.ReplacementScheduleId, ReminderExportEntityKind.Schedule, entityId, "replacementScheduleId", issues);
@@ -696,6 +758,17 @@ public static class ReminderExportValidator
                     instance.Id,
                     "scheduleId"));
             }
+
+            if (IsScheduleState(schedule.State) &&
+                !string.Equals(schedule.State, ReminderExportValues.ScheduleConsumed, StringComparison.Ordinal))
+            {
+                issues.Add(Issue(
+                    ReminderExportErrorCodes.InvalidRelation,
+                    "instance.scheduleId 必须引用已 CONSUMED 的 schedule。",
+                    ReminderExportEntityKind.Instance,
+                    instance.Id,
+                    "scheduleId"));
+            }
         }
     }
 
@@ -832,6 +905,18 @@ public static class ReminderExportValidator
         string.Equals(state, ReminderExportValues.ScheduleSuperseded, StringComparison.Ordinal) ||
         string.Equals(state, ReminderExportValues.ScheduleCancelled, StringComparison.Ordinal) ||
         string.Equals(state, ReminderExportValues.ScheduleExpired, StringComparison.Ordinal);
+
+    private static bool IsScheduleTerminalReason(string? reason) =>
+        string.Equals(reason, ReminderExportValues.ScheduleReasonDueConsumed, StringComparison.Ordinal) ||
+        string.Equals(reason, ReminderExportValues.ScheduleReasonRuleRebuilt, StringComparison.Ordinal) ||
+        string.Equals(reason, ReminderExportValues.ScheduleReasonTaskPlanChanged, StringComparison.Ordinal) ||
+        string.Equals(reason, ReminderExportValues.ScheduleReasonTimeZoneChanged, StringComparison.Ordinal) ||
+        string.Equals(reason, ReminderExportValues.ScheduleReasonTaskResultRecorded, StringComparison.Ordinal) ||
+        string.Equals(reason, ReminderExportValues.ScheduleReasonRuleDisabled, StringComparison.Ordinal) ||
+        string.Equals(reason, ReminderExportValues.ScheduleReasonTaskDeleted, StringComparison.Ordinal) ||
+        string.Equals(reason, ReminderExportValues.ScheduleReasonRecoveryObsolete, StringComparison.Ordinal) ||
+        string.Equals(reason, ReminderExportValues.ScheduleReasonManualCancelled, StringComparison.Ordinal) ||
+        string.Equals(reason, ReminderExportValues.ScheduleReasonReplaced, StringComparison.Ordinal);
 
     private static bool IsInstanceLifecycle(string? lifecycle) =>
         string.Equals(lifecycle, ReminderExportValues.InstanceUnread, StringComparison.Ordinal) ||

@@ -46,7 +46,7 @@ DTO 没有 secret、token、密码、机器标识、用户标识、profile 路�
 
 `ReminderScheduleExport` 保留 `id`、Rule/occurrence/logical 引用、`originScheduleId`、`cause`、修订、`triggerAtUtc`、可选 `timeZoneId`、`state`、终态原因/替换引用和时间戳。相对 Rule 可带 provenance，也可以缺省；绝对 Rule 不应带该字段。`RULE` cause 不得有 origin；`SNOOZE`/`REPEAT` 必须有 origin。每个 `(ruleId, occurrenceId, scheduleRevision)` 唯一。
 
-`PENDING` 不得携带终态字段；其他状态的终态字段按来源可缺省，但若存在必须使用合法时间/引用。历史终态不删除。
+`PENDING` 不得携带终态字段；`CONSUMED`、`SUPERSEDED`、`CANCELLED`、`EXPIRED` 必须携带合法 `terminalReason` 与 `terminalAtUtc`。其中 `CONSUMED` 固定使用 `DUE_CONSUMED` 且不得有 replacement，`SUPERSEDED` 必须有 replacement，`CANCELLED`/`EXPIRED` 不得有 replacement。Instance 只能引用 `CONSUMED` schedule。历史终态不删除。
 
 ### Instance history
 
@@ -86,7 +86,8 @@ DTO 没有 secret、token、密码、机器标识、用户标识、profile 路�
 3. 敏感字段拒绝与默认输出不含敏感字段；
 4. 未知字段、未知版本、重复 ID、非 UTC 时间的确定性错误；
 5. dry-run Candidate 计划、pending 延后、Active 写入拒绝；
-6. Rule 修订冲突和 Instance 不可变历史冲突不覆盖。
+6. Rule 修订冲突和 Instance 不可变历史冲突不覆盖；
+7. 终态 schedule shape 与 Instance→CONSUMED schedule 关系拒绝。
 
 测试不连接仓库数据库，不读取 `D:\Anime\.devdata\reminnote.sqlite`，不执行 migration。
 

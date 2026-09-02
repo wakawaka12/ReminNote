@@ -41,6 +41,17 @@ public static class ReminderExportValues
     public const string ScheduleCauseSnooze = "SNOOZE";
     public const string ScheduleCauseRepeat = "REPEAT";
 
+    public const string ScheduleReasonDueConsumed = "DUE_CONSUMED";
+    public const string ScheduleReasonRuleRebuilt = "RULE_REBUILT";
+    public const string ScheduleReasonTaskPlanChanged = "TASK_PLAN_CHANGED";
+    public const string ScheduleReasonTimeZoneChanged = "TIME_ZONE_CHANGED";
+    public const string ScheduleReasonTaskResultRecorded = "TASK_RESULT_RECORDED";
+    public const string ScheduleReasonRuleDisabled = "RULE_DISABLED";
+    public const string ScheduleReasonTaskDeleted = "TASK_DELETED";
+    public const string ScheduleReasonRecoveryObsolete = "RECOVERY_OBSOLETE";
+    public const string ScheduleReasonManualCancelled = "MANUAL_CANCELLED";
+    public const string ScheduleReasonReplaced = "REPLACED";
+
     public const string SchedulePending = "PENDING";
     public const string ScheduleConsumed = "CONSUMED";
     public const string ScheduleSuperseded = "SUPERSEDED";

@@ -95,11 +95,50 @@ public sealed class ReminderExportContractTests
     }
 
     [Fact]
+    public void TerminalScheduleShapeAndInstanceRelationAreEnforced()
+    {
+        var document = CreateDocument();
+        var malformedTerminal = document with
+        {
+            Schedules = new[]
+            {
+                document.Schedules[0] with
+                {
+                    State = ReminderExportValues.ScheduleCancelled,
+                    TerminalReason = null,
+                    TerminalAtUtc = null,
+                },
+            },
+            Instances = Array.Empty<ReminderInstanceExport>(),
+        };
+
+        var terminalResult = ReminderExportValidator.Validate(malformedTerminal);
+        Assert.Contains(terminalResult.Issues, issue => issue.Code == ReminderExportErrorCodes.InvalidState);
+
+        var pendingWithInstance = document with
+        {
+            Schedules = new[]
+            {
+                document.Schedules[0] with
+                {
+                    State = ReminderExportValues.SchedulePending,
+                    TerminalReason = null,
+                    TerminalAtUtc = null,
+                },
+            },
+        };
+
+        var relationResult = ReminderExportValidator.Validate(pendingWithInstance);
+        Assert.Contains(relationResult.Issues, issue =>
+            issue.Code == ReminderExportErrorCodes.InvalidRelation &&
+            issue.Field == "scheduleId");
+    }
+
+    [Fact]
     public void DryRunPlanIsCandidateBoundAndDoesNotActivatePendingSchedule()
     {
-        var parsed = ReminderExportJson.Parse(ReminderExportJson.Serialize(CreateDocument()));
         var plan = ReminderRestorePlanner.CreatePlan(new ReminderRestorePlanRequest(
-            parsed,
+            ReminderExportJson.Parse(ReminderExportJson.Serialize(CreatePendingDocument())),
             DryRun: true,
             CandidatePipelineReady: false,
             Confirmed: false));
@@ -200,11 +239,11 @@ public sealed class ReminderExportContractTests
             1,
             created,
             null,
-            ReminderExportValues.SchedulePending,
-            null,
+            ReminderExportValues.ScheduleConsumed,
+            ReminderExportValues.ScheduleReasonDueConsumed,
             null,
             created,
-            null);
+            read);
         var instance = new ReminderInstanceExport(
             instanceId,
             scheduleId,
@@ -221,6 +260,25 @@ public sealed class ReminderExportContractTests
             resolved,
             ReminderExportValues.ResolutionDone);
         return ReminderExportDocument.Create(new[] { rule }, new[] { schedule }, new[] { instance });
+    }
+
+    private static ReminderExportDocument CreatePendingDocument()
+    {
+        var document = CreateDocument();
+        return document with
+        {
+            Schedules = new[]
+            {
+                document.Schedules[0] with
+                {
+                    State = ReminderExportValues.SchedulePending,
+                    TerminalReason = null,
+                    ReplacementScheduleId = null,
+                    TerminalAtUtc = null,
+                },
+            },
+            Instances = Array.Empty<ReminderInstanceExport>(),
+        };
     }
 
     private sealed class IsolatedTempRoot : IDisposable
