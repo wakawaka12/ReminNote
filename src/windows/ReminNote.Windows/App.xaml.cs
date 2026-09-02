@@ -8,10 +8,12 @@ using ReminNote.Agent.Runtime;
 using ReminNote.Core.Application;
 using ReminNote.Core.Protocol;
 using ReminNote.Core.Reminders.Application;
+using ReminNote.Core.Reminders.Notifications;
 using ReminNote.Core.Today;
 using ReminNote.Windows.Features.Anime;
 using ReminNote.Windows.Features.Reminders;
 using ReminNote.Windows.Features.Today;
+using ReminNote.Windows.Notifications;
 using ReminNote.Windows.Startup;
 using ReminNote.Windows.ViewModels;
 
@@ -56,6 +58,13 @@ public partial class App : Application, IDisposable
         builder.Services.AddSingleton<IReminderCommandClient>(serviceProvider =>
             serviceProvider.GetRequiredService<AgentTaskClient>());
         builder.Services.AddSingleton<IClock>(SystemClock.Instance);
+        builder.Services.AddSingleton<WindowsNotificationChannelHost>(serviceProvider =>
+            WindowsNotificationChannelComposition.CreateHostOwned(
+                serviceProvider.GetRequiredService<IClock>(),
+                () => Application.Current?.MainWindow,
+                Dispatcher));
+        builder.Services.AddSingleton<INotificationChannelCatalog>(serviceProvider =>
+            serviceProvider.GetRequiredService<WindowsNotificationChannelHost>().Catalog);
         builder.Services.AddTodayFeature();
         builder.Services.AddAnimeFeature();
         builder.Services.AddSingleton<ReminderCenterViewModel>();
@@ -64,6 +73,7 @@ public partial class App : Application, IDisposable
 
         _host = builder.Build();
         _host.Start();
+        _ = _host.Services.GetRequiredService<INotificationChannelCatalog>();
 
         var window = _host.Services.GetRequiredService<MainWindow>();
         MainWindow = window;

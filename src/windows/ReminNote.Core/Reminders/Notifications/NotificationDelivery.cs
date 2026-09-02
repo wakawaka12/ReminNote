@@ -20,7 +20,8 @@ public sealed record NotificationTriggerFact
         NotificationPurposeSnapshot purposeSnapshot,
         NotificationPriority prioritySnapshot,
         bool pinnedSnapshot,
-        Instant triggeredAtUtc)
+        Instant triggeredAtUtc,
+        Instant? scheduledTriggerAtUtc = null)
     {
         NotificationValidation.RequireUuidV7(instanceId, nameof(instanceId));
         NotificationValidation.RequireUuidV7(scheduleId, nameof(scheduleId));
@@ -48,6 +49,7 @@ public sealed record NotificationTriggerFact
         PrioritySnapshot = prioritySnapshot;
         PinnedSnapshot = pinnedSnapshot;
         TriggeredAtUtc = triggeredAtUtc;
+        ScheduledTriggerAtUtc = scheduledTriggerAtUtc;
     }
 
     public Guid InstanceId { get; }
@@ -69,6 +71,14 @@ public sealed record NotificationTriggerFact
     public bool PinnedSnapshot { get; }
 
     public Instant TriggeredAtUtc { get; }
+
+    /// <summary>
+    /// The schedule instant that caused this core trigger, when the Agent
+    /// supplies it. It is intentionally separate from TriggeredAtUtc: a
+    /// channel adapter must not reinterpret the time the Agent recorded the
+    /// fact as the time at which a wake request should have fired.
+    /// </summary>
+    public Instant? ScheduledTriggerAtUtc { get; }
 }
 
 /// <summary>

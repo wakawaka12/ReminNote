@@ -186,6 +186,9 @@ public sealed record NotificationChannelEffectRequest
 
     public Instant TriggeredAtUtc => DeliveryRequest.CoreTrigger.TriggeredAtUtc;
 
+    public Instant? ScheduledTriggerAtUtc =>
+        DeliveryRequest.CoreTrigger.ScheduledTriggerAtUtc;
+
     /// <summary>
     /// Stable replace/update key for Toast, Tray and Widget presenters. It is
     /// the logical reminder identity, never a window handle or process ID.

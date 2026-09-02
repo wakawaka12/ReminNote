@@ -1,16 +1,24 @@
 using NodaTime;
+using System.Windows;
+using System.Windows.Threading;
 using ReminNote.Core.Reminders.Notifications;
 using ReminNote.Core.Reminders.Notifications.Adapters;
 
 namespace ReminNote.Widget.Notifications;
 
 /// <summary>
-/// Widget-host composition for the P3 channel seam. It is not wired into the
-/// current mock UI lifecycle; P3-03/P3-06/P3-09 must supply the Agent-owned
-/// trigger/query path before this becomes a production registration.
+/// Widget-host composition for the P3 channel seam. The production host
+/// registration owns the HWND effect sink; Agent trigger/query orchestration
+/// remains outside this UI-only boundary.
 /// </summary>
 public static class WidgetNotificationChannelComposition
 {
+    public static WidgetNotificationChannelHost CreateHostOwned(
+        IClock clock,
+        Func<Window?> widgetWindowProvider,
+        Dispatcher dispatcher) =>
+        new(clock, widgetWindowProvider, dispatcher);
+
     public static NotificationChannelCatalog CreateSafeDefault(IClock clock)
     {
         ArgumentNullException.ThrowIfNull(clock);

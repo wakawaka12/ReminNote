@@ -83,6 +83,32 @@ public sealed class NotificationChannelAdapterTests
     }
 
     [Fact]
+    public async Task WakeTimerForwardsScheduledInstantSeparatelyFromRecordedTrigger()
+    {
+        var sink = new RecordingEffectSink();
+        var adapter = new WakeTimerNotificationChannel(
+            FixedSource(NotificationChannelId.WakeTimer),
+            sink,
+            new FixedClock(Now));
+        var scheduledAtUtc = Now + Duration.FromMinutes(10);
+        var request = NewRequest(
+            NotificationChannelId.WakeTimer,
+            scheduledTriggerAtUtc: scheduledAtUtc);
+
+        var response = await adapter.DeliverAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(NotificationDeliveryOutcome.DELIVERED, response.Outcome);
+        var effect = Assert.Single(sink.Requests);
+        Assert.Equal(Now, effect.TriggeredAtUtc);
+        Assert.Equal(scheduledAtUtc, effect.ScheduledTriggerAtUtc);
+        Assert.Equal(
+            request.CoreTrigger.LogicalReminderId.ToString("D"),
+            effect.LogicalReplacementKey);
+    }
+
+    [Fact]
     public async Task EveryFrozenAdapterForwardsToItsOwnInjectedSurface()
     {
         var fixedClock = new FixedClock(Now);
@@ -416,7 +442,8 @@ public sealed class NotificationChannelAdapterTests
     private static NotificationDeliveryRequest NewRequest(
         NotificationChannelId channelId,
         NotificationPriority priority = NotificationPriority.NORMAL,
-        bool pinned = false) =>
+        bool pinned = false,
+        Instant? scheduledTriggerAtUtc = null) =>
         new(
             new NotificationTriggerFact(
                 Id("0191f6a4-3b25-7c12-8d34-56789abcde01"),
@@ -428,7 +455,8 @@ public sealed class NotificationChannelAdapterTests
                 NotificationPurposeSnapshot.TaskStart,
                 priority,
                 pinned,
-                Now),
+                Now,
+                scheduledTriggerAtUtc),
             channelId,
             Id("0191f6a4-3b25-7c12-8d34-56789abcde12"),
             Id("0191f6a4-3b25-7c12-8d34-56789abcde13"));

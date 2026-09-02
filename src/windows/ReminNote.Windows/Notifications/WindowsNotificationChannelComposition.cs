@@ -1,4 +1,6 @@
 using NodaTime;
+using System.Windows;
+using System.Windows.Threading;
 using ReminNote.Core.Reminders.Notifications;
 using ReminNote.Core.Reminders.Notifications.Adapters;
 
@@ -11,6 +13,18 @@ namespace ReminNote.Windows.Notifications;
 /// </summary>
 public static class WindowsNotificationChannelComposition
 {
+    /// <summary>
+    /// Creates the host-owned Windows catalog. Toast registration is
+    /// unverified by default, so the real sink is connected but remains
+    /// unavailable until the host supplies explicit registration evidence.
+    /// </summary>
+    public static WindowsNotificationChannelHost CreateHostOwned(
+        IClock clock,
+        Func<Window?> mainWindowProvider,
+        Dispatcher dispatcher,
+        WindowsNotificationHostOptions? options = null) =>
+        new(clock, mainWindowProvider, dispatcher, options);
+
     public static NotificationChannelCatalog CreateSafeDefault(IClock clock)
     {
         ArgumentNullException.ThrowIfNull(clock);

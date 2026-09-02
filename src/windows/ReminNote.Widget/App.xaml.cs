@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Threading;
 using ReminNote.Agent.Runtime;
 using ReminNote.Core.Protocol;
+using ReminNote.Widget.Notifications;
 using ReminNote.Widget.Startup;
 using ReminNote.Widget.ViewModels;
 using NodaTime;
@@ -15,6 +16,7 @@ public partial class App : Application, IDisposable
     private WidgetSingleInstanceCoordinator? _singleInstance;
     private AgentTaskClient? _agentClient;
     private WidgetViewModel? _viewModel;
+    private WidgetNotificationChannelHost? _notificationHost;
     private DispatcherTimer? _refreshTimer;
     private CancellationTokenSource? _lifetimeCancellation;
     private bool _refreshInProgress;
@@ -54,6 +56,10 @@ public partial class App : Application, IDisposable
 
             var window = new WidgetWindow(_viewModel);
             MainWindow = window;
+            _notificationHost = WidgetNotificationChannelComposition.CreateHostOwned(
+                SystemClock.Instance,
+                () => MainWindow,
+                Dispatcher);
             _lifetimeCancellation = new CancellationTokenSource();
             _singleInstance.StartListener(() =>
                 Dispatcher.BeginInvoke(new Action(() => _ = RefreshAndActivateAsync())));
@@ -86,6 +92,8 @@ public partial class App : Application, IDisposable
         _lifetimeCancellation?.Cancel();
         _lifetimeCancellation?.Dispose();
         _lifetimeCancellation = null;
+        _notificationHost?.Dispose();
+        _notificationHost = null;
         _viewModel?.Dispose();
         _viewModel = null;
         _agentClient?.Dispose();
