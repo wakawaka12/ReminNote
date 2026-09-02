@@ -447,7 +447,10 @@ function Invoke-ContractTests {
         'ReminNote.Tests.ReminderDomainTests',
         'ReminNote.Tests.ReminderPersistenceMappingTests',
         'ReminNote.Tests.P302.*',
+        'ReminNote.Tests.P3_03.*',
         'ReminNote.Tests.P3_04.*',
+        'ReminNote.Tests.P3_05.*',
+        'ReminNote.Tests.ReminderUiAndProtocolTests',
         'ReminNote.Tests.P3_07.*',
         'ReminNote.Tests.P308.*'
     )
