@@ -17,6 +17,12 @@ public enum ReminderSnapshotStatus
     Unavailable
 }
 
+public static class ReminderSnapshotCodes
+{
+    public const string QueryNotConfigured = "reminder.query.not_configured";
+    public const string SnapshotNotLoaded = "reminder.snapshot.not_loaded";
+}
+
 /// <summary>
 /// The bounded query contract used by Main and Widget. It intentionally has no
 /// storage or SQL concepts; the adapter owns the read-only transaction.
@@ -112,6 +118,22 @@ public sealed record ReminderReadModel
             }
         }
 
+        if (lifecycle == ReminderLifecycle.RESOLVED && resolutionAction is null)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.read_model.resolution.missing",
+                "A resolved reminder must carry its resolution action.",
+                nameof(resolutionAction)));
+        }
+
+        if (lifecycle != ReminderLifecycle.RESOLVED && resolutionAction is not null)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.read_model.resolution.unexpected",
+                "Only a resolved reminder may carry a resolution action.",
+                nameof(resolutionAction)));
+        }
+
         InstanceId = instanceId;
         ScheduleId = scheduleId;
         RuleId = ruleId;
@@ -179,11 +201,13 @@ public sealed class ReminderReadSnapshot
             throw new ArgumentOutOfRangeException(nameof(status));
         }
 
-        if (status == ReminderSnapshotStatus.Fresh && snapshotRevision is null)
+        if ((status is ReminderSnapshotStatus.Fresh or ReminderSnapshotStatus.Stale) && snapshotRevision is null)
         {
             throw new DomainValidationException(new DomainValidationError(
-                "reminder.snapshot.fresh_revision_missing",
-                "A fresh reminder snapshot must carry its revision.",
+                status == ReminderSnapshotStatus.Fresh
+                    ? "reminder.snapshot.fresh_revision_missing"
+                    : "reminder.snapshot.stale_revision_missing",
+                "A usable reminder snapshot must carry its revision.",
                 nameof(snapshotRevision)));
         }
 
@@ -193,6 +217,15 @@ public sealed class ReminderReadSnapshot
                 "reminder.snapshot.status_code_missing",
                 "A stale or unavailable reminder snapshot must carry a stable status code.",
                 nameof(statusCode)));
+        }
+
+        if (status == ReminderSnapshotStatus.Unavailable &&
+            (snapshotRevision is not null || items.Count != 0))
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.snapshot.unavailable_payload_invalid",
+                "An unavailable reminder snapshot cannot carry a revision or rows.",
+                nameof(items)));
         }
 
         SnapshotRevision = snapshotRevision;
@@ -220,6 +253,119 @@ public sealed class ReminderReadSnapshot
 
     public static ReminderReadSnapshot Unavailable(string statusCode) =>
         new(null, Array.Empty<ReminderReadModel>(), ReminderSnapshotStatus.Unavailable, statusCode);
+}
+
+/// <summary>
+/// Client-side state for the last complete reminder model. A failed read does
+/// not erase that model, but it does change the state to Unavailable and makes
+/// the revision unusable for commands. Keeping this transition in Core makes
+/// Main and Widget obey the same stale/unavailable contract.
+/// </summary>
+public sealed class ReminderSnapshotState
+{
+    private ReminderSnapshotState(
+        bool hasSnapshot,
+        long? snapshotRevision,
+        IReadOnlyList<ReminderReadModel> items,
+        ReminderSnapshotStatus status,
+        string? statusCode)
+    {
+        if (snapshotRevision is < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(snapshotRevision));
+        }
+
+        ArgumentNullException.ThrowIfNull(items);
+        if (status is not ReminderSnapshotStatus.Fresh and not ReminderSnapshotStatus.Stale and not ReminderSnapshotStatus.Unavailable)
+        {
+            throw new ArgumentOutOfRangeException(nameof(status));
+        }
+
+        if ((status is ReminderSnapshotStatus.Fresh or ReminderSnapshotStatus.Stale) && snapshotRevision is null)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.snapshot.state.revision_missing",
+                "A fresh or stale reminder state must carry its revision.",
+                nameof(snapshotRevision)));
+        }
+
+        if (status != ReminderSnapshotStatus.Fresh && string.IsNullOrWhiteSpace(statusCode))
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.snapshot.state.status_code_missing",
+                "A stale or unavailable reminder state must carry a stable status code.",
+                nameof(statusCode)));
+        }
+
+        HasSnapshot = hasSnapshot;
+        SnapshotRevision = snapshotRevision;
+        Items = Array.AsReadOnly(items.ToArray());
+        Status = status;
+        StatusCode = statusCode;
+    }
+
+    public static ReminderSnapshotState Empty { get; } = new(
+        hasSnapshot: false,
+        snapshotRevision: null,
+        items: Array.Empty<ReminderReadModel>(),
+        status: ReminderSnapshotStatus.Unavailable,
+        statusCode: ReminderSnapshotCodes.SnapshotNotLoaded);
+
+    public bool HasSnapshot { get; }
+
+    public long? SnapshotRevision { get; }
+
+    public IReadOnlyList<ReminderReadModel> Items { get; }
+
+    public ReminderSnapshotStatus Status { get; }
+
+    public string? StatusCode { get; }
+
+    public bool HasItems => Items.Count > 0;
+
+    public bool CanWrite =>
+        HasSnapshot &&
+        Status == ReminderSnapshotStatus.Fresh &&
+        SnapshotRevision is not null;
+
+    public ReminderSnapshotState Apply(ReminderReadSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        if (snapshot.Status == ReminderSnapshotStatus.Unavailable)
+        {
+            return new(
+                HasSnapshot,
+                SnapshotRevision,
+                Items,
+                ReminderSnapshotStatus.Unavailable,
+                snapshot.StatusCode);
+        }
+
+        return new(
+            hasSnapshot: true,
+            snapshotRevision: snapshot.SnapshotRevision,
+            items: snapshot.Items,
+            status: snapshot.Status,
+            statusCode: snapshot.StatusCode);
+    }
+
+    public ReminderSnapshotState MarkStale(string statusCode) => WithStatus(
+        ReminderSnapshotStatus.Stale,
+        statusCode);
+
+    public ReminderSnapshotState MarkUnavailable(string statusCode) => WithStatus(
+        ReminderSnapshotStatus.Unavailable,
+        statusCode);
+
+    private ReminderSnapshotState WithStatus(
+        ReminderSnapshotStatus status,
+        string statusCode) => new(
+            HasSnapshot,
+            SnapshotRevision,
+            Items,
+            status,
+            statusCode);
 }
 
 public static class ReminderCommandLimits
@@ -336,6 +482,10 @@ public sealed record ReminderCommandResult(
     string? ErrorCode = null)
 {
     public bool Succeeded => Outcome is ReminderCommandOutcome.Changed or ReminderCommandOutcome.NoOp;
+
+    public bool IsStale => Outcome == ReminderCommandOutcome.Stale;
+
+    public bool IsUnavailable => Outcome == ReminderCommandOutcome.Unavailable;
 }
 
 public interface IReminderQueryService

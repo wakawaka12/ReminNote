@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.Data.Sqlite;
 using NodaTime;
 using NodaTime.Text;
@@ -77,6 +76,7 @@ public sealed class ReadOnlyReminderQueryService : IReminderQueryService
                 ri.triggered_at_utc,
                 ri.lifecycle,
                 ri.resolution_action,
+                t.id,
                 t.title
             FROM reminder_instances AS ri
             INNER JOIN tasks AS t ON t.id = ri.occurrence_id
@@ -106,11 +106,11 @@ public sealed class ReadOnlyReminderQueryService : IReminderQueryService
                 ReminderScheduleId.Parse(rows.GetString(1)),
                 ReminderRuleId.Parse(rows.GetString(2)),
                 OccurrenceId.Parse(rows.GetString(3)),
-                TaskId.Parse(rows.GetString(3)),
-                rows.GetString(10),
+                TaskId.Parse(rows.GetString(10)),
+                rows.GetString(11),
                 ParseEnum<ReminderPurpose>(rows.GetString(4), "purpose_snapshot"),
                 ParseEnum<ReminderPriority>(rows.GetString(5), "priority_snapshot"),
-                Convert.ToBoolean(rows.GetValue(6), CultureInfo.InvariantCulture),
+                ParseBoolean(rows, 6, "pinned_snapshot"),
                 ParseInstant(rows.GetString(7), "triggered_at_utc"),
                 ParseEnum<ReminderLifecycle>(rows.GetString(8), "lifecycle"),
                 rows.IsDBNull(9)
@@ -124,7 +124,9 @@ public sealed class ReadOnlyReminderQueryService : IReminderQueryService
     private static TEnum ParseEnum<TEnum>(string value, string fieldName)
         where TEnum : struct, Enum
     {
-        if (!Enum.TryParse<TEnum>(value, ignoreCase: false, out var parsed) || !Enum.IsDefined(parsed))
+        if (!Enum.TryParse<TEnum>(value, ignoreCase: false, out var parsed) ||
+            !Enum.IsDefined(parsed) ||
+            !string.Equals(parsed.ToString(), value, StringComparison.Ordinal))
         {
             throw new DomainValidationException(new DomainValidationError(
                 "reminder.read_model.enum.invalid",
@@ -133,6 +135,31 @@ public sealed class ReadOnlyReminderQueryService : IReminderQueryService
         }
 
         return parsed;
+    }
+
+    private static bool ParseBoolean(
+        Microsoft.Data.Sqlite.SqliteDataReader rows,
+        int ordinal,
+        string fieldName)
+    {
+        var value = rows.GetValue(ordinal);
+        var number = value switch
+        {
+            long longValue => longValue,
+            int intValue => intValue,
+            short shortValue => shortValue,
+            byte byteValue => byteValue,
+            _ => -1
+        };
+        if (number is 0 or 1)
+        {
+            return number == 1;
+        }
+
+        throw new DomainValidationException(new DomainValidationError(
+            "reminder.read_model.boolean.invalid",
+            $"The read model field {fieldName} must contain 0 or 1.",
+            fieldName));
     }
 
     private static Instant ParseInstant(string value, string fieldName)
@@ -155,7 +182,8 @@ public sealed class ReadOnlyReminderQueryService : IReminderQueryService
             "storage.not_ready",
         InvalidOperationException => "storage.not_ready",
         SqliteException => "storage.not_ready",
-        DomainValidationException or FormatException or ArgumentException => "storage.integrity_failed",
+        DomainValidationException or FormatException or ArgumentException or
+        InvalidCastException or OverflowException or IndexOutOfRangeException => "storage.integrity_failed",
         _ => "storage.not_ready"
     };
 

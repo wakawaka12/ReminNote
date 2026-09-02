@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.Globalization;
 using NodaTime.Text;
 using ReminNote.Core.Reminders.Application;
 using ReminNote.Core.Reminders.Domain;
@@ -25,13 +26,15 @@ public sealed class ReminderItemViewModel : ObservableObject
         ReminderReadModel model,
         Func<bool> canAct,
         Func<ReminderItemViewModel, ResolutionAction, long?, System.Threading.Tasks.Task> executeAction,
-        Func<ReminderItemViewModel, System.Threading.Tasks.Task> markRead)
+        Func<ReminderItemViewModel, System.Threading.Tasks.Task> markRead,
+        long? snapshotRevision = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         this.canAct = canAct ?? throw new ArgumentNullException(nameof(canAct));
         this.executeAction = executeAction ?? throw new ArgumentNullException(nameof(executeAction));
         this.markRead = markRead ?? throw new ArgumentNullException(nameof(markRead));
         Model = model;
+        SnapshotRevision = snapshotRevision;
 
         DoneCommand = new AsyncRelayCommand(
             () => ExecuteActionAsync(ResolutionAction.DONE),
@@ -50,6 +53,13 @@ public sealed class ReminderItemViewModel : ObservableObject
 
     public ReminderReadModel Model { get; }
 
+    /// <summary>
+    /// Revision of the complete snapshot that created this row. The parent
+    /// surface uses it to prevent a row kept by WPF during a refresh from
+    /// accidentally issuing a command against a newer snapshot.
+    /// </summary>
+    public long? SnapshotRevision { get; }
+
     public string Title => Model.Title;
 
     public string PurposeLabel => Model.Purpose.ToString();
@@ -65,6 +75,22 @@ public sealed class ReminderItemViewModel : ObservableObject
         ReminderLifecycle.RESOLVED => UiText.ReminderLifecycleResolved,
         _ => Model.Lifecycle.ToString()
     };
+
+    public string LifecycleDescription => Model.Lifecycle switch
+    {
+        ReminderLifecycle.UNREAD => UiText.ReminderLifecycleUnreadDescription,
+        ReminderLifecycle.READ => UiText.ReminderLifecycleReadDescription,
+        ReminderLifecycle.RESOLVED => UiText.ReminderLifecycleResolvedDescription,
+        _ => Model.Lifecycle.ToString()
+    };
+
+    public bool HasResolutionAction => Model.ResolutionAction is not null;
+
+    public string ResolutionActionLabel => Model.ResolutionAction?.ToString() ?? string.Empty;
+
+    public string SnapshotRevisionLabel => SnapshotRevision is { } revision
+        ? UiText.Format(UiText.ReminderRowRevisionKey, revision)
+        : UiText.ReminderRowRevisionUnavailable;
 
     public bool IsUnread => Model.IsUnread;
 

@@ -42,9 +42,18 @@ public static class UiText
     public const string ReminderSnapshotStaleKey = "Reminder.SnapshotStale";
     public const string ReminderSnapshotUnavailableKey = "Reminder.SnapshotUnavailable";
     public const string ReminderSnapshotEmptyKey = "Reminder.SnapshotEmpty";
+    public const string ReminderSnapshotStaleEmptyKey = "Reminder.SnapshotStaleEmpty";
+    public const string ReminderSnapshotUnavailableEmptyKey = "Reminder.SnapshotUnavailableEmpty";
+    public const string ReminderSnapshotReadFailedKey = "Reminder.SnapshotReadFailed";
+    public const string ReminderCenterTitleCountKey = "Reminder.CenterTitleCount";
     public const string ReminderLifecycleUnreadKey = "Reminder.LifecycleUnread";
     public const string ReminderLifecycleReadKey = "Reminder.LifecycleRead";
     public const string ReminderLifecycleResolvedKey = "Reminder.LifecycleResolved";
+    public const string ReminderLifecycleUnreadDescriptionKey = "Reminder.LifecycleUnreadDescription";
+    public const string ReminderLifecycleReadDescriptionKey = "Reminder.LifecycleReadDescription";
+    public const string ReminderLifecycleResolvedDescriptionKey = "Reminder.LifecycleResolvedDescription";
+    public const string ReminderRowRevisionKey = "Reminder.RowRevision";
+    public const string ReminderRowRevisionUnavailableKey = "Reminder.RowRevisionUnavailable";
     public const string ReminderMarkReadKey = "Reminder.MarkRead";
     public const string ReminderDoneKey = "Reminder.Done";
     public const string ReminderSnoozeKey = "Reminder.Snooze";
@@ -53,6 +62,8 @@ public static class UiText
     public const string ReminderActionUnavailableKey = "Reminder.ActionUnavailable";
     public const string ReminderActionStaleKey = "Reminder.ActionStale";
     public const string ReminderActionRejectedKey = "Reminder.ActionRejected";
+    public const string ReminderActionCommittedStaleKey = "Reminder.ActionCommittedStale";
+    public const string ReminderActionCommittedUnavailableKey = "Reminder.ActionCommittedUnavailable";
 
     public const string TodayPageDescriptionKey = "Today.PageDescription";
     public const string TodayMockBadgeKey = "Today.MockBadge";
@@ -213,6 +224,7 @@ public static class UiText
     public const string WidgetFooterLocalMockKey = "Widget.FooterLocalMock";
     public const string WidgetQuickAddKey = "Widget.QuickAdd";
     public const string WidgetRemindersKey = "Widget.Reminders";
+    public const string WidgetReminderCountKey = "Widget.ReminderCount";
     public const string WidgetSimulateReminderKey = "Widget.SimulateReminder";
     public const string WidgetHighPriorityKey = "Widget.HighPriority";
     public const string WidgetAlertTitleKey = "Widget.AlertTitle";
@@ -277,9 +289,14 @@ public static class UiText
     public static string ReminderCenterClose => Get(ReminderCenterCloseKey);
     public static string ReminderRefresh => Get(ReminderRefreshKey);
     public static string ReminderSnapshotEmpty => Get(ReminderSnapshotEmptyKey);
+    public static string ReminderSnapshotUnavailableEmpty => Get(ReminderSnapshotUnavailableEmptyKey);
     public static string ReminderLifecycleUnread => Get(ReminderLifecycleUnreadKey);
     public static string ReminderLifecycleRead => Get(ReminderLifecycleReadKey);
     public static string ReminderLifecycleResolved => Get(ReminderLifecycleResolvedKey);
+    public static string ReminderLifecycleUnreadDescription => Get(ReminderLifecycleUnreadDescriptionKey);
+    public static string ReminderLifecycleReadDescription => Get(ReminderLifecycleReadDescriptionKey);
+    public static string ReminderLifecycleResolvedDescription => Get(ReminderLifecycleResolvedDescriptionKey);
+    public static string ReminderRowRevisionUnavailable => Get(ReminderRowRevisionUnavailableKey);
     public static string ReminderMarkRead => Get(ReminderMarkReadKey);
     public static string ReminderDone => Get(ReminderDoneKey);
     public static string ReminderSnooze => Get(ReminderSnoozeKey);
@@ -288,6 +305,8 @@ public static class UiText
     public static string ReminderActionUnavailable => Get(ReminderActionUnavailableKey);
     public static string ReminderActionStale => Get(ReminderActionStaleKey);
     public static string ReminderActionRejected => Get(ReminderActionRejectedKey);
+    public static string ReminderActionCommittedStale => Get(ReminderActionCommittedStaleKey);
+    public static string ReminderActionCommittedUnavailable => Get(ReminderActionCommittedUnavailableKey);
 
     public static string TodayPageDescription => Get(TodayPageDescriptionKey);
     public static string TodayMockBadge => Get(TodayMockBadgeKey);

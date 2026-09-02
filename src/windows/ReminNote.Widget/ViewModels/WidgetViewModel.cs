@@ -132,6 +132,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
     private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private readonly ObservableCollection<ReminderItemViewModel> _reminderItems = [];
     private readonly SemaphoreSlim _reminderRefreshGate = new(1, 1);
+    private readonly CancellationTokenSource _lifetimeCancellation = new();
     private TodayTaskReadModel? _livePrimaryTask;
     private TodayTaskReadModel? _liveSelectedTask;
     private WidgetQueueItem? _selectedTaskItem;
@@ -144,10 +145,8 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
     private string _primaryTaskTitle = "整理桌面资料";
     private string _primaryTaskMeta = "TODAY · ANYTIME · 生活";
     private string _primaryTaskTimeLabel = UiText.WidgetNow;
-    private ReminderSnapshotStatus _reminderSnapshotStatus = ReminderSnapshotStatus.Unavailable;
-    private long? _reminderSnapshotRevision;
-    private string? _reminderSnapshotStatusCode;
-    private bool _hasReminderSnapshot;
+    private ReminderSnapshotState _reminderSnapshot = ReminderSnapshotState.Empty;
+    private int _disposed;
 
     public WidgetViewModel()
     {
@@ -222,9 +221,11 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         WatchAnimeCommand = new RelayCommand(WatchAnime);
         WatchLaterCommand = new RelayCommand(WatchLater);
         ScheduleAnimeTaskCommand = new RelayCommand(ScheduleAnimeTask);
-        OpenReminderDrawerCommand = new RelayCommand(OpenReminderDrawer);
+        OpenReminderDrawerCommand = new AsyncRelayCommand(OpenReminderDrawerAsync);
         CloseReminderDrawerCommand = new RelayCommand(CloseReminderDrawer);
-        MarkReminderReadCommand = new RelayCommand(MarkReminderRead);
+        MarkReminderReadCommand = new AsyncRelayCommand(
+            MarkReminderReadAsync,
+            CanMarkReminderRead);
         SimulateAlertCommand = new RelayCommand(SimulateAlert);
         DismissAlertCommand = new RelayCommand(DismissAlert);
     }
@@ -321,38 +322,50 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
 
     public bool HasNoReminderItems => !HasReminderItems;
 
-    public ReminderSnapshotStatus ReminderSnapshotStatus => _reminderSnapshotStatus;
+    public ReminderSnapshotStatus ReminderSnapshotStatus => _reminderSnapshot.Status;
 
-    public long? ReminderSnapshotRevision => _reminderSnapshotRevision;
+    public long? ReminderSnapshotRevision => _reminderSnapshot.SnapshotRevision;
 
-    public string? ReminderSnapshotStatusCode => _reminderSnapshotStatusCode;
+    public string? ReminderSnapshotStatusCode => _reminderSnapshot.StatusCode;
 
-    public bool HasReminderSnapshot => _hasReminderSnapshot;
+    public bool HasReminderSnapshot => _reminderSnapshot.HasSnapshot;
 
     public bool ReminderActionsEnabled =>
         _isLive &&
         _reminderQueryService is not null &&
         _reminderCommandClient is not null &&
-        _hasReminderSnapshot &&
-        _reminderSnapshotStatus == ReminderSnapshotStatus.Fresh &&
-        _reminderSnapshotRevision is not null;
+        _reminderSnapshot.CanWrite;
 
-    public string ReminderSnapshotStatusLabel => _reminderSnapshotStatus switch
+    public bool HasReminderSnapshotIssue => ReminderSnapshotStatus is not ReminderSnapshotStatus.Fresh;
+
+    public string ReminderEmptyStateLabel => ReminderSnapshotStatus switch
+    {
+        ReminderSnapshotStatus.Fresh => UiText.ReminderSnapshotEmpty,
+        ReminderSnapshotStatus.Stale => UiText.Format(
+            UiText.ReminderSnapshotStaleEmptyKey,
+            ReminderSnapshotRevision?.ToString(CultureInfo.InvariantCulture) ?? "—"),
+        ReminderSnapshotStatus.Unavailable => UiText.Format(
+            UiText.ReminderSnapshotUnavailableEmptyKey,
+            ReminderSnapshotStatusCode ?? "unknown"),
+        _ => UiText.ReminderSnapshotUnavailableEmpty
+    };
+
+    public string ReminderSnapshotStatusLabel => ReminderSnapshotStatus switch
     {
         ReminderSnapshotStatus.Fresh => UiText.Format(
             UiText.ReminderSnapshotFreshKey,
-            _reminderSnapshotRevision ?? 0),
+            ReminderSnapshotRevision ?? 0),
         ReminderSnapshotStatus.Stale => UiText.Format(
             UiText.ReminderSnapshotStaleKey,
-            _reminderSnapshotRevision?.ToString(CultureInfo.InvariantCulture) ?? "—"),
+            ReminderSnapshotRevision?.ToString(CultureInfo.InvariantCulture) ?? "—"),
         ReminderSnapshotStatus.Unavailable => UiText.Format(
             UiText.ReminderSnapshotUnavailableKey,
-            _reminderSnapshotStatusCode ?? "unknown"),
-        _ => _reminderSnapshotStatus.ToString()
+            ReminderSnapshotStatusCode ?? "unknown"),
+        _ => ReminderSnapshotStatus.ToString()
     };
 
     public string ReminderDrawerHeading => _isLive
-        ? $"{UiText.ReminderCenterTitle} · {ReminderCount}"
+        ? UiText.Format(UiText.ReminderCenterTitleCountKey, ReminderCount)
         : UiText.WidgetReminderDrawerHeading;
 
     public string ReminderDrawerTitle => _isLive
@@ -524,7 +537,11 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
 
     public string QuickAddTriggerLabel => IsQuickAddOpen ? UiText.WidgetClose : UiText.WidgetQuickAdd;
 
-    public string ReminderTriggerLabel => IsReminderDrawerOpen ? UiText.WidgetClose : UiText.WidgetReminders;
+    public string ReminderTriggerLabel => IsReminderDrawerOpen
+        ? UiText.WidgetClose
+        : _isLive
+            ? UiText.Format(UiText.WidgetReminderCountKey, ReminderCount)
+            : UiText.WidgetReminders;
 
     public string AlertTriggerLabel => IsAlert ? UiText.WidgetDismissAlert : UiText.WidgetSimulateReminder;
 
@@ -560,6 +577,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
     public async System.Threading.Tasks.Task RefreshAsync(
         CancellationToken cancellationToken = default)
     {
+        EnsureNotDisposed();
         if (!_isLive)
         {
             return;
@@ -674,74 +692,74 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-        _refreshGate.Dispose();
-        _reminderRefreshGate.Dispose();
+        if (Interlocked.Exchange(ref _disposed, 1) == 0)
+        {
+            _lifetimeCancellation.Cancel();
+        }
+
         GC.SuppressFinalize(this);
     }
 
     /// <summary>
     /// Applies a complete reminder read result without exposing any storage
     /// object to the Widget. Unavailable refreshes preserve an existing model
-    /// as stale and keep all actions disabled.
+    /// while marking it unavailable and keeping all actions disabled.
     /// </summary>
     public void ApplyReminderSnapshot(ReminderReadSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-
-        if (snapshot.Status == ReminderSnapshotStatus.Unavailable)
+        EnsureNotDisposed();
+        _reminderSnapshot = _reminderSnapshot.Apply(snapshot);
+        if (snapshot.Status != ReminderSnapshotStatus.Unavailable || !_reminderSnapshot.HasSnapshot)
         {
-            _reminderSnapshotStatusCode = snapshot.StatusCode;
-            if (_hasReminderSnapshot)
-            {
-                _reminderSnapshotStatus = ReminderSnapshotStatus.Stale;
-            }
-            else
-            {
-                _reminderSnapshotStatus = ReminderSnapshotStatus.Unavailable;
-                _reminderSnapshotRevision = null;
-                ReplaceReminderItems(Array.Empty<ReminderReadModel>());
-            }
-
-            NotifyReminderSnapshotChanged();
-            return;
+            ReplaceReminderItems(_reminderSnapshot.Items, _reminderSnapshot.SnapshotRevision);
         }
 
-        _reminderSnapshotStatus = snapshot.Status;
-        _reminderSnapshotStatusCode = snapshot.StatusCode;
-        _reminderSnapshotRevision = snapshot.SnapshotRevision;
-        _hasReminderSnapshot = true;
-        ReplaceReminderItems(snapshot.Items);
         NotifyReminderSnapshotChanged();
     }
 
     private async System.Threading.Tasks.Task RefreshRemindersAsync(
         CancellationToken cancellationToken)
     {
-        if (!_isLive || _reminderQueryService is null)
+        if (!_isLive)
         {
             return;
         }
+
+        EnsureNotDisposed();
 
         await _reminderRefreshGate.WaitAsync(cancellationToken).ConfigureAwait(true);
         try
         {
             ReminderReadSnapshot snapshot;
-            try
+            if (_reminderQueryService is null)
             {
-                snapshot = await _reminderQueryService
-                    .GetAsync(ReminderQuery.ActiveOnly, cancellationToken)
-                    .ConfigureAwait(true);
+                snapshot = ReminderReadSnapshot.Unavailable(ReminderSnapshotCodes.QueryNotConfigured);
             }
-            catch (OperationCanceledException)
+            else
             {
-                throw;
-            }
-            catch (Exception exception) when (!IsFatalException(exception))
-            {
-                snapshot = ReminderReadSnapshot.Unavailable(GetReminderFailureCode(exception));
+                try
+                {
+                    snapshot = await _reminderQueryService
+                        .GetAsync(ReminderQuery.ActiveOnly, cancellationToken)
+                        .ConfigureAwait(true);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception exception) when (!IsFatalException(exception))
+                {
+                    snapshot = ReminderReadSnapshot.Unavailable(GetReminderFailureCode(exception));
+                }
             }
 
             ApplyReminderSnapshot(snapshot);
+            ReminderFeedback = snapshot.Status == ReminderSnapshotStatus.Fresh
+                ? string.Empty
+                : UiText.Format(
+                    UiText.ReminderSnapshotReadFailedKey,
+                    snapshot.StatusCode ?? "unknown");
         }
         finally
         {
@@ -1173,7 +1191,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         AnimeFeedback = UiText.Get(UiText.WidgetAnimeScheduledFeedbackKey);
     }
 
-    private void OpenReminderDrawer()
+    private async System.Threading.Tasks.Task OpenReminderDrawerAsync()
     {
         if (IsReminderDrawerOpen)
         {
@@ -1184,9 +1202,15 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         CloseQuickAdd();
         DismissAlertIfOpen();
         IsReminderDrawerOpen = true;
-        if (_isLive && _reminderQueryService is not null)
+        if (_isLive)
         {
-            _ = RefreshRemindersAsync(CancellationToken.None);
+            try
+            {
+                await RefreshRemindersAsync(_lifetimeCancellation.Token).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
+            {
+            }
         }
     }
 
@@ -1195,11 +1219,11 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         IsReminderDrawerOpen = false;
     }
 
-    private void MarkReminderRead()
+    private async System.Threading.Tasks.Task MarkReminderReadAsync()
     {
         if (_isLive && _reminderItems.FirstOrDefault() is { } item)
         {
-            _ = item.MarkReadCommand.ExecuteAsync(null);
+            await item.MarkReadCommand.ExecuteAsync(null).ConfigureAwait(true);
             return;
         }
 
@@ -1207,16 +1231,19 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         ReminderFeedback = UiText.Get(UiText.WidgetReminderReadFeedbackKey);
     }
 
+    private bool CanMarkReminderRead() =>
+        !_isLive ||
+        _reminderItems.FirstOrDefault()?.CanMarkRead == true;
+
     private async System.Threading.Tasks.Task ExecuteReminderActionAsync(
         ReminderItemViewModel item,
         ResolutionAction action,
         long? snoozeSeconds)
     {
         ArgumentNullException.ThrowIfNull(item);
-        if (!ReminderActionsEnabled || _reminderSnapshotRevision is not { } revision)
+        if (!TryGetReminderActionRevision(item, out var revision))
         {
-            item.SetActionFeedback(UiText.ReminderActionUnavailable);
-            ReminderFeedback = UiText.ReminderActionUnavailable;
+            SetReminderActionUnavailable(item);
             return;
         }
 
@@ -1226,7 +1253,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
             result = await _reminderCommandClient!
                 .ExecuteAsync(
                     new ReminderActionCommand(item.Model.InstanceId, action, revision, snoozeSeconds),
-                    CancellationToken.None)
+                    _lifetimeCancellation.Token)
                 .ConfigureAwait(true);
         }
         catch (OperationCanceledException)
@@ -1246,10 +1273,9 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
     private async System.Threading.Tasks.Task MarkReminderReadAsync(ReminderItemViewModel item)
     {
         ArgumentNullException.ThrowIfNull(item);
-        if (!ReminderActionsEnabled || _reminderSnapshotRevision is not { } revision)
+        if (!TryGetReminderActionRevision(item, out var revision))
         {
-            item.SetActionFeedback(UiText.ReminderActionUnavailable);
-            ReminderFeedback = UiText.ReminderActionUnavailable;
+            SetReminderActionUnavailable(item);
             return;
         }
 
@@ -1259,7 +1285,7 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
             result = await _reminderCommandClient!
                 .MarkReadAsync(
                     new ReminderMarkReadCommand(item.Model.InstanceId, revision),
-                    CancellationToken.None)
+                    _lifetimeCancellation.Token)
                 .ConfigureAwait(true);
         }
         catch (OperationCanceledException)
@@ -1280,11 +1306,21 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         ReminderItemViewModel item,
         ReminderCommandResult result)
     {
+        ArgumentNullException.ThrowIfNull(result);
         if (result.Succeeded)
         {
             item.SetActionFeedback(null);
             ReminderFeedback = string.Empty;
-            await RefreshRemindersAsync(CancellationToken.None).ConfigureAwait(true);
+            await RefreshRemindersAsync(_lifetimeCancellation.Token).ConfigureAwait(true);
+            if (ReminderSnapshotStatus != ReminderSnapshotStatus.Fresh)
+            {
+                var refreshMessage = ReminderSnapshotStatus == ReminderSnapshotStatus.Stale
+                    ? UiText.ReminderActionCommittedStale
+                    : UiText.ReminderActionCommittedUnavailable;
+                item.SetActionFeedback(refreshMessage);
+                ReminderFeedback = refreshMessage;
+            }
+
             return;
         }
 
@@ -1304,24 +1340,30 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         ReminderFeedback = errorCode is null
             ? message
             : $"{message} · {errorCode}";
-        if (result.Outcome is ReminderCommandOutcome.Stale or ReminderCommandOutcome.Unavailable)
+        if (result.Outcome == ReminderCommandOutcome.Stale)
         {
-            _reminderSnapshotStatus = ReminderSnapshotStatus.Stale;
-            _reminderSnapshotStatusCode = errorCode;
+            _reminderSnapshot = _reminderSnapshot.MarkStale(errorCode ?? ProtocolErrorCodes.ExpectedRevisionMismatch);
+            NotifyReminderSnapshotChanged();
+        }
+        else if (result.Outcome == ReminderCommandOutcome.Unavailable)
+        {
+            _reminderSnapshot = _reminderSnapshot.MarkUnavailable(errorCode ?? ProtocolErrorCodes.AgentUnavailable);
             NotifyReminderSnapshotChanged();
         }
     }
 
-    private void ReplaceReminderItems(IReadOnlyList<ReminderReadModel> models)
+    private void ReplaceReminderItems(IReadOnlyList<ReminderReadModel> models, long? revision)
     {
         _reminderItems.Clear();
         foreach (var model in models)
         {
+            var rowRevision = revision;
             _reminderItems.Add(new ReminderItemViewModel(
                 model,
-                () => ReminderActionsEnabled,
+                () => ReminderActionsEnabled && ReminderSnapshotRevision == rowRevision,
                 ExecuteReminderActionAsync,
-                MarkReminderReadAsync));
+                MarkReminderReadAsync,
+                rowRevision));
         }
     }
 
@@ -1335,10 +1377,14 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ReminderSnapshotRevision));
         OnPropertyChanged(nameof(ReminderSnapshotStatusCode));
         OnPropertyChanged(nameof(HasReminderSnapshot));
+        OnPropertyChanged(nameof(HasReminderSnapshotIssue));
         OnPropertyChanged(nameof(ReminderActionsEnabled));
         OnPropertyChanged(nameof(ReminderSnapshotStatusLabel));
+        OnPropertyChanged(nameof(ReminderEmptyStateLabel));
         OnPropertyChanged(nameof(ReminderDrawerHeading));
         OnPropertyChanged(nameof(ReminderDrawerTitle));
+        OnPropertyChanged(nameof(ReminderTriggerLabel));
+        MarkReminderReadCommand.NotifyCanExecuteChanged();
         foreach (var item in _reminderItems)
         {
             item.RefreshCommandState();
@@ -1348,9 +1394,34 @@ public sealed class WidgetViewModel : ObservableObject, IDisposable
     private static string GetReminderFailureCode(Exception exception) => exception switch
     {
         ReminNote.Agent.Runtime.AgentCommandException agentException => agentException.Code,
-        FileNotFoundException or DirectoryNotFoundException or IOException => "storage.not_ready",
-        _ => "ipc.agent.unavailable"
+        FileNotFoundException or DirectoryNotFoundException or IOException => ProtocolErrorCodes.StorageNotReady,
+        _ => ProtocolErrorCodes.AgentUnavailable
     };
+
+    private bool TryGetReminderActionRevision(ReminderItemViewModel item, out long revision)
+    {
+        if (!ReminderActionsEnabled ||
+            item.SnapshotRevision is not { } rowRevision ||
+            ReminderSnapshotRevision != rowRevision)
+        {
+            revision = default;
+            return false;
+        }
+
+        revision = rowRevision;
+        return true;
+    }
+
+    private void SetReminderActionUnavailable(ReminderItemViewModel item)
+    {
+        var message = ReminderSnapshotStatus == ReminderSnapshotStatus.Stale
+            ? UiText.ReminderActionStale
+            : UiText.ReminderActionUnavailable;
+        item.SetActionFeedback(message);
+        ReminderFeedback = message;
+    }
+
+    private void EnsureNotDisposed() => ObjectDisposedException.ThrowIf(_disposed != 0, this);
 
     private void SimulateAlert()
     {

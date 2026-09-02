@@ -71,7 +71,8 @@
                         Content="{Binding ReminderCenter.ToggleLabel}"
                         Command="{Binding OpenReminderCenterCommand}"
                         Style="{StaticResource TodaySecondaryButtonStyle}"
-                        AutomationProperties.Name="{x:Static local:UiText.ReminderCenterOpen}" />
+                        AutomationProperties.Name="{Binding ReminderCenter.ToggleLabel}"
+                        AutomationProperties.HelpText="{Binding ReminderCenter.ToggleLabel}" />
                 <StackPanel>
                     <TextBlock Text="{Binding ActiveTitle}"
                                Style="{StaticResource ShellHeaderTitleTextStyle}" />
@@ -128,18 +129,22 @@
                     </Grid.RowDefinitions>
                     <TextBlock Text="{Binding ReminderCenter.StatusLabel}"
                                Style="{StaticResource TodayGroupSubtitleTextStyle}"
-                               VerticalAlignment="Center" />
+                               VerticalAlignment="Center"
+                               AutomationProperties.LiveSetting="Polite" />
                     <Button Grid.Column="1"
                             Grid.RowSpan="2"
                             Content="{x:Static local:UiText.ReminderRefresh}"
                             Command="{Binding ReminderCenter.RefreshCommand}"
                             Style="{StaticResource TodaySecondaryButtonStyle}"
-                            Margin="12,0,0,0" />
+                            Margin="12,0,0,0"
+                            AutomationProperties.Name="{x:Static local:UiText.ReminderRefresh}"
+                            AutomationProperties.HelpText="{x:Static local:UiText.ReminderRefresh}" />
                     <TextBlock Grid.Row="1"
                                Text="{Binding ReminderCenter.InteractionMessage}"
                                Style="{StaticResource TodayGroupSubtitleTextStyle}"
                                Margin="0,4,0,0"
-                               Visibility="{Binding ReminderCenter.HasInteractionMessage, Converter={StaticResource ReminderBooleanToVisibilityConverter}}" />
+                               Visibility="{Binding ReminderCenter.HasInteractionMessage, Converter={StaticResource ReminderBooleanToVisibilityConverter}}"
+                               AutomationProperties.LiveSetting="Polite" />
                 </Grid>
                 <ScrollViewer Grid.Row="2"
                               VerticalScrollBarVisibility="Auto">
@@ -152,9 +157,14 @@
                                             Margin="0,0,0,10">
                                         <StackPanel>
                                             <DockPanel LastChildFill="True">
-                                                <TextBlock DockPanel.Dock="Right"
-                                                           Text="{Binding LifecycleLabel}"
-                                                           Style="{StaticResource TodayGroupSubtitleTextStyle}" />
+                                                <StackPanel DockPanel.Dock="Right"
+                                                            HorizontalAlignment="Right">
+                                                    <TextBlock Text="{Binding LifecycleLabel}"
+                                                               Style="{StaticResource TodayGroupSubtitleTextStyle}" />
+                                                    <TextBlock Text="{Binding LifecycleDescription}"
+                                                               Style="{StaticResource TodayTaskMetaTextStyle}"
+                                                               TextWrapping="Wrap" />
+                                                </StackPanel>
                                                 <TextBlock Text="{Binding Title}"
                                                            Style="{StaticResource TodayTaskTitleTextStyle}" />
                                             </DockPanel>
@@ -163,42 +173,64 @@
                                                        Margin="0,4,0,0" />
                                             <TextBlock Text="{Binding PriorityLabel}"
                                                        Style="{StaticResource TodayTaskMetaTextStyle}" />
-                                            <TextBlock Text="{Binding TriggeredAtLabel}"
-                                                       Style="{StaticResource TodayTaskMetaTextStyle}" />
-                                            <WrapPanel Margin="0,8,0,0">
-                                                <Button Content="{x:Static local:UiText.ReminderDone}"
-                                                        Command="{Binding DoneCommand}"
-                                                        Style="{StaticResource TodayButtonStyle}"
-                                                        Margin="0,0,6,0" />
-                                                <Button Content="{x:Static local:UiText.ReminderSnooze}"
-                                                        Command="{Binding SnoozeCommand}"
-                                                        Style="{StaticResource TodaySecondaryButtonStyle}"
-                                                        Margin="0,0,6,0" />
-                                                <Button Content="{x:Static local:UiText.ReminderSkip}"
-                                                        Command="{Binding SkipCommand}"
-                                                        Style="{StaticResource TodaySecondaryButtonStyle}"
-                                                        Margin="0,0,6,0" />
-                                                <Button Content="{x:Static local:UiText.ReminderIgnore}"
-                                                        Command="{Binding IgnoreCommand}"
-                                                        Style="{StaticResource TodaySecondaryButtonStyle}"
-                                                        Margin="0,0,6,0" />
-                                                <Button Content="{x:Static local:UiText.ReminderMarkRead}"
-                                                        Command="{Binding MarkReadCommand}"
-                                                        Style="{StaticResource TodaySecondaryButtonStyle}" />
-                                            </WrapPanel>
-                                            <TextBlock Text="{Binding ActionFeedback}"
-                                                       Style="{StaticResource TodayTaskMetaTextStyle}"
-                                                       Margin="0,6,0,0"
-                                                       Visibility="{Binding HasActionFeedback, Converter={StaticResource ReminderBooleanToVisibilityConverter}}" />
+                                             <TextBlock Text="{Binding TriggeredAtLabel}"
+                                                        Style="{StaticResource TodayTaskMetaTextStyle}" />
+                                             <TextBlock Text="{Binding SnapshotRevisionLabel}"
+                                                        Style="{StaticResource TodayTaskMetaTextStyle}" />
+                                             <TextBlock Text="{Binding ResolutionActionLabel}"
+                                                        Style="{StaticResource TodayTaskMetaTextStyle}"
+                                                        Visibility="{Binding HasResolutionAction, Converter={StaticResource ReminderBooleanToVisibilityConverter}}" />
+                                             <WrapPanel Margin="0,8,0,0">
+                                                 <Button Content="{x:Static local:UiText.ReminderDone}"
+                                                         Command="{Binding DoneCommand}"
+                                                         Style="{StaticResource TodayButtonStyle}"
+                                                         Margin="0,0,6,0"
+                                                         IsEnabled="{Binding CanResolve}"
+                                                         AutomationProperties.Name="{x:Static local:UiText.ReminderDone}"
+                                                         AutomationProperties.HelpText="{Binding LifecycleDescription}" />
+                                                 <Button Content="{x:Static local:UiText.ReminderSnooze}"
+                                                         Command="{Binding SnoozeCommand}"
+                                                         Style="{StaticResource TodaySecondaryButtonStyle}"
+                                                         Margin="0,0,6,0"
+                                                         IsEnabled="{Binding CanResolve}"
+                                                         AutomationProperties.Name="{x:Static local:UiText.ReminderSnooze}"
+                                                         AutomationProperties.HelpText="{Binding LifecycleDescription}" />
+                                                 <Button Content="{x:Static local:UiText.ReminderSkip}"
+                                                         Command="{Binding SkipCommand}"
+                                                         Style="{StaticResource TodaySecondaryButtonStyle}"
+                                                         Margin="0,0,6,0"
+                                                         IsEnabled="{Binding CanResolve}"
+                                                         AutomationProperties.Name="{x:Static local:UiText.ReminderSkip}"
+                                                         AutomationProperties.HelpText="{Binding LifecycleDescription}" />
+                                                 <Button Content="{x:Static local:UiText.ReminderIgnore}"
+                                                         Command="{Binding IgnoreCommand}"
+                                                         Style="{StaticResource TodaySecondaryButtonStyle}"
+                                                         Margin="0,0,6,0"
+                                                         IsEnabled="{Binding CanResolve}"
+                                                         AutomationProperties.Name="{x:Static local:UiText.ReminderIgnore}"
+                                                         AutomationProperties.HelpText="{Binding LifecycleDescription}" />
+                                                 <Button Content="{x:Static local:UiText.ReminderMarkRead}"
+                                                         Command="{Binding MarkReadCommand}"
+                                                         Style="{StaticResource TodaySecondaryButtonStyle}"
+                                                         IsEnabled="{Binding CanMarkRead}"
+                                                         AutomationProperties.Name="{x:Static local:UiText.ReminderMarkRead}"
+                                                         AutomationProperties.HelpText="{Binding LifecycleDescription}" />
+                                             </WrapPanel>
+                                             <TextBlock Text="{Binding ActionFeedback}"
+                                                        Style="{StaticResource TodayTaskMetaTextStyle}"
+                                                        Margin="0,6,0,0"
+                                                        Visibility="{Binding HasActionFeedback, Converter={StaticResource ReminderBooleanToVisibilityConverter}}"
+                                                        AutomationProperties.LiveSetting="Polite" />
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
-                        <TextBlock Text="{x:Static local:UiText.ReminderSnapshotEmpty}"
+                         <TextBlock Text="{Binding ReminderCenter.EmptyStateLabel}"
                                    Style="{StaticResource TodayGroupSubtitleTextStyle}"
                                    TextWrapping="Wrap"
-                                   Visibility="{Binding ReminderCenter.HasNoItems, Converter={StaticResource ReminderBooleanToVisibilityConverter}}" />
+                                   Visibility="{Binding ReminderCenter.HasEmptyState, Converter={StaticResource ReminderBooleanToVisibilityConverter}}"
+                                   AutomationProperties.LiveSetting="Polite" />
                     </Grid>
                 </ScrollViewer>
                 <Button Grid.Row="3"

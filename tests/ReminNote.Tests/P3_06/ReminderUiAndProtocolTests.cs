@@ -40,7 +40,7 @@ public sealed class ReminderUiAndProtocolTests
     }
 
     [Fact]
-    public async SystemTask MainCenterRetainsLastModelAsStaleAndDisablesWrites()
+    public async SystemTask MainCenterRetainsLastModelAsUnavailableAndDisablesWrites()
     {
         var item = CreateItem("保留的提醒");
         var query = new FakeReminderQueryService(ReminderReadSnapshot.Fresh(23, [item]));
@@ -51,7 +51,8 @@ public sealed class ReminderUiAndProtocolTests
         query.Current = ReminderReadSnapshot.Unavailable(ProtocolErrorCodes.AgentUnavailable);
         await center.RefreshAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(ReminderSnapshotStatus.Stale, center.SnapshotStatus);
+        Assert.Equal(ReminderSnapshotStatus.Unavailable, center.SnapshotStatus);
+        Assert.True(center.HasSnapshot);
         Assert.Equal(23, center.SnapshotRevision);
         Assert.Equal("保留的提醒", Assert.Single(center.Items).Title);
         Assert.False(center.ActionsEnabled);
@@ -77,9 +78,61 @@ public sealed class ReminderUiAndProtocolTests
         await center.RefreshAsync(TestContext.Current.CancellationToken);
         await Assert.Single(center.Items).DoneCommand.ExecuteAsync(null);
 
-        Assert.Equal(ReminderSnapshotStatus.Stale, center.SnapshotStatus);
+        Assert.Equal(ReminderSnapshotStatus.Unavailable, center.SnapshotStatus);
         Assert.Equal(ProtocolErrorCodes.AgentNotReady, center.SnapshotStatusCode);
         Assert.False(center.ActionsEnabled);
+    }
+
+    [Fact]
+    public async SystemTask MainCenterRoutesEveryResolutionActionThroughCommandClient()
+    {
+        foreach (var action in new[]
+                 {
+                     ResolutionAction.DONE,
+                     ResolutionAction.SNOOZE,
+                     ResolutionAction.SKIP,
+                     ResolutionAction.IGNORE
+                 })
+        {
+            var item = CreateItem($"{action} 提醒");
+            var query = new FakeReminderQueryService(ReminderReadSnapshot.Fresh(37, [item]));
+            var commands = new FakeReminderCommandClient();
+            using var center = new ReminderCenterViewModel(query, commands);
+
+            await center.RefreshAsync(TestContext.Current.CancellationToken);
+            var row = Assert.Single(center.Items);
+
+            var command = action switch
+            {
+                ResolutionAction.DONE => row.DoneCommand,
+                ResolutionAction.SNOOZE => row.SnoozeCommand,
+                ResolutionAction.SKIP => row.SkipCommand,
+                ResolutionAction.IGNORE => row.IgnoreCommand,
+                _ => throw new InvalidOperationException()
+            };
+            await command.ExecuteAsync(null);
+
+            var sent = Assert.Single(commands.Actions);
+            Assert.Equal(action, sent.Action);
+            Assert.Equal(37, sent.ExpectedRevision);
+        }
+    }
+
+    [Fact]
+    public async SystemTask MainCenterRoutesMarkReadWithSnapshotRevisionThroughCommandClient()
+    {
+        var item = CreateItem("需要标记已读的提醒");
+        var query = new FakeReminderQueryService(ReminderReadSnapshot.Fresh(41, [item]));
+        var commands = new FakeReminderCommandClient();
+        using var center = new ReminderCenterViewModel(query, commands);
+
+        await center.RefreshAsync(TestContext.Current.CancellationToken);
+        await Assert.Single(center.Items).MarkReadCommand.ExecuteAsync(null);
+
+        var read = Assert.Single(commands.ReadCommands);
+        Assert.Equal(item.InstanceId, read.InstanceId);
+        Assert.Equal(41, read.ExpectedRevision);
+        Assert.Empty(commands.Actions);
     }
 
     [Fact]
@@ -110,8 +163,46 @@ public sealed class ReminderUiAndProtocolTests
         query.Current = ReminderReadSnapshot.Unavailable(ProtocolErrorCodes.AgentUnavailable);
         await viewModel.RefreshAsync(TestContext.Current.CancellationToken);
 
-        Assert.Equal(ReminderSnapshotStatus.Stale, viewModel.ReminderSnapshotStatus);
+        Assert.Equal(ReminderSnapshotStatus.Unavailable, viewModel.ReminderSnapshotStatus);
+        Assert.True(viewModel.HasReminderSnapshot);
         Assert.False(viewModel.ReminderActionsEnabled);
+    }
+
+    [Fact]
+    public void SnapshotRevisionAndLifecyclePayloadsFailClosedAtTheContractBoundary()
+    {
+        var item = CreateItem("合同校验提醒");
+
+        var staleException = Assert.Throws<DomainValidationException>(() =>
+            new ReminderReadSnapshot(
+                snapshotRevision: null,
+                items: [item],
+                status: ReminderSnapshotStatus.Stale,
+                statusCode: "test.stale"));
+        Assert.Equal("reminder.snapshot.stale_revision_missing", staleException.Errors[0].Code);
+
+        var unavailableException = Assert.Throws<DomainValidationException>(() =>
+            new ReminderReadSnapshot(
+                snapshotRevision: 7,
+                items: [],
+                status: ReminderSnapshotStatus.Unavailable,
+                statusCode: "test.unavailable"));
+        Assert.Equal("reminder.snapshot.unavailable_payload_invalid", unavailableException.Errors[0].Code);
+
+        var resolvedException = Assert.Throws<DomainValidationException>(() =>
+            new ReminderReadModel(
+                item.InstanceId,
+                item.ScheduleId,
+                item.RuleId,
+                item.OccurrenceId,
+                item.TaskId,
+                item.Title,
+                item.Purpose,
+                item.Priority,
+                item.Pinned,
+                item.TriggeredAtUtc,
+                ReminderLifecycle.RESOLVED));
+        Assert.Equal("reminder.read_model.resolution.missing", resolvedException.Errors[0].Code);
     }
 
     [Fact]
