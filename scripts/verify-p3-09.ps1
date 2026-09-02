@@ -882,6 +882,7 @@ try {
         Add-RequiredDocumentCheck -Spec $requiredDocument
     }
 
+    $coreText = Get-TreeText -RelativePath 'src\windows\ReminNote.Core' -Extensions @('.cs', '.csproj')
     $agentText = Get-TreeText -RelativePath 'src\windows\ReminNote.Agent' -Extensions @('.cs', '.csproj')
     $infrastructureText = Get-TreeText -RelativePath 'src\windows\ReminNote.Infrastructure' -Extensions @('.cs', '.csproj')
     $databaseContextText = Get-RepositoryText -RelativePath 'src\windows\ReminNote.Infrastructure\Persistence\ReminNoteDbContext.cs'
@@ -896,6 +897,12 @@ try {
         -Extensions @('.cs', '.xaml', '.csproj') `
         -ExcludeFileNames @('UiText.cs')
     $uiProductionText = "$windowsProductionText`n$widgetProductionText"
+    # P3-05 adapters and P3-06 application contracts are shared Core seams;
+    # host composition remains in Windows/Widget. Scan both layers so the
+    # gate does not report a false BLOCKED result when the owner implementation
+    # is deliberately kept out of a host project.
+    $p305Text = "$coreText`n$uiProductionText"
+    $p306Text = "$coreText`n$agentText`n$uiProductionText"
     $testRoot = Join-Path $repositoryRoot 'tests\ReminNote.Tests'
     $testSourceText = Get-TreeText -RelativePath 'tests\ReminNote.Tests' -Extensions @('.cs', '.csproj')
 
@@ -939,17 +946,17 @@ try {
             -Dependency 'P3-05' `
             -Id 'P3-05-CHANNEL-ADAPTER' `
             -Description 'Windows/Widget 存在 INotificationChannel 实际实现' `
-            -Text $uiProductionText `
-            -Pattern '\b(?:class|record)\s+\w+\s*:\s*[^\r\n{]*\bINotificationChannel\b' `
-            -Evidence 'src/windows/ReminNote.Windows 与 src/windows/ReminNote.Widget 生产源码' `
+            -Text $p305Text `
+            -Pattern '\bclass\s+\w*NotificationChannel\s*:\s*(?:NotificationChannelAdapter|[^\r\n{]*\bINotificationChannel\b)' `
+            -Evidence 'src/windows/ReminNote.Core adapter 实现及 Windows/Widget host composition' `
             -NextAction '实现 Toast/Tray/Widget/Sound/WakeTimer adapter；adapter 只能消费 core fact，不能写 Rule/Schedule/Instance。'
         Add-DependencyMarkerCheck `
             -Dependency 'P3-05' `
             -Id 'P3-05-DELIVERY' `
             -Description '实际 adapter 提供 DeliverAsync 且记录 channel health/result' `
-            -Text $uiProductionText `
+            -Text $p305Text `
             -Pattern '\bDeliverAsync\s*\(|\bNotificationChannelHealth\b|\bNotificationDeliveryOutcome\b' `
-            -Evidence 'Windows/Widget adapter source and health/result mapping' `
+            -Evidence 'Core adapter source and Windows/Widget health/result composition' `
             -NextAction '补齐不可用/blocked/failed/replace 行为，并以真实进程日志证明核心事实不丢失。'
         Add-DependencyPathCheck `
             -Dependency 'P3-05' `
@@ -972,17 +979,17 @@ try {
             -Dependency 'P3-06' `
             -Id 'P3-06-QUERY' `
             -Description 'Main/Widget 有 Reminder read-only query/read-model 接线' `
-            -Text $uiProductionText `
-            -Pattern '\b(?:class|record)\s+\w*(?:Reminder(?:Query(?:Service|Client)?|ReadModel|Snapshot|Projection)|AgentReminder\w*)\b' `
-            -Evidence 'src/windows/ReminNote.Windows 与 src/windows/ReminNote.Widget 生产源码' `
+            -Text $p306Text `
+            -Pattern '\b(?:interface|class|record|enum)\s+\w*(?:Reminder(?:Query(?:Service|Client)?|ReadModel|Snapshot|Projection)|AgentReminder\w*)\b|\bIReminderQueryService\b' `
+            -Evidence 'Core reminder application contracts plus Agent/Main/Widget query composition' `
             -NextAction '接入 Agent read-only query、revision/stale/unavailable 状态；禁止 UI/第二 DbContext 直接写 Reminder。'
         Add-DependencyMarkerCheck `
             -Dependency 'P3-06' `
             -Id 'P3-06-ACTIONS' `
             -Description 'Reminder UI 有 READ/RESOLVED/Snooze/DONE 动作入口' `
-            -Text $uiProductionText `
+            -Text $p306Text `
             -Pattern '\b(?:class|record)\s+\w*ReminderCommand\w*\b|\b(?:AgentReminder|ResolveReminder|SnoozeReminder|SendReminder)Command\s*(?:\(|=)' `
-            -Evidence 'Main/Widget Reminder Drawer/Center/action source' `
+            -Evidence 'Core reminder command contract plus Main/Widget Drawer/Center action source' `
             -NextAction '完成 Drawer/Center、生命周期动作和失败反馈；动作必须走 Agent command/receipt。'
         Add-DependencyPathCheck `
             -Dependency 'P3-06' `
