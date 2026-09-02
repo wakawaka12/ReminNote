@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ReminNote.Core.Reminders.Domain;
 
 namespace ReminNote.Core.Protocol;
 
@@ -370,6 +371,59 @@ public sealed record ProtocolChangesRequestPayload(long AfterRevision, int MaxRe
                 nameof(MaxRevisions));
         }
     }
+}
+
+public sealed record ProtocolReminderMarkReadPayload(string InstanceId)
+{
+    public void Validate() => ProtocolValidation.RequireLowercaseUuid(InstanceId, nameof(InstanceId));
+}
+
+public sealed record ProtocolReminderResolvePayload(
+    string InstanceId,
+    string Action,
+    long? SnoozeSeconds)
+{
+    public void Validate()
+    {
+        ProtocolValidation.RequireLowercaseUuid(InstanceId, nameof(InstanceId));
+        if (Action is not ("DONE" or "SNOOZE" or "SKIP" or "IGNORE"))
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "Reminder action is not enabled for TASK_INSTANCE.",
+                nameof(Action));
+        }
+
+        if (Action == "SNOOZE")
+        {
+            if (SnoozeSeconds is not (> 0 and <= 604_800))
+            {
+                throw ProtocolContractException.Invalid(
+                    ProtocolErrorCodes.InvalidNumber,
+                    "snoozeSeconds must be an integer between 1 and 604800.",
+                    nameof(SnoozeSeconds));
+            }
+        }
+        else if (SnoozeSeconds is not null)
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "Only SNOOZE accepts snoozeSeconds.",
+                nameof(SnoozeSeconds));
+        }
+    }
+
+    public ResolutionAction ToDomainAction() => Action switch
+    {
+        "DONE" => ResolutionAction.DONE,
+        "SNOOZE" => ResolutionAction.SNOOZE,
+        "SKIP" => ResolutionAction.SKIP,
+        "IGNORE" => ResolutionAction.IGNORE,
+        _ => throw ProtocolContractException.Invalid(
+            ProtocolErrorCodes.InvalidRequest,
+            "Reminder action is not enabled for TASK_INSTANCE.",
+            nameof(Action))
+    };
 }
 
 public sealed record ProtocolHelloPayload(

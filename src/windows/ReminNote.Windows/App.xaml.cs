@@ -7,8 +7,10 @@ using NodaTime;
 using ReminNote.Agent.Runtime;
 using ReminNote.Core.Application;
 using ReminNote.Core.Protocol;
+using ReminNote.Core.Reminders.Application;
 using ReminNote.Core.Today;
 using ReminNote.Windows.Features.Anime;
+using ReminNote.Windows.Features.Reminders;
 using ReminNote.Windows.Features.Today;
 using ReminNote.Windows.Startup;
 using ReminNote.Windows.ViewModels;
@@ -49,9 +51,14 @@ public partial class App : Application, IDisposable
             serviceProvider.GetRequiredService<AgentTaskClient>());
         builder.Services.AddSingleton<ITodayQueryService>(serviceProvider =>
             serviceProvider.GetRequiredService<AgentTaskClient>());
+        builder.Services.AddSingleton<IReminderQueryService>(serviceProvider =>
+            serviceProvider.GetRequiredService<AgentTaskClient>());
+        builder.Services.AddSingleton<IReminderCommandClient>(serviceProvider =>
+            serviceProvider.GetRequiredService<AgentTaskClient>());
         builder.Services.AddSingleton<IClock>(SystemClock.Instance);
         builder.Services.AddTodayFeature();
         builder.Services.AddAnimeFeature();
+        builder.Services.AddSingleton<ReminderCenterViewModel>();
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();
 

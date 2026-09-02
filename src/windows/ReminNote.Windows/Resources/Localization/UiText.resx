@@ -22,6 +22,27 @@
   <data name="Shell.AnimeSubtitle"><value>追番与记录</value></data>
   <data name="Shell.FallbackTitle"><value>ReminNote</value></data>
 
+  <data name="Reminder.CenterTitle"><value>REMINDERS</value></data>
+  <data name="Reminder.CenterSubtitle"><value>最近未解决的 Task 提醒</value></data>
+  <data name="Reminder.CenterOpen"><value>打开提醒中心</value></data>
+  <data name="Reminder.CenterClose"><value>关闭提醒中心</value></data>
+  <data name="Reminder.Refresh"><value>刷新</value></data>
+  <data name="Reminder.SnapshotFresh"><value>已同步 · revision {0}</value></data>
+  <data name="Reminder.SnapshotStale"><value>显示旧快照 · revision {0} · 写入已禁用</value></data>
+  <data name="Reminder.SnapshotUnavailable"><value>提醒暂不可用 · {0}</value></data>
+  <data name="Reminder.SnapshotEmpty"><value>当前没有未解决的 Task 提醒</value></data>
+  <data name="Reminder.LifecycleUnread"><value>未读</value></data>
+  <data name="Reminder.LifecycleRead"><value>已读</value></data>
+  <data name="Reminder.LifecycleResolved"><value>已解决</value></data>
+  <data name="Reminder.MarkRead"><value>标记已读</value></data>
+  <data name="Reminder.Done"><value>完成</value></data>
+  <data name="Reminder.Snooze"><value>延后 30 分钟</value></data>
+  <data name="Reminder.Skip"><value>跳过</value></data>
+  <data name="Reminder.Ignore"><value>忽略</value></data>
+  <data name="Reminder.ActionUnavailable"><value>Agent 不可用，未执行提醒动作</value></data>
+  <data name="Reminder.ActionStale"><value>提醒快照已过期，请刷新后重试</value></data>
+  <data name="Reminder.ActionRejected"><value>Agent 拒绝了提醒动作</value></data>
+
   <data name="Today.PageDescription"><value>TODAY 高保真 Mock · 仅使用进程内示例数据，不连接数据库或网络。</value></data>
   <data name="Today.MockBadge"><value>MOCK · 仅内存</value></data>
   <data name="Today.NeedsReviewText"><value>NEEDS REVIEW · {0}</value></data>

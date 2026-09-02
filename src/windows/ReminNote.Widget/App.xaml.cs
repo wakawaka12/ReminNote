@@ -48,6 +48,8 @@ public partial class App : Application, IDisposable
             _viewModel = new WidgetViewModel(
                 _agentClient,
                 _agentClient,
+                _agentClient,
+                _agentClient,
                 SystemClock.Instance);
 
             var window = new WidgetWindow(_viewModel);

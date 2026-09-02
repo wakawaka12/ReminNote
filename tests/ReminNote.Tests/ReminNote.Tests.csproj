@@ -23,6 +23,10 @@
   <ItemGroup>
     <Compile Include="../../src/windows/ReminNote.Widget/ViewModels/WidgetViewModel.cs"
              Link="WidgetViewModel.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/Features/Reminders/ReminderItemViewModel.cs"
+             Link="Features/Reminders/ReminderItemViewModel.cs" />
+    <Compile Include="../../src/windows/ReminNote.Windows/Features/Reminders/ReminderCenterViewModel.cs"
+             Link="Features/Reminders/ReminderCenterViewModel.cs" />
     <Compile Include="../../src/windows/ReminNote.Widget/Startup/WidgetStartupOptions.cs"
              Link="WidgetStartupOptions.cs" />
     <Compile Include="../../src/windows/ReminNote.Widget/Startup/WidgetSingleInstanceCoordinator.cs"

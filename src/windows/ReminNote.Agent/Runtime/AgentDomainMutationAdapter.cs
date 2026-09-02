@@ -47,6 +47,12 @@ internal static class AgentDomainMutationAdapter
                 ProtocolOperations.TaskReorder => await ReorderAsync(application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
                 ProtocolOperations.TaskContinue => await ContinueAsync(application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
                 ProtocolOperations.TaskDelete => await DeleteAsync(application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
+                // P3-03 owns the durable Reminder transaction. Keep the
+                // operation on the business pipe so clients fail closed while
+                // this integration is absent; never redirect it to P2 Task
+                // writer code.
+                ProtocolOperations.ReminderMarkRead or ProtocolOperations.ReminderResolve =>
+                    P25MutationDecision.Rejected(ProtocolErrorCodes.AgentNotReady),
                 _ => P25MutationDecision.Rejected(ProtocolErrorCodes.InvalidRequest)
             };
         }

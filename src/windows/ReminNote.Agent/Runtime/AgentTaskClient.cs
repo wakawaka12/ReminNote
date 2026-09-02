@@ -5,6 +5,8 @@ using NodaTime;
 using ReminNote.Agent.Transport;
 using ReminNote.Core.Application;
 using ReminNote.Core.Protocol;
+using ReminNote.Core.Reminders.Application;
+using ReminNote.Core.Reminders.Domain;
 using ReminNote.Core.Tasks;
 using ReminNote.Core.Time;
 using ReminNote.Core.Today;
@@ -39,6 +41,8 @@ public sealed class AgentTaskClient :
     ITaskQueryService,
     ITodayQueryService,
     IWorkdaySettingsStore,
+    IReminderQueryService,
+    IReminderCommandClient,
     IAsyncDisposable,
     IDisposable
 {
@@ -48,6 +52,7 @@ public sealed class AgentTaskClient :
     private readonly TransportLimits limits = AgentTransportDefaults.CreateLimits();
     private readonly NamedPipeTransportClient transport;
     private readonly ReadOnlyTaskServices readOnly;
+    private readonly ReadOnlyReminderQueryService reminderReadOnly;
     private readonly SemaphoreSlim roundTripGate = new(1, 1);
     private bool sessionReady;
     private int disposed;
@@ -73,6 +78,7 @@ public sealed class AgentTaskClient :
             new NamedPipeTransportEndpoint(profile, NamedPipeEndpointKind.Business),
             limits);
         readOnly = new ReadOnlyTaskServices(profile.DatabasePath);
+        reminderReadOnly = new ReadOnlyReminderQueryService(profile.DatabasePath, profile.ProfileScope);
     }
 
     public string ProfileScope => profile.ProfileScope;
@@ -215,6 +221,85 @@ public sealed class AgentTaskClient :
     public ValueTask<WorkdaySettings> GetAsync(CancellationToken cancellationToken = default) =>
         readOnly.GetAsync(cancellationToken);
 
+    public ValueTask<ReminderReadSnapshot> GetAsync(
+        ReminderQuery query,
+        CancellationToken cancellationToken = default) =>
+        reminderReadOnly.GetAsync(query, cancellationToken);
+
+    /// <summary>
+    /// Sends a Task reminder action through the business pipe. The current
+    /// Agent integration has not yet installed the P3 reminder domain handler;
+    /// its explicit rejection is surfaced to the UI as unavailable. There is
+    /// deliberately no call to the legacy Task writer here.
+    /// </summary>
+    public async ValueTask<ReminderCommandResult> ExecuteAsync(
+        ReminderActionCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        try
+        {
+            var response = await ExecuteMutationAsync(
+                    ProtocolOperations.ReminderResolve,
+                    ProtocolJson.CreateReminderResolvePayload(
+                        command.InstanceId.ToString(),
+                        command.Action,
+                        command.SnoozeSeconds),
+                    command.ExpectedRevision,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return MapReminderCommandResponse(response);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (AgentCommandException exception) when (!IsFatal(exception))
+        {
+            return MapReminderCommandFailure(exception);
+        }
+        catch (Exception exception) when (!IsFatal(exception))
+        {
+            return new ReminderCommandResult(
+                ReminderCommandOutcome.Unavailable,
+                ErrorCode: ProtocolErrorCodes.AgentUnavailable);
+        }
+    }
+
+    public async ValueTask<ReminderCommandResult> MarkReadAsync(
+        ReminderMarkReadCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        command.Validate();
+
+        try
+        {
+            var response = await ExecuteMutationAsync(
+                    ProtocolOperations.ReminderMarkRead,
+                    ProtocolJson.CreateReminderMarkReadPayload(command.InstanceId.ToString()),
+                    command.ExpectedRevision,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return MapReminderCommandResponse(response);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (AgentCommandException exception) when (!IsFatal(exception))
+        {
+            return MapReminderCommandFailure(exception);
+        }
+        catch (Exception exception) when (!IsFatal(exception))
+        {
+            return new ReminderCommandResult(
+                ReminderCommandOutcome.Unavailable,
+                ErrorCode: ProtocolErrorCodes.AgentUnavailable);
+        }
+    }
+
     public ValueTask SetAsync(WorkdaySettings settings, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -250,6 +335,16 @@ public sealed class AgentTaskClient :
         CancellationToken cancellationToken)
     {
         var expectedRevision = await ReadCurrentRevisionAsync(cancellationToken).ConfigureAwait(false);
+        return await ExecuteMutationAsync(operation, payload, expectedRevision, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<ProtocolResponse> ExecuteMutationAsync(
+        string operation,
+        JsonElement payload,
+        long expectedRevision,
+        CancellationToken cancellationToken)
+    {
         var key = ProtocolIds.NewIdempotencyKey();
         var request = ProtocolRequest.CreateMutationAttempt(
             clientKind,
@@ -407,6 +502,53 @@ public sealed class AgentTaskClient :
             error.Retryable,
             error.HumanMessage ?? $"Agent command failed with {error.Code}.");
     }
+
+    private static ReminderCommandResult MapReminderCommandResponse(ProtocolResponse response)
+    {
+        if (!response.Ok)
+        {
+            var error = response.Error;
+            return error is null
+                ? new ReminderCommandResult(ReminderCommandOutcome.Unavailable, ErrorCode: ProtocolErrorCodes.AgentUnavailable)
+                : MapReminderCommandFailure(new AgentCommandException(error.Code, error.Retryable, error.HumanMessage ?? error.Code));
+        }
+
+        var outcome = response.Outcome switch
+        {
+            ProtocolOutcomes.Changed => ReminderCommandOutcome.Changed,
+            ProtocolOutcomes.NoOp or ProtocolOutcomes.Replayed => ReminderCommandOutcome.NoOp,
+            ProtocolOutcomes.Stale => ReminderCommandOutcome.Stale,
+            _ => ReminderCommandOutcome.Rejected
+        };
+        return new ReminderCommandResult(outcome, response.CommittedRevision);
+    }
+
+    private static ReminderCommandResult MapReminderCommandFailure(AgentCommandException exception)
+    {
+        var outcome = exception.Code == ProtocolErrorCodes.ExpectedRevisionMismatch
+            ? ReminderCommandOutcome.Stale
+            : IsUnavailableCode(exception.Code)
+                ? ReminderCommandOutcome.Unavailable
+                : ReminderCommandOutcome.Rejected;
+        return new ReminderCommandResult(outcome, ErrorCode: exception.Code);
+    }
+
+    private static bool IsUnavailableCode(string code) => code is
+        ProtocolErrorCodes.AgentUnavailable or
+        ProtocolErrorCodes.AgentNotReady or
+        ProtocolErrorCodes.AgentShuttingDown or
+        ProtocolErrorCodes.Timeout or
+        ProtocolErrorCodes.Overloaded or
+        ProtocolErrorCodes.StorageNotReady or
+        ProtocolErrorCodes.StorageBusy or
+        ProtocolErrorCodes.TransactionFailed;
+
+    private static bool IsFatal(Exception exception) => exception switch
+    {
+        OutOfMemoryException or StackOverflowException or AccessViolationException => true,
+        AggregateException aggregate => aggregate.InnerExceptions.Any(IsFatal),
+        _ => exception.InnerException is not null && IsFatal(exception.InnerException)
+    };
 
     private async ValueTask DisconnectAfterFailureAsync()
     {

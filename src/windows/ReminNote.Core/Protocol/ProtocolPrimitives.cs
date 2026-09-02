@@ -174,15 +174,17 @@ public static class ProtocolOperations
     public const string TaskReorder = "command.task.reorder";
     public const string TaskContinue = "command.task.continue";
     public const string TaskDelete = "command.task.delete";
+    public const string ReminderMarkRead = "command.reminder.mark_read";
+    public const string ReminderResolve = "command.reminder.resolve";
 
     public static bool IsKnown(string operation) =>
         operation is SessionHello or CommandStatus or RequestCancel or ChangesGetSince or
             TaskCreate or TaskRename or TaskRecordResult or TaskUpdatePlan or TaskReorder or
-            TaskContinue or TaskDelete;
+            TaskContinue or TaskDelete or ReminderMarkRead or ReminderResolve;
 
     public static bool IsMutation(string operation) =>
         operation is TaskCreate or TaskRename or TaskRecordResult or TaskUpdatePlan or
-            TaskReorder or TaskContinue or TaskDelete;
+            TaskReorder or TaskContinue or TaskDelete or ReminderMarkRead or ReminderResolve;
 }
 
 public static class ProtocolEventTypes
@@ -268,7 +270,8 @@ public static class ProtocolErrorCodes
         code.StartsWith("revision.", StringComparison.Ordinal) ||
         code.StartsWith("storage.", StringComparison.Ordinal) ||
         code.StartsWith("lifecycle.", StringComparison.Ordinal) ||
-        code.StartsWith("task.", StringComparison.Ordinal);
+        code.StartsWith("task.", StringComparison.Ordinal) ||
+        code.StartsWith("reminder.", StringComparison.Ordinal);
 
     public static bool TryGetDefaultRetryable(string code, out bool retryable)
     {

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using ReminNote.Core.Reminders.Domain;
 using ReminNote.Core.Tasks;
 
 namespace ReminNote.Core.Protocol;
@@ -333,6 +334,45 @@ public static class ProtocolJson
         return result;
     }
 
+    public static ProtocolReminderMarkReadPayload ReadReminderMarkReadPayload(ProtocolRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        request.Validate();
+        if (request.Operation != ProtocolOperations.ReminderMarkRead)
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "The request is not command.reminder.mark_read.",
+                nameof(request));
+        }
+
+        var bag = PropertyBag.Create(request.Payload, ["instanceId"], rejectUnknown: true);
+        var result = new ProtocolReminderMarkReadPayload(bag.RequireLowercaseUuid("instanceId"));
+        result.Validate();
+        return result;
+    }
+
+    public static ProtocolReminderResolvePayload ReadReminderResolvePayload(ProtocolRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        request.Validate();
+        if (request.Operation != ProtocolOperations.ReminderResolve)
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "The request is not command.reminder.resolve.",
+                nameof(request));
+        }
+
+        var bag = PropertyBag.Create(request.Payload, ["instanceId", "action", "snoozeSeconds"], rejectUnknown: true);
+        var result = new ProtocolReminderResolvePayload(
+            bag.RequireLowercaseUuid("instanceId"),
+            bag.RequireString("action"),
+            bag.OptionalNonNegativeInt64("snoozeSeconds"));
+        result.Validate();
+        return result;
+    }
+
     public static ProtocolHelloPayload ReadHelloPayload(ProtocolRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -419,6 +459,33 @@ public static class ProtocolJson
         {
             writer.WriteNumber("afterRevision", afterRevision);
             writer.WriteNumber("maxRevisions", maxRevisions);
+        });
+    }
+
+    public static JsonElement CreateReminderMarkReadPayload(string instanceId)
+    {
+        ProtocolValidation.RequireLowercaseUuid(instanceId, nameof(instanceId));
+        return CreateObject(writer => writer.WriteString("instanceId", instanceId));
+    }
+
+    public static JsonElement CreateReminderResolvePayload(
+        string instanceId,
+        ResolutionAction action,
+        long? snoozeSeconds = null)
+    {
+        var payload = new ProtocolReminderResolvePayload(
+            instanceId,
+            action.ToString(),
+            snoozeSeconds);
+        payload.Validate();
+        return CreateObject(writer =>
+        {
+            writer.WriteString("instanceId", payload.InstanceId);
+            writer.WriteString("action", payload.Action);
+            if (payload.SnoozeSeconds is { } seconds)
+            {
+                writer.WriteNumber("snoozeSeconds", seconds);
+            }
         });
     }
 

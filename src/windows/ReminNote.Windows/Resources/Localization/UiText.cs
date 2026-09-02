@@ -33,6 +33,27 @@ public static class UiText
     public const string ShellAnimeSubtitleKey = "Shell.AnimeSubtitle";
     public const string ShellFallbackTitleKey = "Shell.FallbackTitle";
 
+    public const string ReminderCenterTitleKey = "Reminder.CenterTitle";
+    public const string ReminderCenterSubtitleKey = "Reminder.CenterSubtitle";
+    public const string ReminderCenterOpenKey = "Reminder.CenterOpen";
+    public const string ReminderCenterCloseKey = "Reminder.CenterClose";
+    public const string ReminderRefreshKey = "Reminder.Refresh";
+    public const string ReminderSnapshotFreshKey = "Reminder.SnapshotFresh";
+    public const string ReminderSnapshotStaleKey = "Reminder.SnapshotStale";
+    public const string ReminderSnapshotUnavailableKey = "Reminder.SnapshotUnavailable";
+    public const string ReminderSnapshotEmptyKey = "Reminder.SnapshotEmpty";
+    public const string ReminderLifecycleUnreadKey = "Reminder.LifecycleUnread";
+    public const string ReminderLifecycleReadKey = "Reminder.LifecycleRead";
+    public const string ReminderLifecycleResolvedKey = "Reminder.LifecycleResolved";
+    public const string ReminderMarkReadKey = "Reminder.MarkRead";
+    public const string ReminderDoneKey = "Reminder.Done";
+    public const string ReminderSnoozeKey = "Reminder.Snooze";
+    public const string ReminderSkipKey = "Reminder.Skip";
+    public const string ReminderIgnoreKey = "Reminder.Ignore";
+    public const string ReminderActionUnavailableKey = "Reminder.ActionUnavailable";
+    public const string ReminderActionStaleKey = "Reminder.ActionStale";
+    public const string ReminderActionRejectedKey = "Reminder.ActionRejected";
+
     public const string TodayPageDescriptionKey = "Today.PageDescription";
     public const string TodayMockBadgeKey = "Today.MockBadge";
     public const string TodayNeedsReviewTextKey = "Today.NeedsReviewText";
@@ -249,6 +270,24 @@ public static class UiText
     public static string ShellAnimeTitle => Get(ShellAnimeTitleKey);
     public static string ShellAnimeSubtitle => Get(ShellAnimeSubtitleKey);
     public static string ShellFallbackTitle => Get(ShellFallbackTitleKey);
+
+    public static string ReminderCenterTitle => Get(ReminderCenterTitleKey);
+    public static string ReminderCenterSubtitle => Get(ReminderCenterSubtitleKey);
+    public static string ReminderCenterOpen => Get(ReminderCenterOpenKey);
+    public static string ReminderCenterClose => Get(ReminderCenterCloseKey);
+    public static string ReminderRefresh => Get(ReminderRefreshKey);
+    public static string ReminderSnapshotEmpty => Get(ReminderSnapshotEmptyKey);
+    public static string ReminderLifecycleUnread => Get(ReminderLifecycleUnreadKey);
+    public static string ReminderLifecycleRead => Get(ReminderLifecycleReadKey);
+    public static string ReminderLifecycleResolved => Get(ReminderLifecycleResolvedKey);
+    public static string ReminderMarkRead => Get(ReminderMarkReadKey);
+    public static string ReminderDone => Get(ReminderDoneKey);
+    public static string ReminderSnooze => Get(ReminderSnoozeKey);
+    public static string ReminderSkip => Get(ReminderSkipKey);
+    public static string ReminderIgnore => Get(ReminderIgnoreKey);
+    public static string ReminderActionUnavailable => Get(ReminderActionUnavailableKey);
+    public static string ReminderActionStale => Get(ReminderActionStaleKey);
+    public static string ReminderActionRejected => Get(ReminderActionRejectedKey);
 
     public static string TodayPageDescription => Get(TodayPageDescriptionKey);
     public static string TodayMockBadge => Get(TodayMockBadgeKey);

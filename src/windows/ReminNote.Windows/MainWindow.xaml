@@ -7,6 +7,9 @@
         MinWidth="960"
         MinHeight="640"
         Background="{DynamicResource ShellBackgroundBrush}">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="ReminderBooleanToVisibilityConverter" />
+    </Window.Resources>
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="240" />
@@ -63,12 +66,19 @@
                 Grid.Row="0"
                 Style="{StaticResource HeaderSurfaceStyle}"
                 AutomationProperties.Name="{x:Static local:UiText.ShellHeaderRegion}">
-            <StackPanel>
-                <TextBlock Text="{Binding ActiveTitle}"
-                           Style="{StaticResource ShellHeaderTitleTextStyle}" />
-                <TextBlock Text="{x:Static local:UiText.ShellHeaderSubtitle}"
-                           Style="{StaticResource ShellHeaderSubtitleTextStyle}" />
-            </StackPanel>
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Right"
+                        Content="{Binding ReminderCenter.ToggleLabel}"
+                        Command="{Binding OpenReminderCenterCommand}"
+                        Style="{StaticResource TodaySecondaryButtonStyle}"
+                        AutomationProperties.Name="{x:Static local:UiText.ReminderCenterOpen}" />
+                <StackPanel>
+                    <TextBlock Text="{Binding ActiveTitle}"
+                               Style="{StaticResource ShellHeaderTitleTextStyle}" />
+                    <TextBlock Text="{x:Static local:UiText.ShellHeaderSubtitle}"
+                               Style="{StaticResource ShellHeaderSubtitleTextStyle}" />
+                </StackPanel>
+            </DockPanel>
         </Border>
 
         <ContentControl x:Name="MainContent"
@@ -76,6 +86,129 @@
                         Grid.Row="1"
                         Content="{Binding CurrentPage}"
                         AutomationProperties.Name="{x:Static local:UiText.ShellMainContent}" />
+
+        <Border Grid.Column="1"
+                Grid.Row="1"
+                Width="460"
+                HorizontalAlignment="Right"
+                Panel.ZIndex="20"
+                Style="{StaticResource CardBorderStyle}"
+                Visibility="{Binding ReminderCenter.IsOpen, Converter={StaticResource ReminderBooleanToVisibilityConverter}}"
+                AutomationProperties.Name="{x:Static local:UiText.ReminderCenterTitle}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <DockPanel LastChildFill="True">
+                    <Button DockPanel.Dock="Right"
+                            Content="×"
+                            Command="{Binding ReminderCenter.CloseCommand}"
+                            Style="{StaticResource TodayTransparentButtonStyle}"
+                            AutomationProperties.Name="{x:Static local:UiText.ReminderCenterClose}" />
+                    <StackPanel>
+                        <TextBlock Text="{x:Static local:UiText.ReminderCenterTitle}"
+                                   Style="{StaticResource TodayEyebrowTextStyle}" />
+                        <TextBlock Text="{x:Static local:UiText.ReminderCenterSubtitle}"
+                                   Style="{StaticResource TodayGroupTitleTextStyle}"
+                                   Margin="0,4,0,0" />
+                    </StackPanel>
+                </DockPanel>
+                <Grid Grid.Row="1"
+                      Margin="0,12,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{Binding ReminderCenter.StatusLabel}"
+                               Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                               VerticalAlignment="Center" />
+                    <Button Grid.Column="1"
+                            Grid.RowSpan="2"
+                            Content="{x:Static local:UiText.ReminderRefresh}"
+                            Command="{Binding ReminderCenter.RefreshCommand}"
+                            Style="{StaticResource TodaySecondaryButtonStyle}"
+                            Margin="12,0,0,0" />
+                    <TextBlock Grid.Row="1"
+                               Text="{Binding ReminderCenter.InteractionMessage}"
+                               Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                               Margin="0,4,0,0"
+                               Visibility="{Binding ReminderCenter.HasInteractionMessage, Converter={StaticResource ReminderBooleanToVisibilityConverter}}" />
+                </Grid>
+                <ScrollViewer Grid.Row="2"
+                              VerticalScrollBarVisibility="Auto">
+                    <Grid>
+                        <ItemsControl ItemsSource="{Binding ReminderCenter.Items}"
+                                      Visibility="{Binding ReminderCenter.HasItems, Converter={StaticResource ReminderBooleanToVisibilityConverter}}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource CardBorderStyle}"
+                                            Margin="0,0,0,10">
+                                        <StackPanel>
+                                            <DockPanel LastChildFill="True">
+                                                <TextBlock DockPanel.Dock="Right"
+                                                           Text="{Binding LifecycleLabel}"
+                                                           Style="{StaticResource TodayGroupSubtitleTextStyle}" />
+                                                <TextBlock Text="{Binding Title}"
+                                                           Style="{StaticResource TodayTaskTitleTextStyle}" />
+                                            </DockPanel>
+                                            <TextBlock Text="{Binding PurposeLabel}"
+                                                       Style="{StaticResource TodayTaskMetaTextStyle}"
+                                                       Margin="0,4,0,0" />
+                                            <TextBlock Text="{Binding PriorityLabel}"
+                                                       Style="{StaticResource TodayTaskMetaTextStyle}" />
+                                            <TextBlock Text="{Binding TriggeredAtLabel}"
+                                                       Style="{StaticResource TodayTaskMetaTextStyle}" />
+                                            <WrapPanel Margin="0,8,0,0">
+                                                <Button Content="{x:Static local:UiText.ReminderDone}"
+                                                        Command="{Binding DoneCommand}"
+                                                        Style="{StaticResource TodayButtonStyle}"
+                                                        Margin="0,0,6,0" />
+                                                <Button Content="{x:Static local:UiText.ReminderSnooze}"
+                                                        Command="{Binding SnoozeCommand}"
+                                                        Style="{StaticResource TodaySecondaryButtonStyle}"
+                                                        Margin="0,0,6,0" />
+                                                <Button Content="{x:Static local:UiText.ReminderSkip}"
+                                                        Command="{Binding SkipCommand}"
+                                                        Style="{StaticResource TodaySecondaryButtonStyle}"
+                                                        Margin="0,0,6,0" />
+                                                <Button Content="{x:Static local:UiText.ReminderIgnore}"
+                                                        Command="{Binding IgnoreCommand}"
+                                                        Style="{StaticResource TodaySecondaryButtonStyle}"
+                                                        Margin="0,0,6,0" />
+                                                <Button Content="{x:Static local:UiText.ReminderMarkRead}"
+                                                        Command="{Binding MarkReadCommand}"
+                                                        Style="{StaticResource TodaySecondaryButtonStyle}" />
+                                            </WrapPanel>
+                                            <TextBlock Text="{Binding ActionFeedback}"
+                                                       Style="{StaticResource TodayTaskMetaTextStyle}"
+                                                       Margin="0,6,0,0"
+                                                       Visibility="{Binding HasActionFeedback, Converter={StaticResource ReminderBooleanToVisibilityConverter}}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <TextBlock Text="{x:Static local:UiText.ReminderSnapshotEmpty}"
+                                   Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                                   TextWrapping="Wrap"
+                                   Visibility="{Binding ReminderCenter.HasNoItems, Converter={StaticResource ReminderBooleanToVisibilityConverter}}" />
+                    </Grid>
+                </ScrollViewer>
+                <Button Grid.Row="3"
+                        Content="{x:Static local:UiText.ReminderCenterClose}"
+                        Command="{Binding ReminderCenter.CloseCommand}"
+                        Style="{StaticResource TodaySecondaryButtonStyle}"
+                        HorizontalAlignment="Right"
+                        Margin="0,12,0,0" />
+            </Grid>
+        </Border>
 
         <Border Grid.Column="1"
                 Grid.Row="2"

@@ -59,6 +59,14 @@ public static class ProtocolOperationSchemas
                     ProtocolOperations.TaskDelete,
                     requiredFields: ["taskId"],
                     optionalFields: []),
+                [ProtocolOperations.ReminderMarkRead] = new(
+                    ProtocolOperations.ReminderMarkRead,
+                    requiredFields: ["instanceId"],
+                    optionalFields: []),
+                [ProtocolOperations.ReminderResolve] = new(
+                    ProtocolOperations.ReminderResolve,
+                    requiredFields: ["instanceId", "action"],
+                    optionalFields: ["snoozeSeconds"]),
             });
 
     public static bool TryGet(string operation, out OperationSchema schema) =>
@@ -147,6 +155,8 @@ public static class ProtocolOperationSchemas
             ProtocolOperations.TaskReorder when fieldName == "taskId" => true,
             ProtocolOperations.TaskContinue when fieldName is "sourceTaskId" or "title" => true,
             ProtocolOperations.TaskDelete when fieldName == "taskId" => true,
+            ProtocolOperations.ReminderMarkRead when fieldName == "instanceId" => true,
+            ProtocolOperations.ReminderResolve when fieldName is "instanceId" or "action" => true,
             _ => false,
         };
 
@@ -265,6 +275,36 @@ public static class ProtocolOperationSchemas
             throw ProtocolContractException.Invalid(
                 ProtocolErrorCodes.InvalidNumber,
                 "sortOrder must be a 32-bit integer.",
+                fieldName);
+        }
+
+        if (operation is ProtocolOperations.ReminderMarkRead or ProtocolOperations.ReminderResolve &&
+            fieldName == "instanceId" && value.ValueKind == JsonValueKind.String)
+        {
+            ProtocolValidation.RequireLowercaseUuid(value.GetString(), fieldName);
+        }
+
+        if (operation == ProtocolOperations.ReminderResolve && fieldName == "action" &&
+            value.ValueKind == JsonValueKind.String)
+        {
+            var action = value.GetString();
+            if (action is not ("DONE" or "SNOOZE" or "SKIP" or "IGNORE"))
+            {
+                throw ProtocolContractException.Invalid(
+                    ProtocolErrorCodes.InvalidRequest,
+                    "Reminder action is not enabled for TASK_INSTANCE.",
+                    fieldName);
+            }
+        }
+
+        if (operation == ProtocolOperations.ReminderResolve && fieldName == "snoozeSeconds" &&
+            (value.ValueKind != JsonValueKind.Number ||
+             !ProtocolNumber.TryParseNonNegativeInt64(value.GetRawText(), out var snoozeSeconds) ||
+             snoozeSeconds is < 1 or > 604_800))
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidNumber,
+                "snoozeSeconds must be an integer between 1 and 604800.",
                 fieldName);
         }
     }
