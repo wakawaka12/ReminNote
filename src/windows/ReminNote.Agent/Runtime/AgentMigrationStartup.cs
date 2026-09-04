@@ -16,13 +16,15 @@ internal sealed class AgentMigrationStartupComposition
         [
             "20260828025922_InitialTaskSchema",
             "20260828120000_P2TaskLoop",
-            "20260828130000_P2ContinuationDeleteBoundary"
+            "20260828130000_P2ContinuationDeleteBoundary",
+            "20260831090000_P25StorageConsistency"
         ],
         [
             "20260828025922_InitialTaskSchema",
             "20260828120000_P2TaskLoop",
             "20260828130000_P2ContinuationDeleteBoundary",
-            "20260831090000_P25StorageConsistency"
+            "20260831090000_P25StorageConsistency",
+            "20260902141656_P3ReminderPersistence"
         ]);
 
     private readonly Func<ResolvedTransportProfile, IP275MigrationRunner> runnerFactory;

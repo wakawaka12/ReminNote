@@ -227,10 +227,9 @@ public sealed class AgentTaskClient :
         reminderReadOnly.GetAsync(query, cancellationToken);
 
     /// <summary>
-    /// Sends a Task reminder action through the business pipe. The current
-    /// Agent integration has not yet installed the P3 reminder domain handler;
-    /// its explicit rejection is surfaced to the UI as unavailable. There is
-    /// deliberately no call to the legacy Task writer here.
+    /// Sends a Task reminder action through the business pipe. The Agent owns
+    /// the durable Reminder handler and routes this operation through the same
+    /// P2.5 writer as Task mutations; there is no legacy Task-writer fallback.
     /// </summary>
     public async ValueTask<ReminderCommandResult> ExecuteAsync(
         ReminderActionCommand command,

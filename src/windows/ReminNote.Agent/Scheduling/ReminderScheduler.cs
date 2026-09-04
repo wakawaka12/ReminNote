@@ -536,15 +536,25 @@ public sealed class ReminderScheduler : IAsyncDisposable
                 ShouldDispatch: false);
         }
 
-        var kind = mutation.Kind switch
+        // The durable adapter re-checks rule/task facts after the scan. A
+        // trigger plan can therefore be closed as CANCELLED/EXPIRED when a
+        // Task result or rule change won the Agent writer race. Map from the
+        // committed state first so that a stale scan can never dispatch a
+        // notification for a terminal schedule.
+        var kind = result.ScheduleState switch
         {
-            ReminderDueMutationKind.TRIGGER => result.IsReplay
-                ? ReminderDueResultKind.DUPLICATE
-                : ReminderDueResultKind.TRIGGERED,
-            ReminderDueMutationKind.CONSUME_DUPLICATE => ReminderDueResultKind.DUPLICATE,
-            ReminderDueMutationKind.CANCEL => ReminderDueResultKind.CANCELLED,
-            ReminderDueMutationKind.EXPIRE => ReminderDueResultKind.EXPIRED,
-            _ => ReminderDueResultKind.REJECTED
+            ScheduleState.CANCELLED => ReminderDueResultKind.CANCELLED,
+            ScheduleState.EXPIRED => ReminderDueResultKind.EXPIRED,
+            _ => mutation.Kind switch
+            {
+                ReminderDueMutationKind.TRIGGER => result.IsReplay
+                    ? ReminderDueResultKind.DUPLICATE
+                    : ReminderDueResultKind.TRIGGERED,
+                ReminderDueMutationKind.CONSUME_DUPLICATE => ReminderDueResultKind.DUPLICATE,
+                ReminderDueMutationKind.CANCEL => ReminderDueResultKind.CANCELLED,
+                ReminderDueMutationKind.EXPIRE => ReminderDueResultKind.EXPIRED,
+                _ => ReminderDueResultKind.REJECTED
+            }
         };
         var instance = result.IsReplay
             ? result.Instance

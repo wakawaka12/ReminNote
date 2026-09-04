@@ -1,5 +1,7 @@
 using System.Runtime.Versioning;
 using Microsoft.Data.Sqlite;
+using NodaTime;
+using ReminNote.Agent.Scheduling;
 using ReminNote.Agent.Transport;
 using ReminNote.Core.Protocol;
 using ReminNote.Core.Transport;
@@ -81,6 +83,14 @@ internal static class AgentRuntime
 
             await using var storeLease = store;
             var agentInstanceId = ProtocolIds.NewEventId();
+            await using var reminderStore = new AgentReminderSchedulerStore(
+                store,
+                profile.DatabasePath,
+                profile.UserSid,
+                agentInstanceId);
+            await using var reminderScheduler = new ReminderScheduler(
+                reminderStore,
+                SystemClock.Instance);
             var limits = AgentTransportDefaults.CreateLimits();
             var businessEndpoint = new NamedPipeTransportEndpoint(profile, NamedPipeEndpointKind.Business);
             var controlEndpoint = new NamedPipeTransportEndpoint(profile, NamedPipeEndpointKind.Control);
@@ -125,9 +135,16 @@ internal static class AgentRuntime
                     limits,
                     agentInstanceId,
                     runtimeCancellation.Token);
+                var reminderTask = RunReminderSchedulerAsync(
+                    reminderScheduler,
+                    runtimeCancellation.Token);
                 try
                 {
-                    var firstCompleted = await Task.WhenAny(businessTask, controlTask).ConfigureAwait(false);
+                    var firstCompleted = await Task.WhenAny(
+                            businessTask,
+                            controlTask,
+                            reminderTask)
+                        .ConfigureAwait(false);
                     await firstCompleted.ConfigureAwait(false);
                 }
                 finally
@@ -135,6 +152,7 @@ internal static class AgentRuntime
                     runtimeCancellation.Cancel();
                     await IgnorePipeTaskAsync(businessTask).ConfigureAwait(false);
                     await IgnorePipeTaskAsync(controlTask).ConfigureAwait(false);
+                    await IgnorePipeTaskAsync(reminderTask).ConfigureAwait(false);
                 }
             }
             finally
@@ -164,6 +182,46 @@ internal static class AgentRuntime
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private static async Task RunReminderSchedulerAsync(
+        ReminderScheduler scheduler,
+        CancellationToken cancellationToken)
+    {
+        var recovery = true;
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var run = recovery
+                ? await scheduler.RecoverAsync(cancellationToken).ConfigureAwait(false)
+                : await scheduler.RunDueCycleAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            recovery = false;
+            await Task.Delay(
+                    GetReminderLoopDelay(run.NextWakeupUtc),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private static TimeSpan GetReminderLoopDelay(Instant? nextWakeupUtc)
+    {
+        if (nextWakeupUtc is not { } wakeup)
+        {
+            return TimeSpan.FromSeconds(30);
+        }
+
+        var remaining = wakeup - SystemClock.Instance.GetCurrentInstant();
+        if (remaining <= Duration.Zero)
+        {
+            // A rejected due attempt remains durable PENDING and must be
+            // retried, but a short backoff prevents a malformed row from
+            // turning the Agent into a tight loop.
+            return TimeSpan.FromSeconds(1);
+        }
+
+        var delay = remaining.ToTimeSpan();
+        return delay > TimeSpan.FromSeconds(30)
+            ? TimeSpan.FromSeconds(30)
+            : delay;
     }
 
     private static async Task RunControlPipeAsync(

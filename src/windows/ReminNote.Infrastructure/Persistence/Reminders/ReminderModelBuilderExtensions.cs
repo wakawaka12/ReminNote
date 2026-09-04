@@ -3,8 +3,9 @@ using Microsoft.EntityFrameworkCore;
 namespace ReminNote.Infrastructure.Persistence.Reminders;
 
 /// <summary>
-/// Explicit opt-in for P3 Reminder tables. It is intentionally not called by
-/// ReminNoteDbContext until the owning migration/startup window is ready.
+/// Explicit application point for the formal P3 Reminder model. Legacy P2
+/// fixture options remain isolated because ReminNoteDbContext calls this only
+/// for its formal options marker.
 /// </summary>
 public static class ReminderModelBuilderExtensions
 {

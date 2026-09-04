@@ -5,9 +5,9 @@ using ReminNote.Core.Reminders.Domain;
 namespace ReminNote.Infrastructure.Persistence.Reminders;
 
 /// <remarks>
-/// Deliberately does not implement IEntityTypeConfiguration. The existing
-/// ReminNoteDbContext uses assembly scanning and must remain P2-only until a
-/// later migration explicitly opts into this set of mappings.
+/// The Reminder model is applied explicitly by ReminNoteDbContext's formal
+/// P3 options. Keeping this configuration explicit prevents legacy P2 fixture
+/// options from discovering the Reminder tables accidentally.
 /// </remarks>
 public sealed class ReminderRuleEntityConfiguration
 {

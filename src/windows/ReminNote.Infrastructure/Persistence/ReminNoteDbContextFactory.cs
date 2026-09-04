@@ -15,7 +15,7 @@ public sealed class ReminNoteDbContextFactory : IDesignTimeDbContextFactory<Remi
         var builder = new DbContextOptionsBuilder<ReminNoteDbContext>();
         builder.UseSqlite(
             "Data Source=:memory:",
-            sqlite => sqlite.MigrationsAssembly(typeof(ReminNoteDbContext).Assembly.GetName().Name));
+            sqlite => sqlite.MigrationsAssembly(typeof(ReminNoteDbContext).Assembly));
         return new ReminNoteDbContext(builder.Options);
     }
 }
