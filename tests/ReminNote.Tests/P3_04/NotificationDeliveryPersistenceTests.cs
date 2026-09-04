@@ -1,8 +1,10 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using NodaTime;
 using ReminNote.Core.Reminders.Notifications;
 using ReminNote.Core.Reminders.Notifications.Adapters;
 using ReminNote.Infrastructure.Persistence.P25;
+using ReminNote.Infrastructure.Persistence;
 using ReminNote.Infrastructure.Persistence.Reminders;
 
 #pragma warning disable CA1707 // Slice directory and test names mirror the frozen plan.
@@ -13,33 +15,60 @@ public sealed class NotificationDeliveryPersistenceTests
     private static readonly Instant Now = Instant.FromUtc(2026, 9, 4, 8, 0);
 
     [Fact]
-    public void AdditiveEfMigrationCreatesAttemptStreamWithoutReminderCoreTables()
+    public async Task AdditiveEfMigrationCreatesAttemptStreamWithoutChangingReminderCoreTables()
     {
-        using var database = new SqliteTestDatabase();
-        database.Migrate();
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "ReminNote-P3-04-migration-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var databasePath = Path.Combine(root, "profile.sqlite");
 
-        using var command = database.Connection.CreateCommand();
-        command.CommandText = """
-            SELECT COUNT(*)
-            FROM sqlite_master
-            WHERE type = 'table' AND name = 'notification_delivery_attempt_events';
-            """;
-        Assert.Equal(
-            1L,
-            Convert.ToInt64(
-                command.ExecuteScalar(),
-                System.Globalization.CultureInfo.InvariantCulture));
+        try
+        {
+            await using var connection = new SqliteConnection(
+                new SqliteConnectionStringBuilder
+                {
+                    DataSource = databasePath,
+                    Mode = SqliteOpenMode.ReadWriteCreate,
+                    Cache = SqliteCacheMode.Private,
+                    Pooling = false,
+                    ForeignKeys = true
+                }.ToString());
+            await connection.OpenAsync(TestContext.Current.CancellationToken);
 
-        command.CommandText = """
-            SELECT COUNT(*)
-            FROM sqlite_master
-            WHERE type = 'table' AND name IN ('reminder_rules', 'reminder_schedules', 'reminder_instances');
-            """;
-        Assert.Equal(
-            0L,
-            Convert.ToInt64(
-                command.ExecuteScalar(),
-                System.Globalization.CultureInfo.InvariantCulture));
+            await using var context = ReminNoteDatabase.CreateContext(connection);
+            await context.Database.MigrateAsync(
+                "20260902141656_P3ReminderPersistence",
+                TestContext.Current.CancellationToken);
+            var before = await ReadTablesAsync(
+                connection,
+                TestContext.Current.CancellationToken);
+            Assert.DoesNotContain("notification_delivery_attempt_events", before);
+            Assert.Contains("reminder_rules", before);
+            Assert.Contains("reminder_schedules", before);
+            Assert.Contains("reminder_instances", before);
+
+            await context.Database.MigrateAsync(
+                "20260904090000_P304",
+                TestContext.Current.CancellationToken);
+            var after = await ReadTablesAsync(
+                connection,
+                TestContext.Current.CancellationToken);
+
+            Assert.Contains("notification_delivery_attempt_events", after);
+            Assert.True(before.IsSubsetOf(after));
+            Assert.Equal(
+                ["notification_delivery_attempt_events"],
+                after.Except(before).OrderBy(name => name, StringComparer.Ordinal));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
     }
 
     [Fact]
@@ -280,6 +309,23 @@ public sealed class NotificationDeliveryPersistenceTests
 
     private static Guid Id(int suffix) =>
         Guid.Parse($"0191f6a4-3b25-7c12-8d34-56789abcde{suffix:X2}");
+
+    private static async Task<HashSet<string>> ReadTablesAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%';";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names;
+    }
 
     private sealed class FixedClock(Instant now) : IClock
     {
