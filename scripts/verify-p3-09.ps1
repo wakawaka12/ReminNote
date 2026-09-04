@@ -33,6 +33,7 @@ $protectedDatabasePath = [System.IO.Path]::GetFullPath('D:\Anime\.devdata\reminn
 $results = [System.Collections.Generic.List[object]]::new()
 $dependencyStatuses = [ordered]@{}
 $commandRecords = [System.Collections.Generic.List[string]]::new()
+$script:migrationEvidenceRecorded = $false
 
 function Convert-ToCanonicalPath {
     param([Parameter(Mandatory)][string]$Path)
@@ -97,6 +98,34 @@ function Get-RepositoryText {
     }
 
     return [System.IO.File]::ReadAllText($path)
+}
+
+function Read-SharedText {
+    param(
+        [Parameter(Mandatory)][string]$Path
+    )
+
+    # Start-Process keeps redirected stdout open while a probe is running.
+    # File.ReadAllText uses a restrictive share mode and can therefore make a
+    # healthy Agent look like a gate execution error. Open the log explicitly
+    # with shared read/write access so readiness polling remains observational.
+    $stream = [System.IO.File]::Open(
+        $Path,
+        [System.IO.FileMode]::Open,
+        [System.IO.FileAccess]::Read,
+        [System.IO.FileShare]::ReadWrite)
+    try {
+        $reader = [System.IO.StreamReader]::new($stream)
+        try {
+            return $reader.ReadToEnd()
+        }
+        finally {
+            $reader.Dispose()
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
 }
 
 function Get-TreeText {
@@ -528,6 +557,31 @@ function Stop-LaunchedProcess {
     }
 }
 
+function Initialize-WindowsProcessEnvironment {
+    if (-not [OperatingSystem]::IsWindows()) {
+        return
+    }
+
+    # The Codex command host may intentionally omit the process-level Windows
+    # variables even though the machine environment has them. WPF reads
+    # SystemRoot while initializing its font cache; propagate the authoritative
+    # machine value to children without changing the product/runtime contract.
+    $windowsRoot = [Environment]::GetEnvironmentVariable('SystemRoot')
+    if ([string]::IsNullOrWhiteSpace($windowsRoot)) {
+        $windowsRoot = [Environment]::GetEnvironmentVariable('SystemRoot', 'Machine')
+    }
+
+    if ([string]::IsNullOrWhiteSpace($windowsRoot)) {
+        $windowsRoot = [Environment]::GetEnvironmentVariable('WINDIR', 'Machine')
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($windowsRoot) -and
+        (Test-Path -LiteralPath $windowsRoot -PathType Container)) {
+        $env:SystemRoot = $windowsRoot
+        $env:WINDIR = $windowsRoot
+    }
+}
+
 function Invoke-RealProcessProbe {
     param([Parameter(Mandatory)][string]$RunRoot)
 
@@ -616,6 +670,7 @@ function Invoke-RealProcessProbe {
     $startedDescriptions = [System.Collections.Generic.List[string]]::new()
 
     try {
+        Initialize-WindowsProcessEnvironment
         $agentLog = Join-Path $processLogRoot 'agent.log'
         $agent = Start-Process `
             -FilePath (Convert-ToCanonicalPath $AgentPath) `
@@ -631,8 +686,12 @@ function Invoke-RealProcessProbe {
         $agentReady = $false
         while ([DateTimeOffset]::UtcNow -lt $deadline) {
             if (Test-Path -LiteralPath $agentLog) {
-                $agentOutput = [System.IO.File]::ReadAllText($agentLog)
-                if ($agentOutput.Contains('ReminNote Agent ready for profile p3-09-gate.')) {
+                $agentOutput = Read-SharedText -Path $agentLog
+                # Agent logs the resolved profile scope (a stable hash), not
+                # the caller's profile key. Match the readiness contract
+                # prefix so a valid isolated profile is not rejected merely
+                # because its scope is derived at runtime.
+                if ($agentOutput.Contains('ReminNote Agent ready for profile ')) {
                     $agentReady = $true
                     break
                 }
@@ -685,19 +744,199 @@ function Invoke-RealProcessProbe {
             return
         }
 
+        # Capture migration evidence before the restart. A fully migrated
+        # second startup is allowed to overwrite the marker with a no-op READY
+        # snapshot that intentionally has no new backup artifact.
+        Invoke-IsolatedMigrationEvidence -RunRoot $RunRoot
+
+        # Restart only the Agent while Main/Widget remain alive. The same
+        # isolated data-root is intentionally reused so the probe exercises
+        # durable migration/recovery state instead of an empty process.
+        Stop-LaunchedProcess -Process $agent
+        [void]$processes.Remove($agent)
+        Start-Sleep -Milliseconds 300
+
+        $restartLog = Join-Path $processLogRoot 'agent-restart.log'
+        $restartErrorLog = Join-Path $processLogRoot 'agent-restart.err.log'
+        $restartedAgent = Start-Process `
+            -FilePath (Convert-ToCanonicalPath $AgentPath) `
+            -WorkingDirectory ([System.IO.Path]::GetDirectoryName((Convert-ToCanonicalPath $AgentPath))) `
+            -ArgumentList @('--data-root', $realProcessDataRoot, '--profile', 'p3-09-gate') `
+            -RedirectStandardOutput $restartLog `
+            -RedirectStandardError $restartErrorLog `
+            -PassThru
+        $processes.Add($restartedAgent)
+        $startedDescriptions.Add("Agent restart pid=$($restartedAgent.Id) path=$AgentPath")
+
+        $restartDeadline = [DateTimeOffset]::UtcNow.AddSeconds(30)
+        $restartReady = $false
+        while ([DateTimeOffset]::UtcNow -lt $restartDeadline) {
+            if (Test-Path -LiteralPath $restartLog) {
+                $restartOutput = Read-SharedText -Path $restartLog
+                if ($restartOutput.Contains('ReminNote Agent ready for profile ')) {
+                    $restartReady = $true
+                    break
+                }
+            }
+
+            if ($restartedAgent.HasExited) {
+                break
+            }
+
+            Start-Sleep -Milliseconds 200
+        }
+
+        if (-not $restartReady -or $restartedAgent.HasExited) {
+            Add-GateResult `
+                -Id 'P3-09-AGENT-RESTART' `
+                -EvidenceLevel 'real-process isolated' `
+                -Status 'FAIL' `
+                -Summary 'Agent 使用同一隔离 data-root 重启后未再次报告 ready。' `
+                -Evidence "$processLogRoot; $([string]::Join(', ', $startedDescriptions))" `
+                -NextAction '分析 agent-restart stdout/stderr 和 migration marker；不得把重启失败记为稳定性通过。'
+            return
+        }
+
+        Start-Sleep -Seconds $RealProcessObservationSeconds
+        if ($restartedAgent.HasExited) {
+            Add-GateResult `
+                -Id 'P3-09-AGENT-RESTART' `
+                -EvidenceLevel 'real-process isolated' `
+                -Status 'FAIL' `
+                -Summary "Agent 重启后在隔离观察窗口 $RealProcessObservationSeconds 秒内退出。" `
+                -Evidence "$processLogRoot; $([string]::Join(', ', $startedDescriptions))" `
+                -NextAction '分析 agent-restart stdout/stderr 和 durable recovery 状态后重新运行。'
+            return
+        }
+
+        Add-GateResult `
+            -Id 'P3-09-AGENT-RESTART' `
+            -EvidenceLevel 'real-process isolated' `
+            -Status 'PASS' `
+            -Summary "Agent 使用同一隔离 data-root 重启并存活 $RealProcessObservationSeconds 秒。" `
+            -Evidence "$processLogRoot; $([string]::Join(', ', $startedDescriptions))" `
+            -NextAction '该自动结果不替代 Windows 睡眠/唤醒人工验收。'
+
         Add-GateResult `
             -Id 'P3-09-REAL-PROCESS' `
             -EvidenceLevel 'real-process isolated' `
             -Status 'PASS' `
             -Summary "Agent/Main/Widget 在隔离 root 内存活 $RealProcessObservationSeconds 秒。" `
             -Evidence "$processLogRoot; $([string]::Join(', ', $startedDescriptions))" `
-            -NextAction '仍需执行 IPC/重启/睡眠唤醒/通道健康和桌面人工用例；本检查不产生 sign-off。'
+            -NextAction '仍需执行 IPC/通道健康、睡眠唤醒和桌面人工用例；Agent 重启结果见 P3-09-AGENT-RESTART。'
     }
     finally {
         foreach ($process in $processes) {
             Stop-LaunchedProcess -Process $process
         }
     }
+}
+
+function Invoke-IsolatedMigrationEvidence {
+    param([Parameter(Mandatory)][string]$RunRoot)
+
+    if ($script:migrationEvidenceRecorded) {
+        return
+    }
+
+    $script:migrationEvidenceRecorded = $true
+
+    if (-not $RunRealProcess) {
+        Add-GateResult `
+            -Id 'P3-09-MIGRATION-ISOLATED' `
+            -EvidenceLevel 'CLI/harness/temporary clone' `
+            -Status 'PENDING' `
+            -Summary '本次未启动隔离 Agent，尚无 Candidate migration/verify/promote 运行证据。' `
+            -Evidence '未提供 -RunRealProcess' `
+            -NextAction '准备隔离 P2.5 fixture 和 Release 二进制后运行 -RunRealProcess；不得使用 Active 或受保护数据库。'
+        return
+    }
+
+    $isolatedDataRoot = Join-Path $RunRoot 'real-process-data'
+    $markerFiles = @(Get-ChildItem `
+            -LiteralPath $isolatedDataRoot `
+            -Recurse `
+            -File `
+            -Filter 'migration-state.json' `
+            -ErrorAction SilentlyContinue)
+    if ($markerFiles.Count -eq 0) {
+        Add-GateResult `
+            -Id 'P3-09-MIGRATION-ISOLATED' `
+            -EvidenceLevel 'CLI/harness/temporary clone' `
+            -Status 'PENDING' `
+            -Summary '隔离 Agent 已运行，但未发现 P2.75 migration marker。' `
+            -Evidence $isolatedDataRoot `
+            -NextAction '确认隔离 data-root 预置了 P2.5 schema，并保留 migration-state、backup 和 recovery history 证据。'
+        return
+    }
+
+    $failures = [System.Collections.Generic.List[string]]::new()
+    $evidence = [System.Collections.Generic.List[string]]::new()
+    foreach ($markerFile in $markerFiles) {
+        try {
+            $marker = [System.IO.File]::ReadAllText($markerFile.FullName) | ConvertFrom-Json
+        }
+        catch {
+            $failures.Add("marker parse failed: $($markerFile.FullName)")
+            continue
+        }
+
+        $targetSchema = @($marker.targetSchema | ForEach-Object { [string]$_ })
+        $hasP3Reminder = $targetSchema -contains '20260902141656_P3ReminderPersistence'
+        $hasP304 = $targetSchema -contains '20260904090000_P304'
+        $stateReady = [string]$marker.state -eq 'READY'
+        $backupArtifact = [string]$marker.backupArtifact
+        $candidateArtifact = [string]$marker.candidateArtifact
+        $runId = [string]$marker.runId
+        $profileRoot = Split-Path (Split-Path $markerFile.FullName -Parent) -Parent
+        $activePath = Join-Path $profileRoot 'reminnote.sqlite'
+        $backupPath = if (-not [string]::IsNullOrWhiteSpace($backupArtifact) -and
+            [System.IO.Path]::GetFileName($backupArtifact) -eq $backupArtifact) {
+            Join-Path (Join-Path $profileRoot 'backups') $backupArtifact
+        }
+        else {
+            $null
+        }
+        $historyPath = if (-not [string]::IsNullOrWhiteSpace($runId)) {
+            Join-Path (Join-Path (Join-Path $profileRoot 'recovery') 'history') $runId
+        }
+        else {
+            $null
+        }
+
+        $evidence.Add("marker=$($markerFile.FullName)")
+        $evidence.Add("state=$($marker.state); target=$([string]::Join(',', $targetSchema))")
+        if (-not $stateReady) { $failures.Add("marker state is not READY: $($marker.state)") }
+        if (-not $hasP3Reminder -or -not $hasP304) { $failures.Add("P3 target migrations are missing: $($markerFile.FullName)") }
+        if ([string]::IsNullOrWhiteSpace($backupArtifact) -or $null -eq $backupPath -or
+            -not (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
+            $failures.Add("verified backup artifact is missing: $backupArtifact")
+        }
+        if ([string]::IsNullOrWhiteSpace($candidateArtifact)) { $failures.Add('candidate artifact is missing from marker') }
+        if (-not (Test-Path -LiteralPath $activePath -PathType Leaf)) { $failures.Add("promoted Active database is missing: $activePath") }
+        if ($null -eq $historyPath -or -not (Test-Path -LiteralPath $historyPath -PathType Container)) {
+            $failures.Add("promotion history is missing: $historyPath")
+        }
+    }
+
+    if ($failures.Count -gt 0) {
+        Add-GateResult `
+            -Id 'P3-09-MIGRATION-ISOLATED' `
+            -EvidenceLevel 'CLI/harness/temporary clone' `
+            -Status 'FAIL' `
+            -Summary '隔离 migration marker/backup/promote 证据不完整。' `
+            -Evidence "$([string]::Join('; ', $evidence)); failures=$([string]::Join('; ', $failures))" `
+            -NextAction '保留隔离 artifact，修复 backup→Candidate→verify→promote 证据链；不得把不完整 marker 记为通过。'
+        return
+    }
+
+    Add-GateResult `
+        -Id 'P3-09-MIGRATION-ISOLATED' `
+        -EvidenceLevel 'CLI/harness/temporary clone' `
+        -Status 'PASS' `
+        -Summary '隔离 P2.5→P3 migration 已完成 backup→Candidate→verify→atomic promote，并留下恢复历史。' `
+        -Evidence ([string]::Join('; ', $evidence)) `
+        -NextAction '继续执行 Agent restart；失败恢复路径仍需单独的故障注入证据。'
 }
 
 function Write-GateReport {
@@ -1014,6 +1253,8 @@ try {
     $p308Text = Get-RepositoryText -RelativePath 'src\windows\ReminNote.Core\Reminders\Export\ReminderRestorePlanner.cs'
     $legacyMigrationPlanIsActive = $migrationText.Contains('20260831090000_P25StorageConsistency')
     $migrationPlanHasNoReminderTarget = -not $migrationText.Contains('Reminder')
+    $migrationPlanHasP3Targets = $migrationText.Contains('20260902141656_P3ReminderPersistence') -and
+        $migrationText.Contains('20260904090000_P304')
     if ($legacyMigrationPlanIsActive -and $migrationPlanHasNoReminderTarget) {
         Add-GateResult `
             -Id 'P3-09-MIGRATION' `
@@ -1022,6 +1263,15 @@ try {
             -Summary 'Agent migration target 仍为 P2.5；尚无 P3 Reminder schema/forward migration 接线。' `
             -Evidence 'AgentMigrationStartup.cs DefaultPlan; ReminderRestorePlanner remains pure plan' `
             -NextAction '待 P3-03 schema 接线后，串行更新 target plan/migration/snapshot，并在隔离 Candidate root 完成 backup→verify→promote。'
+    }
+    elseif ($migrationPlanHasP3Targets) {
+        Add-GateResult `
+            -Id 'P3-09-MIGRATION' `
+            -EvidenceLevel 'static/contract' `
+            -Status 'PASS' `
+            -Summary 'Agent 默认迁移计划已包含 P3 Reminder 与 P3-04 增量 schema。' `
+            -Evidence 'AgentMigrationStartup.cs DefaultPlan' `
+            -NextAction '仍需以隔离 P2.5 fixture 运行 Candidate migration/verify/promote，并保留 marker/backup/history。'
     }
     else {
         Add-GateResult `
@@ -1076,13 +1326,15 @@ try {
 
     Invoke-RealProcessProbe -RunRoot $runRoot
 
+    Invoke-IsolatedMigrationEvidence -RunRoot $runRoot
+
     Add-GateResult `
         -Id 'P3-09-STABILITY-AGENT' `
         -EvidenceLevel 'real-process isolated' `
-        -Status 'BLOCKED' `
-        -Summary 'Agent 稳定性（真实重启/睡眠唤醒）尚未可验证。' `
-        -Evidence 'P3-03 scheduler/durable transaction 未接入；本次只运行已有 contract tests。' `
-        -NextAction '完成 P3-03 后，在隔离 data-root 执行多轮 due、重启、sleep/wake 和异常恢复，并记录 PID/日志/DB 状态。'
+        -Status 'PENDING' `
+        -Summary 'Agent 重启由自动探针单独记录；Windows 睡眠/唤醒仍属于必要人工项。' `
+        -Evidence 'P3-09-AGENT-RESTART；sleep/wake 不能在本门禁中安全模拟。' `
+        -NextAction '确认 P3-09-AGENT-RESTART 已 PASS；随后由用户执行真实 Windows 睡眠/唤醒并记录恢复结果。'
 
     Add-GateResult `
         -Id 'P3-09-DESKTOP-MANUAL' `
