@@ -93,7 +93,11 @@ P3-05 的能力接线保持原 owner：
 验证使用直接 SDK 10.0.400、locked restore，并在仓库外临时 clone/root 中执行。测试
 只使用临时 SQLite 文件；未访问 `D:\Anime\.devdata\reminnote.sqlite`。
 
-## 未决人工项
+## 未决集成点与人工项
+
+当前仍有未决集成点：AgentRuntime 需要由总成接入实际 host catalog/受控 bridge，
+并将 P3-03 concrete scheduler 的 committed trigger recovery source 绑定到通知
+runtime；这些接线完成后再运行 P3-09 的真实进程门禁。
 
 - P3-05 的真实 Windows API 可见性、Toast AUMID/Start-menu registration、音频听感、
   Widget HWND 和 sleep/wake timer 需要 P3-09 real-process/desktop 验收；本窗口不改
