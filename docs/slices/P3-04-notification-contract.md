@@ -1,49 +1,104 @@
-# P3-04 通知抽象与渠道投递契约
+# P3-04 Reminder notification delivery
 
-状态：本窗口实现完成，等待总成窗口审查与接入。本文只描述 P3-04 owner 范围，不改变 P3-00/P3-01/P3-02/P3-07 的文件或持久化实现。
+状态：后续实现完成，等待总成窗口审查与实际桌面环境验收。
 
-## 交付范围
+本窗口完成 Reminder notification delivery 的 Agent 生产闭环接缝：核心
+`ReminderInstance` 仍由 P3-03 的 durable due transaction 产生；P3-04 只消费
+提交后的 `NotificationTriggerFact`，并把渠道投递作为 Agent 单写入器内的追加式
+子事实保存。没有改写 P3-03 的 Rule/Schedule/Instance owner，也没有在 UI 或
+通道 adapter 中增加第二个数据库写入口。
 
-实现位于 `src/windows/ReminNote.Core/Reminders/Notifications/`，测试位于
-`tests/ReminNote.Tests/P3_04/`。没有接入 Agent runtime、Named Pipe、Windows Toast/UI、DbContext/Migrations 或真实系统通知，也没有增加依赖。
+## 持久化投递尝试
 
-核心类型分为四组：
+`src/windows/ReminNote.Core/Reminders/Notifications/NotificationDeliveryDurability.cs`
+定义了 `NotificationDeliveryAttemptRecord` 和
+`INotificationDeliveryAttemptJournalStore`。一条投递尝试的事件链为：
 
-- `NotificationChannelId`、`NotificationCapability`、`NotificationChannelHealth`、`NotificationChannelStatus`：稳定的渠道身份、能力和健康快照。P3-00 冻结的 `TOAST`、`TRAY`、`WIDGET`、`SOUND`、`WAKE_TIMER` 是状态/投递允许的渠道；能力与健康正交，健康渠道仍可能缺少 `PRESENT`。
-- `NotificationTriggerFact`、`NotificationDeliveryRequest`：Agent 已记录的 `ReminderInstance` 核心触发快照和渠道请求。请求不包含自由文本；`logicalReminderId` 只作为 adapter 的 replace/update key 输入。
-- `NotificationDeliveryAttempt`、`INotificationDeliveryAttemptStore`、`NotificationDeliveryCoordinator`：渠道尝试的不可变 append-only 子事实。唯一性由 `(instanceId, channel, idempotencyKey)` seam 表达；重复键按 intent 校验后返回 `REPLAYED`，不同 intent 稳定返回 `notification.idempotency.conflict`。
-- `NotificationLifecycleState` 与 `INotificationPresentationPolicy`：ReminderInstance 的 `UNREAD → READ → RESOLVED` 单向生命周期，以及不复制 Quiet Hours 规则的策略输入/结果 seam。Toast close 只能调用 `ApplyToastClose` 产生 READ，不能直接 RESOLVED。
+1. `PENDING`：写入外部 channel 前提交，带 Instance/Schedule/Rule/Occurrence/
+   LogicalReminder 快照、channel、correlation、RequestId、idempotency key、
+   attempt ordinal、priority/pin/purpose 和时间事实；
+2. terminal event：外部 channel 返回后追加 `DELIVERED`、`BLOCKED`、
+   `UNAVAILABLE`、`FAILED`、`SUPPRESSED_QUIET_HOURS` 或 `NOT_ATTEMPTED`，并记录
+   stable error、retryable 和 next-attempt time。
 
-## 结果语义
+同一 `attemptId` 使用递增 `eventOrdinal`，事件行从不 UPDATE。每次追加都经过
+P2.5 `P25StorageWriter`，因此 attempt event、全局 revision、change journal 和
+command receipt 在同一事务中提交。相同 effect idempotency key 重放时不调用
+channel；新的重试保持同一 Instance/LogicalReminderId/channel intent，生成新的
+AttemptId、idempotency key 和 RequestId。发生进程崩溃时，未完成的 `PENDING` 与
+已到期的 retryable terminal event 都可从 durable projection 重新发现。
 
-`NotificationDispatchResult` 同时携带核心事实和渠道事实：只要 caller 已提供 `NotificationTriggerFact`，结果的 `CoreTriggerWasRecorded` 就为 true；渠道缺少 `PRESENT` 能力时是 `NOT_ATTEMPTED/capability_missing`，渠道 `BLOCKED` 是 `BLOCKED`，`UNAVAILABLE/UNKNOWN` 是 `UNAVAILABLE`，adapter 自身失败是 `FAILED`。这些结果都追加 delivery attempt，不能把渠道失败改写成“没有触发”。没有核心 Instance 时由上游返回 `NotificationDispatchResult.NotTriggered(reasonCode)`，该结果不带 attempt。
+新增的 `notification_delivery_attempt_events` migration 是纯追加 P3-04 migration，
+只创建投递尝试事件表和索引，不重写 P3-03 表或 P3-03 migration。Agent 启动在
+P2.75 promote/verify 后只读核对该表；缺失 migration 会 fail-closed，不会对 Active
+数据库做 DDL fallback。
 
-成功、失败、阻塞、不可用、Quiet Hours 抑制和未尝试均可独立追加；重试必须使用新的 idempotency key，原记录不覆盖。相同 key 的重放不再次调用渠道，重启后的 store adapter 可从 append-only 记录恢复并返回 `REPLAYED`。`DELIVERED` 不允许携带 error code，所有可持久化 code 均为有限长度小写稳定码。
+## Agent 分发与恢复
 
-`NotificationContractJson` 提供 status、attempt、lifecycle 的严格有限 JSON 编解码：字段集合固定、未知字段/重复字段/BOM/超限/非法 enum 或时间均拒绝；UUID 采用小写 D 格式 UUID v7，Instant 采用九位小数 UTC 格式。JSON 只含身份、快照和稳定结果码，不含用户文案。
+`src/windows/ReminNote.Agent/Notifications/NotificationDeliveryRuntime.cs`
+提供：
 
-## 未来最小适配接口
+- `NotificationDeliveryDispatcher`：单进程 effect gate + durable pending/outcome
+  两阶段分发；channel 缺失、能力不符、blocked、unavailable、policy suppression
+  和异常都会变成明确 attempt outcome；
+- `NotificationRetryPolicy`：有界次数和指数退避，区分可重试的 unavailable/
+  transient failure、Quiet Hours 与不可重试的 capability/idempotency/channel
+  contract failure；
+- `RecoverAsync`：重启时恢复 pending，用原 effect key 做安全 replay；已到期的
+  retryable failure 用新 key/new RequestId 开新 attempt；
+- `INotificationCommittedTriggerRecoverySource`：由 P3-03 durable store 提供已提交但
+  尚未形成 attempt 的 core trigger 对账源，覆盖“core commit 后、PENDING append 前”
+  的进程崩溃窗口；对账仍走同一 dispatcher 的逻辑去重，不会创建第二个 Instance；
+- `NotificationDeliverySafetyGate`：安全模式下不写 attempt、不调用外部 channel，
+  也不把安全模式当作 core trigger 失败；
+- `ReminderNotificationRuntime`：只处理
+  `ReminderDueResult.ShouldDispatch == true` 且 scheduler 的
+  `IReminderDueTransaction.CommitAsync` 已返回之后的 `TriggerFact`。因此通道失败
+  不能再次创建 `ReminderInstance`。
 
-Agent 侧最小接入只需实现 `INotificationChannelCatalog`、`INotificationDeliveryAttemptStore`，并在 Agent 单写事务/串行 gate 内保证 `(instanceId, channel, idempotencyKey)` 的原子唯一约束；due 事务先提交 ReminderInstance，再把 `NotificationDeliveryRequest` 交给 `NotificationDeliveryCoordinator`，不能由渠道 adapter 写 Rule/Schedule/Instance。
+## P3-05 宿主 channel 注入
 
-Windows adapter 只需实现 `INotificationChannel`：返回自身 `ChannelId`、可缓存或刷新 `GetStatus()`，并在 `DeliverAsync` 中执行一次外部呈现后返回 `NotificationChannelDeliveryResponse`。adapter 不实现 Quiet Hours；策略由 `INotificationPresentationPolicy` 决定。Toast 回调只能转成 Agent 的 READ command，不能直接改 Core lifecycle；UI/Toast API、真实文案和 replace 行为留在后续 Windows slice。
+`INotificationChannelCatalogSnapshot` 和
+`CompositeNotificationChannelCatalog` 是宿主到 Agent Runtime 的明确注入 seam；
+`INotificationCommittedTriggerRecoverySource` 是 scheduler 到通知恢复的只读对账 seam。
+`AgentNotificationRuntimeComposition.Create` 接收已组合的真实 catalog，并把它
+绑定到已打开的 Agent `P25StorageStore`；不会从 Agent 另开连接或绕过单写入器。
 
-## 验证
+P3-05 的能力接线保持原 owner：
 
-在隔离临时目录下的 `P3_04` 测试覆盖：能力缺失、渠道 blocked/unavailable、成功/失败/新 key 重试、重复投递、重启重放、idempotency 冲突、Quiet Hours 策略抑制、生命周期非法状态与幂等、Toast close 边界，以及 JSON round-trip、未知/重复字段、BOM、超限和非法值。
+- Windows catalog：`TOAST`、`TRAY`、`SOUND`、`WAKE_TIMER`；
+- Widget catalog：`WIDGET`，实际 effect 是 Widget HWND 的 flash；
+- taskbar flash 复用冻结的 `TRAY` channel identity，不新增数据库 channel；
+- 两个宿主 catalog 可用 `CompositeNotificationChannelCatalog` 合并为完整 P3
+  catalog，并拒绝重复 channel owner。
 
-验证命令（使用仓库现有 .NET 10 SDK 的绝对路径）：
+宿主默认仍然 fail-closed：Toast registration 未验证、窗口不可见、系统能力不可用
+或 wake timer 建立失败时，adapter 返回明确的 unavailable/blocked/failed，而不伪报
+成功。Toast close、Widget action 和窗口激活仍必须回到 Agent business command，
+不能由 UI callback 直接改 Reminder lifecycle。
 
-```text
-"C:\Program Files\dotnet\dotnet.exe" restore tests/ReminNote.Tests/ReminNote.Tests.csproj --locked-mode
-"C:\Program Files\dotnet\dotnet.exe" build tests/ReminNote.Tests/ReminNote.Tests.csproj --configuration Release --no-restore --nologo
-tests/ReminNote.Tests/bin/Release/net10.0/ReminNote.Tests.exe -noLogo -noColor -class "ReminNote.Tests.P3_04.*"
-```
+## 测试与验证
 
-结果：构建 0 警告/0 错误；P3-04 测试 10/10 通过。测试只写入 `%TEMP%/ReminNote.P3_04/<guid>/`，未访问受保护数据库。
+`tests/ReminNote.Tests/P3_04/` 新增了隔离 SQLite/P2.5 writer 和 Agent runtime
+测试，覆盖：
 
-## 未决集成点
+- commit-before-dispatch；
+- attempt append、terminal append、receipt/journal/revision；
+- effect key replay、logical dedup、new-key retry；
+- channel failure 不重复 core Instance；
+- 退避、到期恢复、不可重试失败和安全模式；
+- 进程重启后的 pending recovery；
+- 既有 P3-04 contract/coordinator、P3-05 adapter 和旧 P2 测试。
 
-- P3-01 需要把 `NotificationDeliveryAttempt` 映射为 append-only child storage，并在 Agent writer gate 中实现原子唯一键和启动恢复加载。
-- P3-02/P3-07 负责把 ReminderInstance 的真实 core snapshot、Quiet Hours/DST 策略结果接入本 seam；本 Slice 未复制这些规则。
-- 后续 Agent/Windows slice 负责文案 read model、Toast/Tray/Widget/Sound/WakeTimer adapter、READ command 和外部错误码映射；本 Slice 不承诺系统通知可见性。
+验证使用直接 SDK 10.0.400、locked restore，并在仓库外临时 clone/root 中执行。测试
+只使用临时 SQLite 文件；未访问 `D:\Anime\.devdata\reminnote.sqlite`。
+
+## 未决人工项
+
+- P3-05 的真实 Windows API 可见性、Toast AUMID/Start-menu registration、音频听感、
+  Widget HWND 和 sleep/wake timer 需要 P3-09 real-process/desktop 验收；本窗口不改
+  P3-09 脚本。
+- 总成窗口仍需把已组合的 Windows/Widget host catalog（或其受控 bridge）传入
+  `AgentNotificationRuntimeComposition.Create`，并把现有 P3-03 concrete scheduler
+  store 接到 `ReminderNotificationRuntime` 的生命周期。当前窗口已提供类型安全 seam
+  和 fail-closed 默认，但不伪造跨进程 host registration 已经完成。

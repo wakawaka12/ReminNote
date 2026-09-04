@@ -1,0 +1,463 @@
+using Microsoft.Data.Sqlite;
+using NodaTime;
+using ReminNote.Core.Reminders.Notifications;
+using ReminNote.Core.Reminders.Notifications.Adapters;
+using ReminNote.Infrastructure.Persistence.P25;
+using ReminNote.Infrastructure.Persistence.Reminders;
+
+#pragma warning disable CA1707 // Slice directory and test names mirror the frozen plan.
+namespace ReminNote.Tests.P3_04;
+
+public sealed class NotificationDeliveryPersistenceTests
+{
+    private static readonly Instant Now = Instant.FromUtc(2026, 9, 4, 8, 0);
+
+    [Fact]
+    public void AdditiveEfMigrationCreatesAttemptStreamWithoutReminderCoreTables()
+    {
+        using var database = new SqliteTestDatabase();
+        database.Migrate();
+
+        using var command = database.Connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'notification_delivery_attempt_events';
+            """;
+        Assert.Equal(
+            1L,
+            Convert.ToInt64(
+                command.ExecuteScalar(),
+                System.Globalization.CultureInfo.InvariantCulture));
+
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'table' AND name IN ('reminder_rules', 'reminder_schedules', 'reminder_instances');
+            """;
+        Assert.Equal(
+            0L,
+            Convert.ToInt64(
+                command.ExecuteScalar(),
+                System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public async Task PendingAndOutcomeAreP25WriterTransactionsWithJournalAndReceipt()
+    {
+        using var database = await P304Database.CreateAsync();
+        var request = NewRequest(NotificationChannelId.Toast);
+        var before = await database.Store.ReadRevisionStateAsync(
+            TestContext.Current.CancellationToken);
+
+        var pending = await database.Attempts.AppendPendingAsync(
+            request,
+            maxAttempts: 3,
+            Now,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(NotificationDeliveryPendingDisposition.APPENDED, pending.Disposition);
+        Assert.True(pending.Record.IsPending);
+        Assert.Equal(before.CurrentRevision + 1, pending.Record.Revision);
+        Assert.Equal(0, pending.Record.EventOrdinal);
+        Assert.NotEqual(Guid.Empty, pending.Record.JournalBatchId);
+        Assert.NotEqual(Guid.Empty, pending.Record.ReceiptId);
+        Assert.Equal(
+            pending.Record.AttemptId.ToString("D"),
+            await database.Store.FindJournalEntityIdAsync(
+                pending.Record.Revision,
+                "notification_delivery_attempt",
+                "pending",
+                TestContext.Current.CancellationToken));
+
+        var pendingReceipt = await database.Store.Writer.GetReceiptAsync(
+            P304Database.UserSid,
+            pending.Record.ReceiptId!.Value.ToString("D"),
+            TestContext.Current.CancellationToken);
+        Assert.NotNull(pendingReceipt);
+        Assert.Equal(P25ReceiptStatus.Committed, pendingReceipt!.Status);
+        Assert.Equal(pending.Record.Revision, pendingReceipt.CommittedRevision);
+
+        var outcome = await database.Attempts.AppendOutcomeAsync(
+            pending.Record,
+            new NotificationChannelDeliveryResponse(NotificationDeliveryOutcome.DELIVERED),
+            retryable: false,
+            Now + Duration.FromSeconds(1),
+            nextAttemptAtUtc: null,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(NotificationDeliveryAttemptState.DELIVERED, outcome.State);
+        Assert.Equal(NotificationDeliveryOutcome.DELIVERED, outcome.Outcome);
+        Assert.Equal(pending.Record.EventOrdinal + 1, outcome.EventOrdinal);
+        Assert.Equal(pending.Record.Revision + 1, outcome.Revision);
+        Assert.Equal(pending.Record.RequestId, outcome.RequestId);
+        Assert.Equal(
+            outcome.AttemptId.ToString("D"),
+            await database.Store.FindJournalEntityIdAsync(
+                outcome.Revision,
+                "notification_delivery_attempt",
+                "outcome",
+                TestContext.Current.CancellationToken));
+        Assert.Empty(await database.Attempts.ListPendingAsync(TestContext.Current.CancellationToken));
+        Assert.Single(await database.Attempts.ListForInstanceAsync(
+            request.CoreTrigger.InstanceId,
+            TestContext.Current.CancellationToken));
+
+        var eventCount = await database.ExecuteScalarAsync<long>(
+            "SELECT COUNT(*) FROM notification_delivery_attempt_events WHERE profile_scope = $profileScope;",
+            static reader => reader.GetInt64(0),
+            command => command.Parameters.AddWithValue("$profileScope", P304Database.ProfileScope));
+        Assert.Equal(2, eventCount);
+    }
+
+    [Fact]
+    public async Task RetryUsesNewEffectIdentityKeepsLogicalKeyAndHonorsBackoffAndTerminalFailure()
+    {
+        using var database = await P304Database.CreateAsync();
+        var request = NewRequest(NotificationChannelId.Toast);
+
+        var first = await database.Attempts.AppendPendingAsync(
+            request,
+            maxAttempts: 3,
+            Now,
+            TestContext.Current.CancellationToken);
+        var replay = await database.Attempts.AppendPendingAsync(
+            request,
+            maxAttempts: 3,
+            Now + Duration.FromSeconds(1),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(NotificationDeliveryPendingDisposition.REPLAYED, replay.Disposition);
+        Assert.Equal(first.Record.AttemptId, replay.Record.AttemptId);
+        Assert.Equal(1, replay.Record.AttemptNumber);
+
+        var retry = request.CreateRetry();
+        Assert.NotEqual(request.IdempotencyKey, retry.IdempotencyKey);
+        Assert.NotEqual(request.RequestId, retry.RequestId);
+        Assert.Equal(request.LogicalDeliveryKey, retry.LogicalDeliveryKey);
+        Assert.Equal(request.CoreTrigger.InstanceId, retry.CoreTrigger.InstanceId);
+
+        var failed = await database.Attempts.AppendOutcomeAsync(
+            first.Record,
+            new NotificationChannelDeliveryResponse(
+                NotificationDeliveryOutcome.FAILED,
+                "adapter.timeout"),
+            retryable: true,
+            Now + Duration.FromSeconds(1),
+            Now + Duration.FromSeconds(6),
+            cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(NotificationDeliveryAttemptState.FAILED, failed.State);
+        Assert.True(failed.Retryable);
+        Assert.Equal(Now + Duration.FromSeconds(6), failed.NextAttemptAtUtc);
+
+        var early = await database.Attempts.AppendPendingAsync(
+            retry,
+            maxAttempts: 3,
+            Now + Duration.FromSeconds(2),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(NotificationDeliveryPendingDisposition.DEFERRED, early.Disposition);
+        Assert.Equal(failed.AttemptId, early.Record.AttemptId);
+
+        var dueRetry = retry.CreateRetry();
+        var second = await database.Attempts.AppendPendingAsync(
+            dueRetry,
+            maxAttempts: 3,
+            Now + Duration.FromSeconds(6),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(NotificationDeliveryPendingDisposition.APPENDED, second.Disposition);
+        Assert.Equal(2, second.Record.AttemptNumber);
+        Assert.NotEqual(first.Record.AttemptId, second.Record.AttemptId);
+        Assert.Equal(request.CoreTrigger.LogicalReminderId, second.Record.LogicalReminderId);
+        _ = await database.Attempts.AppendOutcomeAsync(
+            second.Record,
+            new NotificationChannelDeliveryResponse(NotificationDeliveryOutcome.DELIVERED),
+            retryable: false,
+            Now + Duration.FromSeconds(7),
+            nextAttemptAtUtc: null,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var trayRequest = NewRequest(NotificationChannelId.Tray);
+        var trayPending = await database.Attempts.AppendPendingAsync(
+            trayRequest,
+            maxAttempts: 3,
+            Now,
+            TestContext.Current.CancellationToken);
+        var terminal = await database.Attempts.AppendOutcomeAsync(
+            trayPending.Record,
+            new NotificationChannelDeliveryResponse(
+                NotificationDeliveryOutcome.FAILED,
+                NotificationErrorCodes.CapabilityMissing),
+            retryable: false,
+            Now + Duration.FromSeconds(1),
+            nextAttemptAtUtc: null,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.False(terminal.Retryable);
+        Assert.Empty(await database.Attempts.ListRecoverableAsync(
+            Now + Duration.FromHours(1),
+            TestContext.Current.CancellationToken));
+        var terminalReplay = await database.Attempts.AppendPendingAsync(
+            trayRequest.CreateRetry(),
+            maxAttempts: 3,
+            Now + Duration.FromHours(1),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(NotificationDeliveryPendingDisposition.TERMINAL, terminalReplay.Disposition);
+        Assert.Equal(terminal.AttemptId, terminalReplay.Record.AttemptId);
+    }
+
+    [Fact]
+    public async Task RestartRecoversPendingAttemptAndCompletesItWithoutNewCoreFact()
+    {
+        using var database = await P304Database.CreateAsync();
+        var request = NewRequest(NotificationChannelId.Toast);
+        NotificationDeliveryAttemptRecord pending;
+
+        var appended = await database.Attempts.AppendPendingAsync(
+            request,
+            maxAttempts: 3,
+            Now,
+            TestContext.Current.CancellationToken);
+        pending = appended.Record;
+        await database.CloseStoreAsync();
+
+        await database.ReopenStoreAsync();
+        var recovered = await database.Attempts.ListRecoverableAsync(
+            Now,
+            TestContext.Current.CancellationToken);
+        var recoveredPending = Assert.Single(recovered);
+        Assert.Equal(pending.AttemptId, recoveredPending.AttemptId);
+        Assert.Equal(pending.IdempotencyKey, recoveredPending.IdempotencyKey);
+        Assert.True(recoveredPending.IsPending);
+
+        var channel = new RecordingChannel(
+            NotificationChannelId.Toast,
+            new NotificationChannelDeliveryResponse(NotificationDeliveryOutcome.DELIVERED));
+        await using var dispatcher = new ReminNote.Agent.Notifications.NotificationDeliveryDispatcher(
+            new NotificationChannelCatalog([channel]),
+            database.Attempts,
+            new AllowAllNotificationPresentationPolicy(),
+            new FixedClock(Now));
+
+        var results = await dispatcher.RecoverAsync(TestContext.Current.CancellationToken);
+        var result = Assert.Single(results);
+        Assert.Equal(NotificationDeliveryOutcome.DELIVERED, result.Outcome);
+        Assert.True(result.ChannelInvoked);
+        Assert.Equal(1, channel.DeliveryCount);
+        Assert.Single(channel.Requests);
+        Assert.Equal(pending.IdempotencyKey, channel.Requests[0].IdempotencyKey);
+        Assert.NotEqual(pending.RequestId, channel.Requests[0].RequestId);
+        Assert.Equal(pending.InstanceId, result.CoreTrigger.InstanceId);
+        Assert.Equal(pending.AttemptId, result.Attempt!.AttemptId);
+        Assert.Equal(1, result.Attempt.EventOrdinal);
+        Assert.Equal(channel.Requests[0].RequestId, result.Attempt.RequestId);
+        Assert.Empty(await database.Attempts.ListRecoverableAsync(
+            Now,
+            TestContext.Current.CancellationToken));
+
+    }
+
+    private static NotificationDeliveryRequest NewRequest(NotificationChannelId channelId)
+    {
+        var core = new NotificationTriggerFact(
+            Id(1),
+            Id(2),
+            Id(3),
+            Id(4),
+            Id(5),
+            attemptOrdinal: 1,
+            NotificationPurposeSnapshot.TaskStart,
+            NotificationPriority.HIGH,
+            pinnedSnapshot: true,
+            Now,
+            Now - Duration.FromMinutes(1));
+        return new NotificationDeliveryRequest(
+            core,
+            channelId,
+            Id(12),
+            Id(channelId == NotificationChannelId.Toast ? 13 : 23),
+            Id(channelId == NotificationChannelId.Toast ? 14 : 24));
+    }
+
+    private static Guid Id(int suffix) =>
+        Guid.Parse($"0191f6a4-3b25-7c12-8d34-56789abcde{suffix:X2}");
+
+    private sealed class FixedClock(Instant now) : IClock
+    {
+        public Instant GetCurrentInstant() => now;
+    }
+
+    private sealed class RecordingChannel(
+        NotificationChannelId channelId,
+        NotificationChannelDeliveryResponse response) : INotificationChannel
+    {
+        private readonly NotificationChannelStatus status = new(
+            channelId,
+            [NotificationCapability.PRESENT],
+            NotificationChannelHealth.HEALTHY,
+            Now);
+
+        public List<NotificationDeliveryRequest> Requests { get; } = [];
+
+        public int DeliveryCount => Requests.Count;
+
+        public NotificationChannelId ChannelId => channelId;
+
+        public NotificationChannelStatus GetStatus() => status;
+
+        public ValueTask<NotificationChannelDeliveryResponse> DeliverAsync(
+            NotificationDeliveryRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(request);
+            return ValueTask.FromResult(response);
+        }
+    }
+
+    private sealed class P304Database : IDisposable
+    {
+        public const string ProfileScope = "p304-test-profile";
+
+        public const string UserSid = "S-1-5-21-1000-1000-1000-1000";
+
+        private P304Database(
+            string root,
+            string databasePath,
+            P25StorageStore store,
+            SqliteNotificationDeliveryAttemptStore attempts)
+        {
+            Root = root;
+            DatabasePath = databasePath;
+            Store = store;
+            Attempts = attempts;
+        }
+
+        public string Root { get; }
+
+        public string DatabasePath { get; }
+
+        public P25StorageStore Store { get; private set; }
+
+        public SqliteNotificationDeliveryAttemptStore Attempts { get; private set; }
+
+        public static async ValueTask<P304Database> CreateAsync()
+        {
+            var root = Path.Combine(
+                Path.GetTempPath(),
+                "ReminNote-P3-04-durable-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            var databasePath = Path.Combine(root, "profile.sqlite");
+            try
+            {
+                var store = await OpenStoreAsync(databasePath).ConfigureAwait(false);
+                var attempts = new SqliteNotificationDeliveryAttemptStore(store, UserSid);
+                return new P304Database(root, databasePath, store, attempts);
+            }
+            catch
+            {
+                SqliteConnection.ClearAllPools();
+                if (Directory.Exists(root))
+                {
+                    Directory.Delete(root, recursive: true);
+                }
+
+                throw;
+            }
+        }
+
+        public async ValueTask<T> ExecuteScalarAsync<T>(
+            string sql,
+            Func<SqliteDataReader, T> read,
+            Action<SqliteCommand>? configure = null)
+        {
+            ArgumentNullException.ThrowIfNull(read);
+            await using var connection = await OpenConnectionAsync().ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            configure?.Invoke(command);
+            await using var reader = await command.ExecuteReaderAsync(
+                TestContext.Current.CancellationToken).ConfigureAwait(false);
+            Assert.True(await reader.ReadAsync(TestContext.Current.CancellationToken));
+            return read(reader);
+        }
+
+        public async ValueTask CloseStoreAsync()
+        {
+            await Store.DisposeAsync().ConfigureAwait(false);
+        }
+
+        public async ValueTask ReopenStoreAsync()
+        {
+            Store = await OpenStoreAsync(DatabasePath).ConfigureAwait(false);
+            Attempts = new SqliteNotificationDeliveryAttemptStore(Store, UserSid);
+        }
+
+        public void Dispose()
+        {
+            Store.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(Root))
+            {
+                Directory.Delete(Root, recursive: true);
+            }
+        }
+
+        private static async ValueTask<P25StorageStore> OpenStoreAsync(string databasePath)
+        {
+            var builder = new SqliteConnectionStringBuilder
+            {
+                DataSource = databasePath,
+                Mode = SqliteOpenMode.ReadWriteCreate,
+                Cache = SqliteCacheMode.Private,
+                Pooling = false,
+                ForeignKeys = true
+            };
+            var connection = new SqliteConnection(builder.ConnectionString);
+            P25StorageStore? store = null;
+            try
+            {
+                store = await P25StorageStore.OpenAsync(
+                        connection,
+                        ProfileScope,
+                        requireWal: true,
+                        cancellationToken: TestContext.Current.CancellationToken)
+                    .ConfigureAwait(false);
+                var attempts = new SqliteNotificationDeliveryAttemptStore(store, UserSid);
+                await attempts.InitializeSchemaForFixtureAsync(
+                        TestContext.Current.CancellationToken)
+                    .ConfigureAwait(false);
+                return store;
+            }
+            catch
+            {
+                if (store is not null)
+                {
+                    await store.DisposeAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    await connection.DisposeAsync().ConfigureAwait(false);
+                }
+
+                throw;
+            }
+        }
+
+        private async ValueTask<SqliteConnection> OpenConnectionAsync()
+        {
+            var builder = new SqliteConnectionStringBuilder
+            {
+                DataSource = DatabasePath,
+                Mode = SqliteOpenMode.ReadOnly,
+                Cache = SqliteCacheMode.Private,
+                Pooling = false,
+                ForeignKeys = true
+            };
+            var connection = new SqliteConnection(builder.ConnectionString);
+            await connection.OpenAsync(TestContext.Current.CancellationToken).ConfigureAwait(false);
+            return connection;
+        }
+    }
+}
+
+#pragma warning restore CA1707

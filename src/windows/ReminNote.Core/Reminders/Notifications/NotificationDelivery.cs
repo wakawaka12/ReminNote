@@ -93,14 +93,37 @@ public sealed record NotificationDeliveryRequest
         NotificationChannelId channelId,
         Guid correlationId,
         Guid idempotencyKey)
+        : this(
+            coreTrigger,
+            channelId,
+            correlationId,
+            idempotencyKey,
+            Guid.CreateVersion7())
+    {
+    }
+
+    /// <summary>
+    /// Creates one delivery request attempt. <paramref name="idempotencyKey"/>
+    /// identifies the effect attempt while <paramref name="requestId"/>
+    /// identifies this transport/request execution. A replay may therefore
+    /// use a new request ID without changing the durable delivery intent.
+    /// </summary>
+    public NotificationDeliveryRequest(
+        NotificationTriggerFact coreTrigger,
+        NotificationChannelId channelId,
+        Guid correlationId,
+        Guid idempotencyKey,
+        Guid requestId)
     {
         CoreTrigger = coreTrigger ?? throw new ArgumentNullException(nameof(coreTrigger));
         NotificationChannels.RequireKnown(channelId);
         NotificationValidation.RequireUuidV7(correlationId, nameof(correlationId));
         NotificationValidation.RequireUuidV7(idempotencyKey, nameof(idempotencyKey));
+        NotificationValidation.RequireUuidV7(requestId, nameof(requestId));
         ChannelId = channelId;
         CorrelationId = correlationId;
         IdempotencyKey = idempotencyKey;
+        RequestId = requestId;
     }
 
     public NotificationTriggerFact CoreTrigger { get; }
@@ -115,6 +138,31 @@ public sealed record NotificationDeliveryRequest
     /// channel side effect must use a new key; replay reuses this key.
     /// </summary>
     public Guid IdempotencyKey { get; }
+
+    /// <summary>
+    /// Identifies the request execution, not the durable effect. Retries keep
+    /// the same logical reminder/channel intent and allocate a new request ID.
+    /// </summary>
+    public Guid RequestId { get; }
+
+    /// <summary>
+    /// Stable logical replacement/deduplication key. It deliberately contains
+    /// only the frozen logical reminder identity and channel, never user text.
+    /// </summary>
+    public string LogicalDeliveryKey =>
+        $"{CoreTrigger.LogicalReminderId:D}:{ChannelId.Value}";
+
+    /// <summary>
+    /// Builds a new effect attempt for the same committed core trigger. The
+    /// logical identity and correlation are retained; both the effect key and
+    /// request execution identity are fresh UUID v7 values.
+    /// </summary>
+    public NotificationDeliveryRequest CreateRetry() => new(
+        CoreTrigger,
+        ChannelId,
+        CorrelationId,
+        Guid.CreateVersion7(),
+        Guid.CreateVersion7());
 }
 
 /// <summary>
@@ -161,7 +209,7 @@ public sealed record NotificationChannelDeliveryResponse
     /// Creates the policy-owned suppression result. Channel adapters cannot
     /// manufacture this outcome through the public constructor.
     /// </summary>
-    internal static NotificationChannelDeliveryResponse SuppressedByPolicy(
+    public static NotificationChannelDeliveryResponse SuppressedByPolicy(
         string reasonCode) =>
         new(
             NotificationDeliveryOutcome.SUPPRESSED_QUIET_HOURS,
@@ -388,6 +436,16 @@ public interface INotificationChannel
 public interface INotificationChannelCatalog
 {
     bool TryGet(NotificationChannelId channelId, out INotificationChannel channel);
+}
+
+/// <summary>
+/// Optional enumeration seam used by Agent composition. Existing catalog
+/// implementations that only support lookup remain valid; a production host
+/// should expose its complete injected channel set through this interface.
+/// </summary>
+public interface INotificationChannelCatalogSnapshot : INotificationChannelCatalog
+{
+    IReadOnlyCollection<NotificationChannelId> ChannelIds { get; }
 }
 
 public enum NotificationCoreTriggerDisposition

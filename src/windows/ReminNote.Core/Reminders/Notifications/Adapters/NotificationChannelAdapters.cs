@@ -572,7 +572,7 @@ public sealed class WakeTimerNotificationChannel : NotificationChannelAdapter
 /// Validated catalog for host composition. It is intentionally a read-only
 /// lookup and contains no Agent, SQLite or WPF behavior.
 /// </summary>
-public sealed class NotificationChannelCatalog : INotificationChannelCatalog
+public sealed class NotificationChannelCatalog : INotificationChannelCatalogSnapshot
 {
     private readonly ReadOnlyDictionary<NotificationChannelId, INotificationChannel> channels;
     private readonly IReadOnlyCollection<INotificationChannel> orderedChannels;
@@ -599,6 +599,9 @@ public sealed class NotificationChannelCatalog : INotificationChannelCatalog
     }
 
     public IReadOnlyCollection<INotificationChannel> Channels => orderedChannels;
+
+    public IReadOnlyCollection<NotificationChannelId> ChannelIds =>
+        channels.Keys.ToArray();
 
     public bool TryGet(NotificationChannelId channelId, out INotificationChannel channel) =>
         channels.TryGetValue(channelId, out channel!);

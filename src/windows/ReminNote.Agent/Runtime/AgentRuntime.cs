@@ -7,6 +7,7 @@ using ReminNote.Core.Protocol;
 using ReminNote.Core.Transport;
 using ReminNote.Infrastructure.Persistence.P25;
 using ReminNote.Infrastructure.Persistence.P275;
+using ReminNote.Infrastructure.Persistence.Reminders;
 
 namespace ReminNote.Agent.Runtime;
 
@@ -351,6 +352,14 @@ internal static class AgentRuntime
                 // post-promote gate left the P2.5 profile row available before
                 // any pipe can report the Agent as healthy.
                 await store.ReadRevisionStateAsync().ConfigureAwait(false);
+                // P3-04 is an additive migration. A missing attempt stream is
+                // a startup integrity failure, never a reason to create a
+                // second Active-database schema path here.
+                await new SqliteNotificationDeliveryAttemptStore(
+                        store,
+                        profile.UserSid)
+                    .VerifySchemaAsync()
+                    .ConfigureAwait(false);
                 return store;
             }
             catch

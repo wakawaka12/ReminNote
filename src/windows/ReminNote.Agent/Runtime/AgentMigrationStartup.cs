@@ -24,7 +24,8 @@ internal sealed class AgentMigrationStartupComposition
             "20260828120000_P2TaskLoop",
             "20260828130000_P2ContinuationDeleteBoundary",
             "20260831090000_P25StorageConsistency",
-            "20260902141656_P3ReminderPersistence"
+            "20260902141656_P3ReminderPersistence",
+            "20260904090000_P304"
         ]);
 
     private readonly Func<ResolvedTransportProfile, IP275MigrationRunner> runnerFactory;
