@@ -626,14 +626,19 @@ public sealed class ReminderNotificationRuntime : IAsyncDisposable
             return ReminderNotificationRunResult.SafeMode(SafetyGate.ReasonCode);
         }
 
+        // A normal scheduler tick also services due notification retries. The
+        // loop is intentionally driven by the scheduler wakeup, but the
+        // attempt projection remains the source of truth for retry timing and
+        // idempotency.
+        var deliveries = new List<NotificationDurableDispatchResult>();
+        deliveries.AddRange(await dispatcher.RecoverAsync(cancellationToken).ConfigureAwait(false));
         var schedulerResult = await scheduler.RunDueCycleAsync(
                 isRecovery: false,
                 cancellationToken)
             .ConfigureAwait(false);
-        var deliveries = await DispatchSchedulerResultAsync(
-                schedulerResult,
-                cancellationToken)
-            .ConfigureAwait(false);
+        deliveries.AddRange(await DispatchSchedulerResultAsync(
+            schedulerResult,
+            cancellationToken).ConfigureAwait(false));
         return new(schedulerResult, deliveries, IsRecovery: false, SkippedSafeMode: false);
     }
 
@@ -745,13 +750,14 @@ public static class AgentNotificationRuntimeComposition
         NotificationDeliverySafetyGate? safetyGate = null,
         IEnumerable<NotificationChannelId>? configuredChannels = null,
         Guid? agentInstanceId = null,
-        INotificationCommittedTriggerRecoverySource? committedTriggerSource = null)
+        INotificationCommittedTriggerRecoverySource? committedTriggerSource = null,
+        INotificationDeliveryAttemptJournalStore? attemptStore = null)
     {
         ArgumentNullException.ThrowIfNull(scheduler);
         ArgumentNullException.ThrowIfNull(storage);
         ArgumentNullException.ThrowIfNull(channelCatalog);
         ArgumentNullException.ThrowIfNull(clock);
-        var attempts = new SqliteNotificationDeliveryAttemptStore(
+        var attempts = attemptStore ?? new SqliteNotificationDeliveryAttemptStore(
             storage,
             actualUserSid,
             agentInstanceId);

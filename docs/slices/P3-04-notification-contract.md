@@ -1,6 +1,7 @@
 # P3-04 Reminder notification delivery
 
-状态：后续实现完成，等待总成窗口审查与实际桌面环境验收。
+状态：Agent 生命周期接线与 durable committed-trigger 对账已完成，等待总成窗口
+审查与实际桌面环境验收。
 
 本窗口完成 Reminder notification delivery 的 Agent 生产闭环接缝：核心
 `ReminderInstance` 仍由 P3-03 的 durable due transaction 产生；P3-04 只消费
@@ -46,6 +47,8 @@ P2.75 promote/verify 后只读核对该表；缺失 migration 会 fail-closed，
   contract failure；
 - `RecoverAsync`：重启时恢复 pending，用原 effect key 做安全 replay；已到期的
   retryable failure 用新 key/new RequestId 开新 attempt；
+- Agent 的每个正常 scheduler tick 也会先处理已到期的 notification retry，避免
+  retry 只在进程启动时被消费；scheduler 的 due wakeup 仍只由 durable schedule 驱动；
 - `INotificationCommittedTriggerRecoverySource`：由 P3-03 durable store 提供已提交但
   尚未形成 attempt 的 core trigger 对账源，覆盖“core commit 后、PENDING append 前”
   的进程崩溃窗口；对账仍走同一 dispatcher 的逻辑去重，不会创建第二个 Instance；
@@ -61,8 +64,14 @@ P2.75 promote/verify 后只读核对该表；缺失 migration 会 fail-closed，
 `INotificationChannelCatalogSnapshot` 和
 `CompositeNotificationChannelCatalog` 是宿主到 Agent Runtime 的明确注入 seam；
 `INotificationCommittedTriggerRecoverySource` 是 scheduler 到通知恢复的只读对账 seam。
-`AgentNotificationRuntimeComposition.Create` 接收已组合的真实 catalog，并把它
-绑定到已打开的 Agent `P25StorageStore`；不会从 Agent 另开连接或绕过单写入器。
+`AgentRuntime` 现在正式实例化 `AgentNotificationRuntimeComposition.Create`，把它绑定到
+已打开的 Agent `P25StorageStore`；attempt store、scheduler 和 recovery source 共用
+同一 Agent writer，不会从 Agent 另开写连接或绕过单写入器。
+
+`AgentCommittedReminderTriggerRecoverySource` 使用 P3-03 concrete schema 的只读
+SQLite/query-only connection 查询已提交 `ReminderInstance`，再按注入 catalog 的每个
+channel 查询 durable current attempt。所有 channel 都已是不可重试 terminal event 时
+不再返回该 core fact；缺一条、PENDING 或 retryable 时才交给统一 dispatcher 对账。
 
 P3-05 的能力接线保持原 owner：
 
@@ -74,8 +83,11 @@ P3-05 的能力接线保持原 owner：
 
 宿主默认仍然 fail-closed：Toast registration 未验证、窗口不可见、系统能力不可用
 或 wake timer 建立失败时，adapter 返回明确的 unavailable/blocked/failed，而不伪报
-成功。Toast close、Widget action 和窗口激活仍必须回到 Agent business command，
-不能由 UI callback 直接改 Reminder lifecycle。
+成功。Agent 自身没有 Main/Widget 的进程内对象；没有受控 host bridge 时使用
+`AgentNotificationChannelComposition.CreateFailClosed` 注册五个已知 adapter 形状，
+并由 durable dispatcher 写出 `UNAVAILABLE`（或能力检查产生的 `NOT_ATTEMPTED`），
+不会绕过 writer。Toast close、Widget action 和窗口激活仍必须回到 Agent business
+command，不能由 UI callback 直接改 Reminder lifecycle。
 
 ## 测试与验证
 
@@ -102,7 +114,8 @@ runtime；这些接线完成后再运行 P3-09 的真实进程门禁。
 - P3-05 的真实 Windows API 可见性、Toast AUMID/Start-menu registration、音频听感、
   Widget HWND 和 sleep/wake timer 需要 P3-09 real-process/desktop 验收；本窗口不改
   P3-09 脚本。
-- 总成窗口仍需把已组合的 Windows/Widget host catalog（或其受控 bridge）传入
-  `AgentNotificationRuntimeComposition.Create`，并把现有 P3-03 concrete scheduler
-  store 接到 `ReminderNotificationRuntime` 的生命周期。当前窗口已提供类型安全 seam
-  和 fail-closed 默认，但不伪造跨进程 host registration 已经完成。
+- Windows/Widget host catalog 仍只存在各自宿主进程；当前总成接入点保留
+  `INotificationChannelCatalog`/`INotificationChannelCatalogSnapshot`，但没有伪造一个
+  跨进程共享的 Main/Widget 对象。后续若要启用真实效果，需要单独的受控 IPC/bridge
+  证据，把 host-owned effect port 注入 `AgentNotificationRuntimeComposition.Create`；
+  本窗口不改 UI 行为，也不把 fail-closed 默认误报为桌面成功。

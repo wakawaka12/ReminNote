@@ -1,9 +1,11 @@
 using System.Runtime.Versioning;
 using Microsoft.Data.Sqlite;
 using NodaTime;
+using ReminNote.Agent.Notifications;
 using ReminNote.Agent.Scheduling;
 using ReminNote.Agent.Transport;
 using ReminNote.Core.Protocol;
+using ReminNote.Core.Reminders.Notifications;
 using ReminNote.Core.Transport;
 using ReminNote.Infrastructure.Persistence.P25;
 using ReminNote.Infrastructure.Persistence.P275;
@@ -89,9 +91,29 @@ internal static class AgentRuntime
                 profile.DatabasePath,
                 profile.UserSid,
                 agentInstanceId);
-            await using var reminderScheduler = new ReminderScheduler(
+            var clock = SystemClock.Instance;
+            var reminderScheduler = new ReminderScheduler(
                 reminderStore,
-                SystemClock.Instance);
+                clock);
+            var channelCatalog = AgentNotificationChannelComposition.CreateFailClosed(clock);
+            var attemptStore = new SqliteNotificationDeliveryAttemptStore(
+                store,
+                profile.UserSid,
+                agentInstanceId);
+            var committedTriggerSource = new AgentCommittedReminderTriggerRecoverySource(
+                profile.DatabasePath,
+                attemptStore,
+                channelCatalog.ChannelIds);
+            await using var reminderRuntime = AgentNotificationRuntimeComposition.Create(
+                reminderScheduler,
+                store,
+                profile.UserSid,
+                channelCatalog,
+                clock,
+                configuredChannels: channelCatalog.ChannelIds,
+                agentInstanceId: agentInstanceId,
+                committedTriggerSource: committedTriggerSource,
+                attemptStore: attemptStore);
             var limits = AgentTransportDefaults.CreateLimits();
             var businessEndpoint = new NamedPipeTransportEndpoint(profile, NamedPipeEndpointKind.Business);
             var controlEndpoint = new NamedPipeTransportEndpoint(profile, NamedPipeEndpointKind.Control);
@@ -137,7 +159,7 @@ internal static class AgentRuntime
                     agentInstanceId,
                     runtimeCancellation.Token);
                 var reminderTask = RunReminderSchedulerAsync(
-                    reminderScheduler,
+                    reminderRuntime,
                     runtimeCancellation.Token);
                 try
                 {
@@ -186,18 +208,18 @@ internal static class AgentRuntime
     }
 
     private static async Task RunReminderSchedulerAsync(
-        ReminderScheduler scheduler,
+        ReminderNotificationRuntime runtime,
         CancellationToken cancellationToken)
     {
         var recovery = true;
         while (!cancellationToken.IsCancellationRequested)
         {
             var run = recovery
-                ? await scheduler.RecoverAsync(cancellationToken).ConfigureAwait(false)
-                : await scheduler.RunDueCycleAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+                ? await runtime.RecoverAsync(cancellationToken).ConfigureAwait(false)
+                : await runtime.RunDueCycleAsync(cancellationToken).ConfigureAwait(false);
             recovery = false;
             await Task.Delay(
-                    GetReminderLoopDelay(run.NextWakeupUtc),
+                    GetReminderLoopDelay(run.SchedulerResult?.NextWakeupUtc),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
