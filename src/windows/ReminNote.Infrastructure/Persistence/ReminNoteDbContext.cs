@@ -136,8 +136,9 @@ public sealed class ReminNoteDbContext : DbContext
             IDiagnosticsLogger<DbLoggerCategory.Migrations> logger)
             : base(currentContext, options, idGenerator, logger)
         {
-            isInMemory = IsInMemorySqlite(
-                RelationalOptionsExtension.Extract(options));
+            var relationalOptions = RelationalOptionsExtension.Extract(options);
+            isInMemory = relationalOptions?.MigrationsAssemblyObject is null &&
+                IsInMemorySqlite(relationalOptions);
         }
 
         private readonly bool isInMemory;
