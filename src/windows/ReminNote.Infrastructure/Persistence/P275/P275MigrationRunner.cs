@@ -136,7 +136,13 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                         historyDirectoryPath)
                     .ConfigureAwait(false);
             }
-            var sourceIsApproved = source.AppliedMigrations.SequenceEqual(
+            // A brand-new Portable/UserData profile has no Active file yet.
+            // Treat that state as the explicitly supported empty source; it
+            // still goes through backup capability, Candidate migration,
+            // verification and atomic promotion. Any non-empty history must
+            // continue to match the approved P2.75 prefix exactly.
+            var sourceIsApproved = !source.Exists ||
+                source.AppliedMigrations.SequenceEqual(
                     plan.ApprovedSourceMigrations,
                     StringComparer.Ordinal) ||
                 plan.IsAlreadyAtTarget(source.AppliedMigrations);
@@ -285,7 +291,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                     runId,
                     P275MigrationState.RecoveryRequired,
                     P275MigrationFailureCodes.StateUnwritable,
-                    backup.ArtifactId,
+                    BackupArtifactOf(backup),
                     candidate.Files.CandidateDatabasePath);
             }
 
@@ -363,7 +369,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                     runId,
                     P275MigrationState.RecoveryRequired,
                     P275MigrationFailureCodes.StateUnwritable,
-                    backup.ArtifactId,
+                    BackupArtifactOf(backup),
                     candidate.Files.CandidateDatabasePath);
             }
 
@@ -433,7 +439,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                     runId,
                     P275MigrationState.RecoveryRequired,
                     P275MigrationFailureCodes.StateUnwritable,
-                    backup.ArtifactId,
+                    BackupArtifactOf(backup),
                     candidate.Files.CandidateDatabasePath);
             }
 
@@ -501,7 +507,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                     runId,
                     P275MigrationState.RecoveryRequired,
                     P275MigrationFailureCodes.StateUnwritable,
-                    backup.ArtifactId,
+                    BackupArtifactOf(backup),
                     candidate.Files.CandidateDatabasePath,
                     historyDirectoryPath,
                     promoted: true);
@@ -956,7 +962,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                 request.RunId,
                 P275MigrationState.RecoveryRequired,
                 P275MigrationFailureCodes.StateUnwritable,
-                backup?.ArtifactId,
+                BackupArtifactOf(backup),
                 candidate?.Files.CandidateDatabasePath,
                 historyDirectoryPath,
                 promoted: historyDirectoryPath is not null);
@@ -964,7 +970,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
 
         return P275MigrationResult.Success(
             request.RunId,
-            backup?.ArtifactId,
+            BackupArtifactOf(backup),
             candidate?.Files.CandidateDatabasePath,
             historyDirectoryPath);
     }
@@ -1002,7 +1008,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
                 request.RunId,
                 P275MigrationState.RecoveryRequired,
                 P275MigrationFailureCodes.StateUnwritable,
-                backup?.ArtifactId,
+                BackupArtifactOf(backup),
                 candidatePath,
                 historyDirectoryPath,
                 promoted);
@@ -1012,7 +1018,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
             request.RunId,
             state,
             normalizedCode,
-            backup?.ArtifactId,
+            BackupArtifactOf(backup),
             candidatePath,
             historyDirectoryPath,
             promoted);
@@ -1032,6 +1038,11 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
             return false;
         }
     }
+
+    private static string? BackupArtifactOf(P275VerifiedSafetyBackup? backup) =>
+        backup is { SourceIsEmpty: false }
+            ? backup.ArtifactId
+            : null;
 
     private static string? PreserveCandidate(P275Candidate candidate)
     {
@@ -1089,7 +1100,15 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
         }
 
         var sourceSchema = source?.AppliedMigrations ?? request.Plan.ApprovedSourceMigrations;
-        var backupArtifact = backup?.ArtifactId;
+        // An empty source is an explicit capability, not a file artifact;
+        // migration markers must keep both artifact and hash absent so the
+        // state contract cannot imply that a backup file exists.
+        var backupArtifact = backup is { SourceIsEmpty: false }
+            ? backup.ArtifactId
+            : null;
+        var backupSha256 = backup is { SourceIsEmpty: false }
+            ? backup.Sha256
+            : null;
         return new P275MigrationStateSnapshot(
             request.RunId,
             request.ProfileScope,
@@ -1101,7 +1120,7 @@ public sealed class P275MigrationRunner : IP275MigrationRunner
             failureCode,
             Retryable(failureCode),
             NextAction(failureCode),
-            backup?.Sha256,
+            backupSha256,
             DateTimeOffset.UtcNow,
             DateTimeOffset.UtcNow);
     }

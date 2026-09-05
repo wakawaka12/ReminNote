@@ -92,6 +92,73 @@ public sealed class P275ProductionUpgradeTests
     }
 
     [Fact]
+    public async Task ProductionRunnerBootstrapsMissingActiveDatabaseThroughCandidate()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "rn275-empty-" + Guid.CreateVersion7().ToString("N"));
+        Directory.CreateDirectory(root);
+        var cancellationToken = TestContext.Current.CancellationToken;
+
+        try
+        {
+            var paths = new P275ProfilePaths(root, "default");
+            paths.EnsureRuntimeDirectories();
+            var profileScope = ProtocolProfileScope.Derive(
+                "S-1-5-21-100-200-300-400",
+                paths.ActiveDatabasePath);
+            var plan = P275MigrationPlanCatalog.Current;
+
+            var result = await CreateProductionRunner(paths)
+                .RunAsync(
+                    new P275MigrationRequest(
+                        paths,
+                        profileScope,
+                        Guid.CreateVersion7().ToString("D"),
+                        plan,
+                        TimeSpan.FromSeconds(5)),
+                    cancellationToken);
+
+            Assert.True(result.Ready, result.FailureCode);
+            Assert.True(result.Writable);
+            Assert.True(result.Promoted);
+            Assert.Equal(P275MigrationState.Ready, result.State);
+            Assert.Null(result.FailureCode);
+            Assert.Null(result.BackupArtifact);
+            Assert.True(File.Exists(paths.ActiveDatabasePath));
+
+            await using var connection = await OpenReadOnlyAsync(
+                paths.ActiveDatabasePath,
+                cancellationToken);
+            Assert.Equal(
+                plan.ApprovedTargetMigrations,
+                await ReadAppliedMigrationsAsync(connection, cancellationToken));
+            Assert.Equal(
+                "ok",
+                await ReadScalarStringAsync(
+                    connection,
+                    "PRAGMA integrity_check;",
+                    cancellationToken));
+
+            var state = await new P275ProductionMigrationStatePort(
+                    new P275ProfileLayout(paths.ProfileRoot))
+                .ReadAsync(profileScope, cancellationToken);
+            Assert.True(state.IsUsable);
+            Assert.Equal(P275MigrationState.Ready, state.Marker!.State);
+            Assert.Empty(state.Marker.SourceSchema);
+            Assert.Equal(plan.ApprovedTargetMigrations, state.Marker.TargetSchema);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ProductionRunnerUpgradesP1ThroughP2ToP25AndIsRestartSafe()
     {
         var root = Path.Combine(

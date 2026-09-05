@@ -296,6 +296,22 @@ public sealed class P275SafetyBackupProvider : IP275SafetyBackupProvider
             throw new P275MigrationOperationException(P275MigrationFailureCodes.ArgumentsInvalid);
         }
 
+        if (!request.Source.Exists)
+        {
+            // There is no Active generation to copy on a first Portable/
+            // UserData launch. Preserve the same explicit empty-source
+            // capability used by the runner's isolated tests; migration still
+            // occurs only on a Candidate and promotion remains atomic.
+            return new P275VerifiedSafetyBackup(
+                "empty-source-" + request.RunId,
+                artifactPath: null,
+                sourceIsEmpty: true,
+                request.Source.AppliedMigrations,
+                request.Source.Fingerprint,
+                byteLength: 0,
+                sha256: string.Empty);
+        }
+
         var result = await service.CreateAsync(
                 new SafetyBackupRequest(
                     request.Paths.DataRoot,

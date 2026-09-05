@@ -582,6 +582,128 @@ function Initialize-WindowsProcessEnvironment {
     }
 }
 
+function Invoke-P25Fixture {
+    param(
+        [Parameter(Mandatory)][string]$RunRoot,
+        [Parameter(Mandatory)][string]$RepositoryClone,
+        [Parameter(Mandatory)][string]$DataRoot,
+        [Parameter(Mandatory)][string]$DotNetPath
+    )
+
+    $fixtureProject = Join-Path $RepositoryClone 'tools\ReminNote.P3GateFixture\ReminNote.P3GateFixture.csproj'
+    if (-not (Test-Path -LiteralPath $fixtureProject -PathType Leaf)) {
+        Add-GateResult `
+            -Id 'P3-09-REAL-PROCESS' `
+            -EvidenceLevel 'real-process isolated' `
+            -Status 'FAIL' `
+            -Summary '隔离 P2.5 fixture 工具不存在，无法启动真实升级探针。' `
+            -Evidence $fixtureProject `
+            -NextAction '保留独立 clone，补齐 P3GateFixture 后重新运行；不得以空数据根代替 P2.5 升级证据。'
+        return $false
+    }
+
+    $fixtureRoot = Join-Path $RunRoot 'p25-fixture'
+    $fixtureBinRoot = Join-Path $fixtureRoot 'bin'
+    $fixtureObjRoot = Join-Path $fixtureRoot 'obj'
+    $fixtureLogRoot = Join-Path $fixtureRoot 'logs'
+    foreach ($directory in @($fixtureRoot, $fixtureBinRoot, $fixtureObjRoot, $fixtureLogRoot)) {
+        [System.IO.Directory]::CreateDirectory($directory) | Out-Null
+    }
+
+    $baseOutputArgument = '-p:BaseOutputPath=' + $fixtureBinRoot + '\'
+    $baseIntermediateArgument = '-p:BaseIntermediateOutputPath=' + $fixtureObjRoot + '\'
+    $restoreArguments = @(
+        'restore',
+        $fixtureProject,
+        '--locked-mode',
+        '--nologo'
+    )
+    $restoreOutput = & $DotNetPath @restoreArguments 2>&1
+    $restoreExitCode = $LASTEXITCODE
+    $restoreLog = Join-Path $fixtureLogRoot 'restore.log'
+    [System.IO.File]::WriteAllText(
+        $restoreLog,
+        ($restoreOutput -join "`r`n"),
+        [System.Text.UTF8Encoding]::new($false))
+    if ($restoreExitCode -ne 0) {
+        Add-GateResult `
+            -Id 'P3-09-REAL-PROCESS' `
+            -EvidenceLevel 'real-process isolated' `
+            -Status 'FAIL' `
+            -Summary "P2.5 fixture locked restore 失败（exit=$restoreExitCode）。" `
+            -Evidence $restoreLog `
+            -NextAction '修复隔离 fixture restore；不得跳过 restore 或使用当前工作树 bin/obj。'
+        return $false
+    }
+
+    $buildArguments = @(
+        'build',
+        $fixtureProject,
+        '--configuration',
+        $Configuration,
+        '--no-restore',
+        '--nologo',
+        $baseOutputArgument,
+        $baseIntermediateArgument
+    )
+    $buildOutput = & $DotNetPath @buildArguments 2>&1
+    $buildExitCode = $LASTEXITCODE
+    $buildLog = Join-Path $fixtureLogRoot 'build.log'
+    [System.IO.File]::WriteAllText(
+        $buildLog,
+        ($buildOutput -join "`r`n"),
+        [System.Text.UTF8Encoding]::new($false))
+    if ($buildExitCode -ne 0) {
+        Add-GateResult `
+            -Id 'P3-09-REAL-PROCESS' `
+            -EvidenceLevel 'real-process isolated' `
+            -Status 'FAIL' `
+            -Summary "P2.5 fixture Release build 失败（exit=$buildExitCode）。" `
+            -Evidence $buildLog `
+            -NextAction '修复隔离 fixture build 后重新运行真实进程探针。'
+        return $false
+    }
+
+    $fixtureDll = Join-Path $fixtureBinRoot "$Configuration\net10.0\ReminNote.P3GateFixture.dll"
+    if (-not (Test-Path -LiteralPath $fixtureDll -PathType Leaf)) {
+        Add-GateResult `
+            -Id 'P3-09-REAL-PROCESS' `
+            -EvidenceLevel 'real-process isolated' `
+            -Status 'FAIL' `
+            -Summary 'P2.5 fixture build 未产生可执行程序集。' `
+            -Evidence $fixtureDll `
+            -NextAction '检查 fixture 输出路径后重新运行真实进程探针。'
+        return $false
+    }
+
+    $fixtureRunArguments = @(
+        $fixtureDll,
+        '--data-root',
+        $DataRoot,
+        '--profile',
+        'p3-09-gate'
+    )
+    $fixtureOutput = & $DotNetPath @fixtureRunArguments 2>&1
+    $fixtureExitCode = $LASTEXITCODE
+    $fixtureRunLog = Join-Path $fixtureLogRoot 'run.log'
+    [System.IO.File]::WriteAllText(
+        $fixtureRunLog,
+        ($fixtureOutput -join "`r`n"),
+        [System.Text.UTF8Encoding]::new($false))
+    if ($fixtureExitCode -ne 0) {
+        Add-GateResult `
+            -Id 'P3-09-REAL-PROCESS' `
+            -EvidenceLevel 'real-process isolated' `
+            -Status 'FAIL' `
+            -Summary "隔离 P2.5 fixture 初始化失败（exit=$fixtureExitCode）。" `
+            -Evidence $fixtureRunLog `
+            -NextAction '修复 P2.5 fixture 初始化后重新运行；不得让 Agent 在无 schema 的空目录上伪造升级证据。'
+        return $false
+    }
+
+    return $true
+}
+
 function Invoke-RealProcessProbe {
     param([Parameter(Mandatory)][string]$RunRoot)
 
@@ -671,6 +793,14 @@ function Invoke-RealProcessProbe {
 
     try {
         Initialize-WindowsProcessEnvironment
+        if (-not (Invoke-P25Fixture `
+                    -RunRoot $RunRoot `
+                    -RepositoryClone $canonicalRepositoryClone `
+                    -DataRoot $realProcessDataRoot `
+                    -DotNetPath $dotNetPath)) {
+            return
+        }
+
         $agentLog = Join-Path $processLogRoot 'agent.log'
         $agent = Start-Process `
             -FilePath (Convert-ToCanonicalPath $AgentPath) `

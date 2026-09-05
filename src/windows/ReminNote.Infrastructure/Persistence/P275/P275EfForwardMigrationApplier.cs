@@ -57,7 +57,15 @@ public sealed class P275EfForwardMigrationApplier : IP275ForwardMigrationApplier
                 .ToArray();
 
         plan.ValidateKnownMigrations(knownMigrations);
-        plan.ValidateSource(appliedMigrations);
+        // The first Portable/UserData launch intentionally starts from an
+        // empty Candidate file. A non-empty Candidate still has to carry the
+        // exact approved source history; the runner's verified backup/length
+        // check prevents an old non-empty Active from being replaced by an
+        // empty Candidate.
+        if (!isEmptyFile)
+        {
+            plan.ValidateSource(appliedMigrations);
+        }
 
         if (!appliedMigrations.SequenceEqual(plan.ApprovedTargetMigrations, StringComparer.Ordinal))
         {
