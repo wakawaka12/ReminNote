@@ -241,8 +241,9 @@ ReminNote $Version (Portable x64 Alpha)
 用户数据命令（路径必须为仓库外绝对路径）：
   ReminNote.Bootstrap.exe --user-data-export C:\Temp\reminnote-export.json --data-root <UserData>
   ReminNote.Bootstrap.exe --user-data-restore C:\Temp\reminnote-export.json --candidate-root C:\Temp\reminnote-candidate --data-root <UserData> --confirm --import-candidate
-  ReminNote.Bootstrap.exe --user-data-verify C:\Temp\reminnote-candidate\recovery\staging\<run-id> --data-root <UserData>
-  ReminNote.Bootstrap.exe --user-data-promote C:\Temp\reminnote-candidate\recovery\staging\<run-id> --data-root <UserData> --confirm
+  ReminNote.Bootstrap.exe --user-data-verify <candidateRoot> --data-root <UserData>
+  ReminNote.Bootstrap.exe --user-data-promote <candidateRoot> --data-root <UserData> --confirm
+导入命令输出的 candidateRoot 是 Candidate 目录；stagedArtifact 是目录内的结构化 JSON 文件，不能代替目录参数。
 恢复默认只做 dry-run；Candidate 导入后仍需独立验证和受控切换，不会自动覆盖 Active。
 
 从 0.3.0-alpha.1 升级：先退出旧包并复制旧包 .devdata/ 的全部内容到新包 UserData/，

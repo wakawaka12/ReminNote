@@ -236,6 +236,25 @@ public sealed record AgentUserDataCommandLine(
 [SupportedOSPlatform("windows")]
 public static class AgentUserDataCommandExecutor
 {
+    /// <summary>
+    /// The restore service reports the structured export file, while the
+    /// verify/promote commands consume its containing Candidate root. Keep
+    /// both paths explicit in CLI output so an operator cannot accidentally
+    /// pass <c>structured-export.json</c> as a directory.
+    /// </summary>
+    internal static string? CandidateRootForOutput(string? stagedArtifactPath)
+    {
+        if (string.IsNullOrWhiteSpace(stagedArtifactPath))
+        {
+            return null;
+        }
+
+        var fullPath = Path.GetFullPath(stagedArtifactPath);
+        return Directory.Exists(fullPath)
+            ? fullPath
+            : Path.GetDirectoryName(fullPath);
+    }
+
     public static async ValueTask<int> ExecuteAsync(
         IReadOnlyList<string> args,
         CancellationToken cancellationToken = default)
@@ -333,6 +352,7 @@ public static class AgentUserDataCommandExecutor
             Console.WriteLine($"status={result.Status}");
             Console.WriteLine($"checksum={result.SourceChecksum}");
             Console.WriteLine($"stagedArtifact={result.StagedArtifactPath ?? string.Empty}");
+            Console.WriteLine($"candidateRoot={CandidateRootForOutput(result.StagedArtifactPath) ?? string.Empty}");
             Console.WriteLine($"candidateDatabase={result.CandidateDatabasePath ?? string.Empty}");
             foreach (var issue in result.Issues)
             {

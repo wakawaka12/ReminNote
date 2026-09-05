@@ -1,7 +1,9 @@
+using System.Runtime.Versioning;
 using ReminNote.Agent.Runtime;
 
 namespace ReminNote.Tests.P309;
 
+[SupportedOSPlatform("windows")]
 public sealed class AgentUserDataCommandSurfaceTests
 {
     [Fact]
@@ -64,6 +66,21 @@ public sealed class AgentUserDataCommandSurfaceTests
             ["--user-data-promote", candidate, "--data-root", dataRoot, "--confirm"]);
         Assert.Equal(AgentUserDataCommandKind.PromoteCandidate, promote.Kind);
         Assert.True(promote.Confirm);
+        root.Delete(recursive: true);
+    }
+
+    [Fact]
+    public void RestoreOutputExposesCandidateRootAlongsideStructuredArtifact()
+    {
+        var root = Directory.CreateTempSubdirectory("reminnote-candidate-output-");
+        var stage = System.IO.Path.Combine(root.FullName, "recovery", "staging", "run");
+        var artifact = System.IO.Path.Combine(stage, "structured-export.json");
+
+        Assert.Equal(
+            System.IO.Path.GetFullPath(stage),
+            AgentUserDataCommandExecutor.CandidateRootForOutput(artifact));
+        Assert.Null(AgentUserDataCommandExecutor.CandidateRootForOutput(null));
+
         root.Delete(recursive: true);
     }
 }

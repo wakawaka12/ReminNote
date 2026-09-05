@@ -44,14 +44,17 @@ ReminNote.Bootstrap.exe --user-data-restore C:\Temp\reminnote-export.json --cand
 
 Candidate stage 目录中生成 `candidate-restore.json` 后，先做只读验证：
 
+导入命令会同时输出 `stagedArtifact`（结构化 JSON 文件）和 `candidateRoot`（包含
+`candidate.sqlite`、marker 与 artifact 的目录）；后续 verify/promote 使用 `candidateRoot`。
+
 ```powershell
-ReminNote.Bootstrap.exe --user-data-verify C:\Temp\reminnote-candidate\recovery\staging\<run-id> --data-root C:\Path\To\UserData
+ReminNote.Bootstrap.exe --user-data-verify <candidateRoot> --data-root C:\Path\To\UserData
 ```
 
 确认停掉 Agent/宿主并准备切换时，才显式执行受控 promotion；它会取得 profile 迁移锁和 writer-quiescence lease，先保留 Active 安全备份，再进行原子切换和 post-promote verify：
 
 ```powershell
-ReminNote.Bootstrap.exe --user-data-promote C:\Temp\reminnote-candidate\recovery\staging\<run-id> --data-root C:\Path\To\UserData --confirm
+ReminNote.Bootstrap.exe --user-data-promote <candidateRoot> --data-root C:\Path\To\UserData --confirm
 ```
 
 验证失败、锁被占用、checksum/schema/profile 不匹配或切换结果不确定都会 fail closed；禁止把 Active 数据库路径作为 artifact 或 Candidate 路径。

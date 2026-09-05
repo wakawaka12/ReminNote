@@ -52,14 +52,18 @@ ReminNote.Bootstrap.exe --user-data-restore C:\Temp\reminnote-export.json --cand
 
 Candidate 导入完成后先独立 verify：
 
+导入输出中的 `candidateRoot` 是包含 `candidate.sqlite`、marker 和
+`structured-export.json` 的目录；`stagedArtifact` 仅是其中的 JSON 文件，不能直接作为
+verify/promote 的目录参数。
+
 ```powershell
-ReminNote.Bootstrap.exe --user-data-verify C:\Temp\reminnote-candidate\recovery\staging\<run-id> --data-root C:\Temp\reminnote-userdata
+ReminNote.Bootstrap.exe --user-data-verify <candidateRoot> --data-root C:\Temp\reminnote-userdata
 ```
 
 操作者确认所有 Agent/宿主已退出后，才可显式 promotion：
 
 ```powershell
-ReminNote.Bootstrap.exe --user-data-promote C:\Temp\reminnote-candidate\recovery\staging\<run-id> --data-root C:\Temp\reminnote-userdata --confirm
+ReminNote.Bootstrap.exe --user-data-promote <candidateRoot> --data-root C:\Temp\reminnote-userdata --confirm
 ```
 
 promotion 取得迁移锁和 writer-quiescence lease，保留 Active 安全备份，并在原子切换后重新验证；任何校验、锁、备份或状态写入失败都 fail closed，绝不自动激活旧 pending Schedule。
