@@ -316,10 +316,22 @@ public sealed class SafetyBackupService
             return "empty";
         }
 
-        // The manifest carries the complete ordered history. The file name
-        // uses only the validated schema head so a normal Windows profile
-        // path does not become unusably long as migrations accumulate.
-        return schema[^1];
+        // The manifest carries the complete ordered history. A migration
+        // head can legally be 128 bytes, so putting it verbatim in a file
+        // name makes a normal profile path exceed Windows' safe budget. Keep
+        // a short, deterministic token in the name and retain the full value
+        // (and ordered history) in the manifest.
+        var head = schema[^1];
+        if (head.Length <= 24)
+        {
+            return head;
+        }
+
+        var history = string.Join("\n", schema);
+        var digest = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(history)))
+            .ToLowerInvariant();
+        return $"schema-{digest[..16]}";
     }
 
     private static void EnsureOutputNamesAvailable(

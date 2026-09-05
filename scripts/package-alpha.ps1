@@ -9,6 +9,9 @@ param(
     [ValidateSet('win-x64')]
     [string]$Runtime = 'win-x64',
 
+    [ValidateSet('NOT_PERFORMED', 'RECORDED')]
+    [string]$HumanAcceptance = 'NOT_PERFORMED',
+
     [string]$OutputRoot
 )
 
@@ -108,6 +111,11 @@ Invoke-DotNet `
     -Arguments @('restore', $solutionPath, '--locked-mode', '--runtime', $Runtime, '--nologo') `
     -Description 'locked restore'
 
+& (Join-Path $PSScriptRoot 'test.ps1') -Configuration $Configuration
+if ($LASTEXITCODE -ne 0) {
+    throw "Release test gate 失败，退出码：$LASTEXITCODE"
+}
+
 Invoke-DotNet `
     -DotNetPath $dotNetPath `
     -Arguments @('build', $solutionPath, '--configuration', $Configuration, '--no-restore', '--nologo', "-p:Version=$Version", "-p:AppVersion=$Version") `
@@ -156,11 +164,20 @@ foreach ($project in $projects) {
     }
 }
 
-$developmentDataRoot = Join-Path $packageRoot '.devdata'
-[System.IO.Directory]::CreateDirectory($developmentDataRoot) | Out-Null
+$userDataRoot = Join-Path $packageRoot 'UserData'
+[System.IO.Directory]::CreateDirectory($userDataRoot) | Out-Null
 Write-Utf8NoBom `
-    -Path (Join-Path $developmentDataRoot '.gitkeep') `
+    -Path (Join-Path $userDataRoot '.gitkeep') `
     -Content ''
+
+foreach ($documentName in @('LICENSE', 'THIRD-PARTY-NOTICES.md', 'CHANGELOG.md')) {
+    $documentPath = Join-Path $repositoryRoot $documentName
+    if (-not (Test-Path -LiteralPath $documentPath -PathType Leaf)) {
+        throw "缺少对外分发必需文档：$documentName"
+    }
+
+    Copy-Item -LiteralPath $documentPath -Destination (Join-Path $packageRoot $documentName) -Force
+}
 
 $marker = [ordered]@{
     product = 'ReminNote'
@@ -175,7 +192,14 @@ $marker = [ordered]@{
         '20260904090000_P304'
     )
     ipcProtocolVersion = '1.0'
-    alphaNotice = '本包跳过正常桌面人工验收；仅用于 Alpha 会议前试用和问题收集。'
+    automatedGate = 'scripts/test.ps1:PASS'
+    humanAcceptance = $HumanAcceptance
+    humanAcceptanceNote = if ($HumanAcceptance -eq 'NOT_PERFORMED') {
+        '本构建未执行正常桌面人工验收；不得将自动化门禁解释为用户 sign-off。'
+    }
+    else {
+        '人工验收记录由发布负责人另行保存；本清单只记录声明，不替代证据。'
+    }
 }
 Write-Utf8NoBom `
     -Path (Join-Path $packageRoot 'ReminNote.runtime.json') `
@@ -186,20 +210,40 @@ Write-Utf8NoBom `
     -Content (@"
 @echo off
 cd /d "%~dp0"
-ReminNote.Bootstrap.exe %*
+set "ROOT_ARGUMENT="
+for %%A in (%*) do (
+    if /I "%%~A"=="--data-root" set "ROOT_ARGUMENT=1"
+    if /I "%%~A"=="--repo-root" set "ROOT_ARGUMENT=1"
+)
+if defined ROOT_ARGUMENT (
+    ReminNote.Bootstrap.exe %*
+) else (
+    ReminNote.Bootstrap.exe --data-root "%~dp0UserData" %*
+)
 "@).TrimStart()
 
 $readme = @"
 ReminNote $Version (Portable x64 Alpha)
 
-启动：双击 run-alpha.cmd，或直接运行 ReminNote.Bootstrap.exe。
-本包为 Alpha 试用包，本轮明确跳过正常桌面人工验收；请在会议前记录问题，
-不要把它当作稳定版。数据默认写入本包目录下的 .devdata/。
+启动：双击 run-alpha.cmd，或直接运行 ReminNote.Bootstrap.exe --data-root <数据目录>。
+本包为 Alpha 试用包，本构建未执行正常桌面人工验收；请在会议前记录问题，
+不要把它当作稳定版。run-alpha.cmd 默认把数据写入本包目录下的 UserData/。
 
 已知范围：
-- Agent/Main/Widget、Reminder 持久化调度和 P2.75 迁移代码已包含；
-- Toast/Tray/Widget/Sound/WakeTimer 的跨进程宿主桥接仍是后续工作；
-- Windows 睡眠/唤醒、真实桌面通知效果和用户 sign-off 未完成。
+- Agent/Main/Widget、Reminder 持久化调度、通知宿主桥和 P2.75 迁移代码已包含；
+- Toast registration、Windows 睡眠/唤醒、真实桌面通知效果和用户 sign-off 仍需人工验收；
+- 结构化导出可生成独立 artifact；恢复先建立隔离 Candidate，需先 verify，只有显式 --confirm promotion 才会写入 Active。
+
+用户数据命令（路径必须为仓库外绝对路径）：
+  ReminNote.Bootstrap.exe --user-data-export C:\Temp\reminnote-export.json --data-root <UserData>
+  ReminNote.Bootstrap.exe --user-data-restore C:\Temp\reminnote-export.json --candidate-root C:\Temp\reminnote-candidate --data-root <UserData> --confirm --import-candidate
+  ReminNote.Bootstrap.exe --user-data-verify C:\Temp\reminnote-candidate\recovery\staging\<run-id> --data-root <UserData>
+  ReminNote.Bootstrap.exe --user-data-promote C:\Temp\reminnote-candidate\recovery\staging\<run-id> --data-root <UserData> --confirm
+恢复默认只做 dry-run；Candidate 导入后仍需独立验证和受控切换，不会自动覆盖 Active。
+
+从 0.3.0-alpha.1 升级：先退出旧包并复制旧包 .devdata/ 的全部内容到新包 UserData/，
+保留旧目录作为回退备份；不要删除旧目录，也不要把它提交到 Git。若旧数据迁移失败，
+保留 migration-state、backup 和 Candidate，按 recovery-status 输出处理。
 
 版本身份：AppVersion=$Version；Runtime=$Runtime；Commit=$head。
 "@
@@ -222,12 +266,19 @@ $releaseManifest = [ordered]@{
     sha256 = $hash
     packageDirectory = $packageRoot
     generatedAtUtc = $generatedAtUtc.ToString('O')
-    humanAcceptance = 'SKIPPED_BY_USER'
+    automatedGate = 'scripts/test.ps1:PASS'
+    humanAcceptance = $HumanAcceptance
+    humanAcceptanceNote = if ($HumanAcceptance -eq 'NOT_PERFORMED') {
+        '本构建未执行正常桌面人工验收；NOT_PERFORMED 不等同于稳定性 sign-off。'
+    }
+    else {
+        '人工验收声明不替代独立证据；请在总成报告中记录范围、版本和时间。'
+    }
     knownLimitations = @(
-        'cross-process notification host bridge is not enabled',
-        'Windows sleep/wake and desktop visual/audio acceptance are pending',
-        'P3-08 production export/restore Candidate pipeline remains pending'
-    )
+        'Toast registration and Windows sleep/wake/desktop visual/audio acceptance are pending',
+        'normal desktop user sign-off is pending',
+    'structured restore stages an isolated Candidate; explicit verify and promotion remain operator-controlled recovery actions'
+)
 }
 Write-Utf8NoBom -Path $manifestPath -Content ($releaseManifest | ConvertTo-Json -Depth 5)
 

@@ -33,7 +33,7 @@ public static class ProtocolOperationSchemas
                 [ProtocolOperations.TaskCreate] = new(
                     ProtocolOperations.TaskCreate,
                     requiredFields: ["title", "timeSpec"],
-                    optionalFields: []),
+                    optionalFields: ["reminder"]),
                 [ProtocolOperations.TaskRename] = new(
                     ProtocolOperations.TaskRename,
                     requiredFields: ["taskId", "title"],
@@ -46,7 +46,7 @@ public static class ProtocolOperationSchemas
                 [ProtocolOperations.TaskUpdatePlan] = new(
                     ProtocolOperations.TaskUpdatePlan,
                     requiredFields: ["taskId", "timeSpec"],
-                    optionalFields: ["title"]),
+                    optionalFields: ["title", "reminder"]),
                 [ProtocolOperations.TaskReorder] = new(
                     ProtocolOperations.TaskReorder,
                     requiredFields: ["taskId", "sortOrder"],
@@ -54,11 +54,15 @@ public static class ProtocolOperationSchemas
                 [ProtocolOperations.TaskContinue] = new(
                     ProtocolOperations.TaskContinue,
                     requiredFields: ["sourceTaskId", "title", "timeSpec"],
-                    optionalFields: []),
+                    optionalFields: ["reminder"]),
                 [ProtocolOperations.TaskDelete] = new(
                     ProtocolOperations.TaskDelete,
                     requiredFields: ["taskId"],
                     optionalFields: []),
+                [ProtocolOperations.ReminderRuleUpsert] = new(
+                    ProtocolOperations.ReminderRuleUpsert,
+                    requiredFields: ["taskId", "reminder"],
+                    optionalFields: ["ruleId"]),
                 [ProtocolOperations.ReminderMarkRead] = new(
                     ProtocolOperations.ReminderMarkRead,
                     requiredFields: ["instanceId"],
@@ -155,6 +159,7 @@ public static class ProtocolOperationSchemas
             ProtocolOperations.TaskReorder when fieldName == "taskId" => true,
             ProtocolOperations.TaskContinue when fieldName is "sourceTaskId" or "title" => true,
             ProtocolOperations.TaskDelete when fieldName == "taskId" => true,
+            ProtocolOperations.ReminderRuleUpsert when fieldName is "taskId" or "ruleId" => true,
             ProtocolOperations.ReminderMarkRead when fieldName == "instanceId" => true,
             ProtocolOperations.ReminderResolve when fieldName is "instanceId" or "action" => true,
             _ => false,
@@ -171,6 +176,17 @@ public static class ProtocolOperationSchemas
         if (fieldName == "timeSpec")
         {
             ProtocolTimeSpecPayload.Parse(value);
+        }
+
+        if (fieldName == "reminder")
+        {
+            _ = ProtocolReminderRulePayloadParser.Parse(value);
+        }
+
+        if (operation == ProtocolOperations.ReminderRuleUpsert && fieldName == "ruleId" &&
+            value.ValueKind == JsonValueKind.String)
+        {
+            ProtocolValidation.RequireLowercaseUuid(value.GetString(), fieldName);
         }
 
         if (operation == ProtocolOperations.SessionHello)

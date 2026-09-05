@@ -25,15 +25,25 @@ internal static class Program
 
         try
         {
+            if (AgentUserDataCommandLine.IsInvocation(args))
+            {
+                return await AgentUserDataCommandExecutor
+                    .ExecuteAsync(args)
+                    .ConfigureAwait(false);
+            }
+
             if (AgentRecoveryCommandLine.IsRecoveryInvocation(args))
             {
                 return await RunRecoveryCommandAsync(args).ConfigureAwait(false);
             }
 
             var options = BootstrapOptions.Parse(args);
-            Directory.CreateDirectory(Path.Combine(options.RepositoryRoot, ".devdata"));
+            Directory.CreateDirectory(options.DataRoot);
 
-            var control = new AgentControlClient(options.RepositoryRoot, options.ProfileName);
+            var control = new AgentControlClient(
+                options.RepositoryRoot,
+                options.ProfileName,
+                options.DataRoot);
             using var instance = new Semaphore(
                 initialCount: 1,
                 maximumCount: 1,
@@ -322,8 +332,8 @@ internal static class Program
             UseShellExecute = false,
             CreateNoWindow = true
         };
-        startInfo.ArgumentList.Add("--repo-root");
-        startInfo.ArgumentList.Add(options.RepositoryRoot);
+        startInfo.ArgumentList.Add("--data-root");
+        startInfo.ArgumentList.Add(options.DataRoot);
         if (options.ProfileName is not null)
         {
             startInfo.ArgumentList.Add("--profile");
@@ -395,6 +405,7 @@ internal static class Program
 
     private sealed record BootstrapOptions(
         string RepositoryRoot,
+        string DataRoot,
         string? ProfileName,
         bool NoWidget,
         string WidgetInstanceId)
@@ -403,7 +414,6 @@ internal static class Program
         {
             ArgumentNullException.ThrowIfNull(args);
 
-            var repositoryRoot = Directory.GetCurrentDirectory();
             string? profileName = null;
             var noWidget = false;
             var widgetInstanceId = "default";
@@ -412,7 +422,8 @@ internal static class Program
                 switch (args[index])
                 {
                     case "--repo-root":
-                        repositoryRoot = ReadValue(args, ref index, "--repo-root");
+                    case "--data-root":
+                        _ = ReadValue(args, ref index, args[index]);
                         break;
                     case "--profile":
                         profileName = ReadValue(args, ref index, "--profile");
@@ -428,7 +439,8 @@ internal static class Program
                 }
             }
 
-            repositoryRoot = AgentStartupPaths.ValidateRepositoryRoot(repositoryRoot);
+            var roots = AgentStartupPaths.ResolveDataRoot(args);
+            var repositoryRoot = roots.RepositoryRoot ?? AppContext.BaseDirectory;
 
             if (widgetInstanceId.Length is < 1 or > 128 ||
                 widgetInstanceId.Contains('\0', StringComparison.Ordinal))
@@ -436,7 +448,7 @@ internal static class Program
                 throw new ArgumentException("--widget-instance 标识长度或字符非法。", nameof(args));
             }
 
-            return new(repositoryRoot, profileName, noWidget, widgetInstanceId);
+            return new(repositoryRoot, roots.DataRoot, profileName, noWidget, widgetInstanceId);
         }
 
         private static string ReadValue(string[] args, ref int index, string option)

@@ -71,6 +71,26 @@ public static class ProtocolPipeNames
     public static string MainActivation(string profileScope) =>
         Create("ReminNote.Windows.Main.Activation", profileScope);
 
+    /// <summary>
+    /// Per-host notification effect bridge. Main and Widget deliberately use
+    /// separate endpoints so a Widget request can never be accepted by the
+    /// Main host (or vice versa) and then reported as a false delivery.
+    /// </summary>
+    public static string NotificationHost(string profileScope, string hostKind)
+    {
+        ProtocolProfileScope.Validate(profileScope);
+        if (!string.Equals(hostKind, "Main", StringComparison.Ordinal) &&
+            !string.Equals(hostKind, "Widget", StringComparison.Ordinal))
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "Notification host kind must be Main or Widget.",
+                nameof(hostKind));
+        }
+
+        return Create($"ReminNote.Notification.{hostKind}", profileScope);
+    }
+
     public static string WidgetActivation(string profileScope, string widgetInstanceId)
     {
         ProtocolProfileScope.Validate(profileScope);

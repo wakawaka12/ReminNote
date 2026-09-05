@@ -42,6 +42,14 @@ Core 必须独立于 WPF、EF Core、Serilog 和 Windows API。Infrastructure �
 
 P2.5 完成后，Agent 是唯一业务写入者；Main App 通过 IPC 发命令并使用安全的只读查询路径。
 
+## P3 Alpha 总成边界
+
+- Agent 继续是 Task、ReminderRule、ReminderSchedule、ReminderInstance 和通知投递回执的唯一业务写入者。Task 命令可携带版本化 reminder intent；显式 Rule upsert 仍经过同一 P2.5 receipt/revision/journal 事务。
+- Main 与 Widget 只持有只读 query service 和 Agent command client。通知效果由各自宿主拥有的 WPF catalog 提供，Agent 通过按 profile/宿主隔离的命名管道桥接；桥接连接失败记录 `UNAVAILABLE/BLOCKED`，不得伪造成功。
+- Agent scheduler 的核心触发先提交事实，再由通知 runtime 追加 channel-attempt 事件。Quiet Hours、重试、健康状态和宿主生命周期位于呈现/投递层，不能写回核心 Reminder 表。
+- 启动 root 解析区分 checkout 的 `.devdata/`、Portable 的 `UserData/` 和显式 `--data-root`。Bootstrap 把同一 data-root 传给 Agent/Main/Widget；`--repo-root` 只作为开发/隔离 clone 入口。
+- 结构化导出使用 Active 只读连接。Candidate restore 在独立目录中导入；独立 verify 通过后，只有显式确认并取得迁移锁、writer-quiescence lease 的 promotion 才能原子切换 Active，pending Schedule 默认不激活；没有 Active fallback 或第二写入路径。
+
 ## P2.75 最低迁移与恢复边界
 
 P2.75 的迁移/恢复由 Agent 的 storage/recovery actor 负责。Bootstrap 只负责启动协调、

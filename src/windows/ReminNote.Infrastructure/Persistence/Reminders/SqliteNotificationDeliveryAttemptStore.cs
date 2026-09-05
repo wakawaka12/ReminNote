@@ -169,11 +169,13 @@ public sealed class SqliteNotificationDeliveryAttemptStore : INotificationDelive
                         .ConfigureAwait(false);
                     if (current is not null)
                     {
+                        var quietHoursSuppression =
+                            current.Outcome == NotificationDeliveryOutcome.SUPPRESSED_QUIET_HOURS;
                         if (current.IsPending ||
                             !current.Retryable ||
                             current.NextAttemptAtUtc is not { } next ||
                             next > recordedAtUtc ||
-                            current.AttemptNumber >= maxAttempts)
+                            !quietHoursSuppression && current.AttemptNumber >= maxAttempts)
                         {
                             return P25MutationDecision.NoOp();
                         }

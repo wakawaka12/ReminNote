@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using ReminNote.Core.Application;
 using ReminNote.Core.Reminders.Domain;
 using ReminNote.Core.Tasks;
 
@@ -546,7 +547,10 @@ public static class ProtocolJson
         });
     }
 
-    public static JsonElement CreateTaskCreatePayload(string title, TimeSpec timeSpec)
+    public static JsonElement CreateTaskCreatePayload(
+        string title,
+        TimeSpec timeSpec,
+        ReminderRuleOptions? reminder = null)
     {
         ValidateTaskTitle(title);
         var time = ProtocolTimeSpecPayload.FromDomain(timeSpec);
@@ -554,6 +558,10 @@ public static class ProtocolJson
         {
             writer.WriteString("title", title);
             WriteTimeSpec(writer, time);
+            if (reminder is not null)
+            {
+                WriteReminderRule(writer, reminder);
+            }
         });
     }
 
@@ -593,7 +601,11 @@ public static class ProtocolJson
         });
     }
 
-    public static JsonElement CreateTaskUpdatePlanPayload(string taskId, string? title, TimeSpec timeSpec)
+    public static JsonElement CreateTaskUpdatePlanPayload(
+        string taskId,
+        string? title,
+        TimeSpec timeSpec,
+        ReminderRuleOptions? reminder = null)
     {
         ProtocolValidation.RequireLowercaseUuid(taskId, nameof(taskId));
         ValidateTaskTitle(title);
@@ -607,6 +619,34 @@ public static class ProtocolJson
             }
 
             WriteTimeSpec(writer, time);
+            if (reminder is not null)
+            {
+                WriteReminderRule(writer, reminder);
+            }
+        });
+    }
+
+    public static JsonElement CreateReminderRuleUpsertPayload(
+        string taskId,
+        ReminderRuleOptions reminder,
+        string? ruleId = null)
+    {
+        ProtocolValidation.RequireLowercaseUuid(taskId, nameof(taskId));
+        ArgumentNullException.ThrowIfNull(reminder);
+        if (ruleId is not null)
+        {
+            ProtocolValidation.RequireLowercaseUuid(ruleId, nameof(ruleId));
+        }
+
+        return CreateObject(writer =>
+        {
+            writer.WriteString("taskId", taskId);
+            if (ruleId is not null)
+            {
+                writer.WriteString("ruleId", ruleId);
+            }
+
+            WriteReminderRule(writer, reminder);
         });
     }
 
@@ -620,7 +660,11 @@ public static class ProtocolJson
         });
     }
 
-    public static JsonElement CreateTaskContinuePayload(string sourceTaskId, string title, TimeSpec timeSpec)
+    public static JsonElement CreateTaskContinuePayload(
+        string sourceTaskId,
+        string title,
+        TimeSpec timeSpec,
+        ReminderRuleOptions? reminder = null)
     {
         ProtocolValidation.RequireLowercaseUuid(sourceTaskId, nameof(sourceTaskId));
         ValidateTaskTitle(title);
@@ -630,6 +674,10 @@ public static class ProtocolJson
             writer.WriteString("sourceTaskId", sourceTaskId);
             writer.WriteString("title", title);
             WriteTimeSpec(writer, time);
+            if (reminder is not null)
+            {
+                WriteReminderRule(writer, reminder);
+            }
         });
     }
 
@@ -718,6 +766,63 @@ public static class ProtocolJson
             writer.WriteString("end", time.End);
         }
 
+        writer.WriteEndObject();
+    }
+
+    private static void WriteReminderRule(Utf8JsonWriter writer, ReminderRuleOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var payload = new ProtocolReminderRulePayload(
+            options.Purpose.ToString(),
+            ProtocolReminderTimingPayload.FromDomain(options.Timing),
+            options.Priority.ToString(),
+            options.Pinned,
+            ProtocolReminderRepeatPolicyPayload.FromDomain(options.EffectiveRepeatPolicy),
+            options.WakePolicy.ToString(),
+            options.Enabled);
+        payload.Validate();
+
+        writer.WritePropertyName("reminder");
+        writer.WriteStartObject();
+        writer.WriteString("purpose", payload.Purpose);
+        writer.WritePropertyName("timing");
+        writer.WriteStartObject();
+        writer.WriteString("kind", payload.Timing.Kind);
+        if (payload.Timing.Anchor is not null)
+        {
+            writer.WriteString("anchor", payload.Timing.Anchor);
+        }
+
+        if (payload.Timing.OffsetSeconds is { } offset)
+        {
+            writer.WriteNumber("offsetSeconds", offset);
+        }
+
+        if (payload.Timing.AtUtc is not null)
+        {
+            writer.WriteString("atUtc", payload.Timing.AtUtc);
+        }
+
+        writer.WriteEndObject();
+        writer.WriteString("priority", payload.Priority);
+        writer.WriteBoolean("pinned", payload.Pinned);
+        writer.WritePropertyName("repeatPolicy");
+        writer.WriteStartObject();
+        var repeat = payload.RepeatPolicy ?? new ProtocolReminderRepeatPolicyPayload(false, null, null);
+        writer.WriteBoolean("enabled", repeat.Enabled);
+        if (repeat.IntervalSeconds is { } interval)
+        {
+            writer.WriteNumber("intervalSeconds", interval);
+        }
+
+        if (repeat.MaxCount is { } maxCount)
+        {
+            writer.WriteNumber("maxCount", maxCount);
+        }
+
+        writer.WriteEndObject();
+        writer.WriteString("wakePolicy", payload.WakePolicy);
+        writer.WriteBoolean("enabled", payload.Enabled);
         writer.WriteEndObject();
     }
 

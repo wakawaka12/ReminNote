@@ -173,14 +173,16 @@ public sealed record NotificationChannelDeliveryResponse
 {
     public NotificationChannelDeliveryResponse(
         NotificationDeliveryOutcome outcome,
-        string? errorCode = null)
-        : this(outcome, errorCode, allowPolicySuppression: false)
+        string? errorCode = null,
+        Instant? nextAttemptAtUtc = null)
+        : this(outcome, errorCode, nextAttemptAtUtc, allowPolicySuppression: false)
     {
     }
 
     private NotificationChannelDeliveryResponse(
         NotificationDeliveryOutcome outcome,
         string? errorCode,
+        Instant? nextAttemptAtUtc,
         bool allowPolicySuppression)
     {
         if (!Enum.IsDefined(outcome))
@@ -201,8 +203,21 @@ public sealed record NotificationChannelDeliveryResponse
         }
 
         NotificationValidation.ValidateOptionalStableCode(errorCode, nameof(errorCode));
+        if (nextAttemptAtUtc is not null &&
+            outcome is not (NotificationDeliveryOutcome.SUPPRESSED_QUIET_HOURS or
+                NotificationDeliveryOutcome.UNAVAILABLE or
+                NotificationDeliveryOutcome.FAILED or
+                NotificationDeliveryOutcome.NOT_ATTEMPTED))
+        {
+            throw NotificationContractException.Invalid(
+                NotificationErrorCodes.SerializationInvalid,
+                "A delivered or blocked response cannot carry a retry time.",
+                nameof(nextAttemptAtUtc));
+        }
+
         Outcome = outcome;
         ErrorCode = errorCode;
+        NextAttemptAtUtc = nextAttemptAtUtc;
     }
 
     /// <summary>
@@ -210,15 +225,19 @@ public sealed record NotificationChannelDeliveryResponse
     /// manufacture this outcome through the public constructor.
     /// </summary>
     public static NotificationChannelDeliveryResponse SuppressedByPolicy(
-        string reasonCode) =>
+        string reasonCode,
+        Instant? nextAttemptAtUtc = null) =>
         new(
             NotificationDeliveryOutcome.SUPPRESSED_QUIET_HOURS,
             reasonCode,
+            nextAttemptAtUtc,
             allowPolicySuppression: true);
 
     public NotificationDeliveryOutcome Outcome { get; }
 
     public string? ErrorCode { get; }
+
+    public Instant? NextAttemptAtUtc { get; }
 }
 
 public enum NotificationDeliveryOutcome

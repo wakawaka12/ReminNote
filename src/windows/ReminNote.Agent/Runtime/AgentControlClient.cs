@@ -18,10 +18,16 @@ public sealed class AgentControlClient
     private readonly TransportLimits limits = AgentTransportDefaults.CreateLimits();
     private readonly LengthPrefixedFrameCodec frameCodec;
 
-    public AgentControlClient(string repositoryRoot, string? profileName = null)
+    public AgentControlClient(
+        string repositoryRoot,
+        string? profileName = null,
+        string? dataRoot = null)
     {
         profile = TransportProfileResolver.ResolveForCurrentUser(
-            new TransportProfileArguments(RepoRoot: repositoryRoot, Profile: profileName),
+            new TransportProfileArguments(
+                DataRoot: dataRoot,
+                RepoRoot: dataRoot is null ? repositoryRoot : null,
+                Profile: profileName),
             new ProtocolTransportProfileContractAdapter());
         endpoint = new NamedPipeTransportEndpoint(profile, NamedPipeEndpointKind.Control);
         frameCodec = new LengthPrefixedFrameCodec(limits);

@@ -723,7 +723,7 @@ function Invoke-RealProcessProbe {
             $hostProcess = Start-Process `
                 -FilePath (Convert-ToCanonicalPath $specification.Path) `
                 -WorkingDirectory $canonicalRepositoryClone `
-                -ArgumentList @('--repo-root', $canonicalRepositoryClone) `
+                -ArgumentList @('--data-root', $realProcessDataRoot, '--profile', 'p3-09-gate') `
                 -RedirectStandardOutput (Join-Path $processLogRoot $specification.Log) `
                 -RedirectStandardError (Join-Path $processLogRoot $specification.ErrorLog) `
                 -PassThru
@@ -1250,11 +1250,13 @@ try {
         -NextAction 'P3-06 未 READY 时不能把现有 Main/Widget Task UI 或 UIA 记录写成 Reminder 桌面验收。'
 
     $migrationText = Get-RepositoryText -RelativePath 'src\windows\ReminNote.Agent\Runtime\AgentMigrationStartup.cs'
+    $migrationCatalogText = Get-RepositoryText -RelativePath 'src\windows\ReminNote.Infrastructure\Persistence\P275\P275MigrationPlanCatalog.cs'
     $p308Text = Get-RepositoryText -RelativePath 'src\windows\ReminNote.Core\Reminders\Export\ReminderRestorePlanner.cs'
     $legacyMigrationPlanIsActive = $migrationText.Contains('20260831090000_P25StorageConsistency')
     $migrationPlanHasNoReminderTarget = -not $migrationText.Contains('Reminder')
-    $migrationPlanHasP3Targets = $migrationText.Contains('20260902141656_P3ReminderPersistence') -and
-        $migrationText.Contains('20260904090000_P304')
+    $migrationPlanText = $migrationText + "`n" + $migrationCatalogText
+    $migrationPlanHasP3Targets = $migrationPlanText.Contains('20260902141656_P3ReminderPersistence') -and
+        $migrationPlanText.Contains('20260904090000_P304')
     if ($legacyMigrationPlanIsActive -and $migrationPlanHasNoReminderTarget) {
         Add-GateResult `
             -Id 'P3-09-MIGRATION' `
@@ -1270,7 +1272,7 @@ try {
             -EvidenceLevel 'static/contract' `
             -Status 'PASS' `
             -Summary 'Agent 默认迁移计划已包含 P3 Reminder 与 P3-04 增量 schema。' `
-            -Evidence 'AgentMigrationStartup.cs DefaultPlan' `
+            -Evidence 'AgentMigrationStartup.cs + P275MigrationPlanCatalog.cs' `
             -NextAction '仍需以隔离 P2.5 fixture 运行 Candidate migration/verify/promote，并保留 marker/backup/history。'
     }
     else {
@@ -1294,7 +1296,7 @@ try {
             -Status 'PASS' `
             -Summary 'P3-08 受控恢复仍保持 Active 写入拒绝契约。' `
             -Evidence 'ReminderRestorePlanner.cs' `
-            -NextAction '待真实 Candidate pipeline 接入后再执行隔离 migration/restore 证据。'
+            -NextAction '仍需在隔离 Candidate 上运行独立 verify/promotion；不得在 Active 上试验。'
     }
     else {
         Add-GateResult `

@@ -4,6 +4,7 @@ using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NodaTime;
+using ReminNote.Agent.Notifications;
 using ReminNote.Agent.Runtime;
 using ReminNote.Core.Application;
 using ReminNote.Core.Protocol;
@@ -23,18 +24,21 @@ public partial class App : Application, IDisposable
 {
     private IHost? _host;
     private SingleInstanceCoordinator? _singleInstance;
+    private NotificationHostBridgeServer? _notificationBridge;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        var repositoryRoot = ResolveRepositoryRoot(e.Args);
-        Directory.CreateDirectory(Path.Combine(repositoryRoot, ".devdata"));
+        var roots = AgentStartupPaths.ResolveDataRoot(e.Args);
+        var repositoryRoot = roots.RepositoryRoot ?? AppContext.BaseDirectory;
+        Directory.CreateDirectory(roots.DataRoot);
         var profileName = ResolveProfileName(e.Args);
         var agentClient = new AgentTaskClient(
             repositoryRoot,
             ProtocolClientKinds.Main,
-            profileName);
+            profileName,
+            roots.DataRoot);
         _singleInstance = new SingleInstanceCoordinator(
             MainInstanceIdentity.GetMutexName(agentClient.ProfileScope),
             MainInstanceIdentity.GetPipeName(agentClient.ProfileScope));
@@ -62,7 +66,8 @@ public partial class App : Application, IDisposable
             WindowsNotificationChannelComposition.CreateHostOwned(
                 serviceProvider.GetRequiredService<IClock>(),
                 () => Application.Current?.MainWindow,
-                Dispatcher));
+                Dispatcher,
+                ResolveNotificationHostOptions(e.Args)));
         builder.Services.AddSingleton<INotificationChannelCatalog>(serviceProvider =>
             serviceProvider.GetRequiredService<WindowsNotificationChannelHost>().Catalog);
         builder.Services.AddTodayFeature();
@@ -73,7 +78,11 @@ public partial class App : Application, IDisposable
 
         _host = builder.Build();
         _host.Start();
-        _ = _host.Services.GetRequiredService<INotificationChannelCatalog>();
+        var notificationHost = _host.Services.GetRequiredService<WindowsNotificationChannelHost>();
+        _notificationBridge = NotificationHostBridgeServer.Start(
+            agentClient.ProfileScope,
+            NotificationHostBridgeKind.Main,
+            notificationHost.Catalog);
 
         var window = _host.Services.GetRequiredService<MainWindow>();
         MainWindow = window;
@@ -98,6 +107,8 @@ public partial class App : Application, IDisposable
         }
         finally
         {
+            _notificationBridge?.Dispose();
+            _notificationBridge = null;
             _host?.Dispose();
             Dispose();
             base.OnExit(e);
@@ -116,29 +127,10 @@ public partial class App : Application, IDisposable
 
     public void Dispose()
     {
+        _notificationBridge?.Dispose();
+        _notificationBridge = null;
         _singleInstance?.Dispose();
         GC.SuppressFinalize(this);
-    }
-
-    private static string ResolveRepositoryRoot(string[] args)
-    {
-        var repositoryRoot = Directory.GetCurrentDirectory();
-        for (var index = 0; index < args.Length; index++)
-        {
-            if (!string.Equals(args[index], "--repo-root", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (++index >= args.Length)
-            {
-                throw new ArgumentException("--repo-root 必须带路径。", nameof(args));
-            }
-
-            repositoryRoot = args[index];
-        }
-
-        return AgentStartupPaths.ValidateRepositoryRoot(repositoryRoot);
     }
 
     private static string? ResolveProfileName(string[] args)
@@ -160,5 +152,12 @@ public partial class App : Application, IDisposable
         }
 
         return profile;
+    }
+
+    private static WindowsNotificationHostOptions ResolveNotificationHostOptions(string[] args)
+    {
+        var verified = args.Any(argument =>
+            string.Equals(argument, "--toast-registration-verified", StringComparison.OrdinalIgnoreCase));
+        return new WindowsNotificationHostOptions(toastRegistrationVerified: verified);
     }
 }

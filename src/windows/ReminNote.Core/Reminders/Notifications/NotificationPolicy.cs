@@ -50,7 +50,8 @@ public sealed record NotificationPresentationDecision
 {
     public NotificationPresentationDecision(
         NotificationPresentationDecisionKind kind,
-        string? reasonCode = null)
+        string? reasonCode = null,
+        Instant? retryAtUtc = null)
     {
         if (!Enum.IsDefined(kind))
         {
@@ -70,6 +71,14 @@ public sealed record NotificationPresentationDecision
                 nameof(reasonCode));
         }
 
+        if (kind == NotificationPresentationDecisionKind.PRESENT && retryAtUtc is not null)
+        {
+            throw NotificationContractException.Invalid(
+                NotificationErrorCodes.SerializationInvalid,
+                "A present decision cannot carry a retry time.",
+                nameof(retryAtUtc));
+        }
+
         if (kind == NotificationPresentationDecisionKind.PRESENT && reasonCode is not null)
         {
             throw NotificationContractException.Invalid(
@@ -80,17 +89,27 @@ public sealed record NotificationPresentationDecision
 
         Kind = kind;
         ReasonCode = reasonCode;
+        RetryAtUtc = retryAtUtc;
     }
 
     public NotificationPresentationDecisionKind Kind { get; }
 
     public string? ReasonCode { get; }
 
+    /// <summary>
+    /// Optional presentation retry hint. It is used by Quiet Hours to retry
+    /// after the active window instead of consuming the bounded transient
+    /// retry budget while the user is intentionally quiet.
+    /// </summary>
+    public Instant? RetryAtUtc { get; }
+
     public static NotificationPresentationDecision Present { get; } =
         new(NotificationPresentationDecisionKind.PRESENT);
 
-    public static NotificationPresentationDecision SuppressedQuietHours(string reasonCode) =>
-        new(NotificationPresentationDecisionKind.SUPPRESSED_QUIET_HOURS, reasonCode);
+    public static NotificationPresentationDecision SuppressedQuietHours(
+        string reasonCode,
+        Instant? retryAtUtc = null) =>
+        new(NotificationPresentationDecisionKind.SUPPRESSED_QUIET_HOURS, reasonCode, retryAtUtc);
 }
 
 /// <summary>

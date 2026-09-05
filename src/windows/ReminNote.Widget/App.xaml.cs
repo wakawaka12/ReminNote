@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using ReminNote.Agent.Notifications;
 using ReminNote.Agent.Runtime;
 using ReminNote.Core.Protocol;
 using ReminNote.Widget.Notifications;
@@ -17,6 +18,7 @@ public partial class App : Application, IDisposable
     private AgentTaskClient? _agentClient;
     private WidgetViewModel? _viewModel;
     private WidgetNotificationChannelHost? _notificationHost;
+    private NotificationHostBridgeServer? _notificationBridge;
     private DispatcherTimer? _refreshTimer;
     private CancellationTokenSource? _lifetimeCancellation;
     private bool _refreshInProgress;
@@ -27,14 +29,16 @@ public partial class App : Application, IDisposable
 
         try
         {
-            var repositoryRoot = WidgetStartupOptions.ResolveRepositoryRoot(e.Args);
-            Directory.CreateDirectory(Path.Combine(repositoryRoot, ".devdata"));
+            var roots = WidgetStartupOptions.ResolveDataRoot(e.Args);
+            var repositoryRoot = roots.RepositoryRoot ?? AppContext.BaseDirectory;
+            Directory.CreateDirectory(roots.DataRoot);
             var profileName = WidgetStartupOptions.ResolveProfileName(e.Args);
             var widgetInstanceId = WidgetStartupOptions.ResolveWidgetInstanceId(e.Args);
             _agentClient = new AgentTaskClient(
                 repositoryRoot,
                 ProtocolClientKinds.Widget,
-                profileName);
+                profileName,
+                roots.DataRoot);
             _singleInstance?.Dispose();
             _singleInstance = new WidgetSingleInstanceCoordinator(
                 WidgetInstanceIdentity.GetMutexName(_agentClient.ProfileScope, widgetInstanceId),
@@ -60,6 +64,10 @@ public partial class App : Application, IDisposable
                 SystemClock.Instance,
                 () => MainWindow,
                 Dispatcher);
+            _notificationBridge = NotificationHostBridgeServer.Start(
+                _agentClient.ProfileScope,
+                NotificationHostBridgeKind.Widget,
+                _notificationHost.Catalog);
             _lifetimeCancellation = new CancellationTokenSource();
             _singleInstance.StartListener(() =>
                 Dispatcher.BeginInvoke(new Action(() => _ = RefreshAndActivateAsync())));
@@ -92,6 +100,8 @@ public partial class App : Application, IDisposable
         _lifetimeCancellation?.Cancel();
         _lifetimeCancellation?.Dispose();
         _lifetimeCancellation = null;
+        _notificationBridge?.Dispose();
+        _notificationBridge = null;
         _notificationHost?.Dispose();
         _notificationHost = null;
         _viewModel?.Dispose();

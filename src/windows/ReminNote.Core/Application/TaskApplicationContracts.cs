@@ -1,4 +1,5 @@
 using NodaTime;
+using ReminNote.Core.Reminders.Domain;
 using ReminNote.Core.Tasks;
 using DomainTask = ReminNote.Core.Tasks.Task;
 
@@ -144,9 +145,34 @@ public interface ITaskHistoryQueryService
         CancellationToken cancellationToken = default);
 }
 
-public sealed record CreateTaskCommand(string Title, TimeSpec TimeSpec);
+/// <summary>
+/// Optional reminder intent carried by a Task command. The Task aggregate
+/// remains reminder-agnostic; the Agent materializes this intent into a
+/// ReminderRule and its first Schedule inside the same writer transaction.
+/// </summary>
+public sealed record ReminderRuleOptions(
+    ReminderPurpose Purpose,
+    ReminderTiming Timing,
+    ReminderPriority Priority = ReminderPriority.NORMAL,
+    bool Pinned = false,
+    RepeatPolicy? RepeatPolicy = null,
+    WakePolicy WakePolicy = WakePolicy.DEFAULT,
+    bool Enabled = true)
+{
+    public RepeatPolicy EffectiveRepeatPolicy =>
+        RepeatPolicy ?? global::ReminNote.Core.Reminders.Domain.RepeatPolicy.Disabled;
+}
 
-public sealed record UpdateTaskCommand(TaskId TaskId, string Title, TimeSpec TimeSpec);
+public sealed record CreateTaskCommand(
+    string Title,
+    TimeSpec TimeSpec,
+    ReminderRuleOptions? Reminder = null);
+
+public sealed record UpdateTaskCommand(
+    TaskId TaskId,
+    string Title,
+    TimeSpec TimeSpec,
+    ReminderRuleOptions? Reminder = null);
 
 public sealed record RecordTaskResultCommand(
     TaskId TaskId,
@@ -158,7 +184,8 @@ public sealed record ReorderTaskCommand(TaskId TaskId, int SortOrder);
 public sealed record ContinueTaskCommand(
     TaskId SourceTaskId,
     string Title,
-    TimeSpec TimeSpec);
+    TimeSpec TimeSpec,
+    ReminderRuleOptions? Reminder = null);
 
 public interface ITaskWriteGate
 {

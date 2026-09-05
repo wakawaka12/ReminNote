@@ -32,6 +32,13 @@ internal static class AgentRuntime
 
         try
         {
+            if (AgentUserDataCommandLine.IsInvocation(args))
+            {
+                return await AgentUserDataCommandExecutor
+                    .ExecuteAsync(args)
+                    .ConfigureAwait(false);
+            }
+
             if (AgentRecoveryCommandLine.IsRecoveryInvocation(args))
             {
                 return await AgentMigrationStartupComposition.RunRecoveryCommandAsync(args).ConfigureAwait(false);
@@ -86,6 +93,40 @@ internal static class AgentRuntime
 
             await using var storeLease = store;
             var agentInstanceId = ProtocolIds.NewEventId();
+            // Keep the profile writer-quiescence lease for the entire Agent
+            // lifetime. Migration and controlled Candidate promotion acquire
+            // the same cross-process lease, so an explicit promotion cannot
+            // race a live business writer. The migration gate has released
+            // its short lease before this point.
+            IP275WriterQuiescenceLease? writerQuiescence = null;
+            try
+            {
+                writerQuiescence = await new P275FileWriterQuiescence()
+                    .AcquireAsync(
+                        new P275ProfilePaths(profile.DataRoot, profile.ProfileName),
+                        agentInstanceId.ToString("D"))
+                    .ConfigureAwait(false);
+                if (writerQuiescence is null)
+                {
+                    Console.Error.WriteLine(
+                        $"ReminNote Agent startup blocked by writer quiescence: " +
+                        $"failure={P275MigrationFailureCodes.Locked}.");
+                    return AgentStartupExitCodes.MigrationBlocked;
+                }
+            }
+            catch (Exception exception) when (
+                exception is IOException or
+                UnauthorizedAccessException or
+                ArgumentException or
+                P275PathValidationException)
+            {
+                Console.Error.WriteLine(
+                    $"ReminNote Agent startup blocked by writer quiescence: " +
+                    $"failure={P275MigrationFailureCodes.Locked}.");
+                return AgentStartupExitCodes.MigrationBlocked;
+            }
+
+            await using var writerQuiescenceLease = writerQuiescence;
             await using var reminderStore = new AgentReminderSchedulerStore(
                 store,
                 profile.DatabasePath,
@@ -95,7 +136,11 @@ internal static class AgentRuntime
             var reminderScheduler = new ReminderScheduler(
                 reminderStore,
                 clock);
-            var channelCatalog = AgentNotificationChannelComposition.CreateFailClosed(clock);
+            var channelCatalog = AgentNotificationChannelComposition.CreateForProfile(
+                profile.ProfileScope,
+                clock);
+            var presentationPolicy = QuietHoursNotificationPresentationPolicy.FromSettings(
+                NotificationPresentationPolicyStore.Load(profile.DataRoot));
             var attemptStore = new SqliteNotificationDeliveryAttemptStore(
                 store,
                 profile.UserSid,
@@ -110,6 +155,7 @@ internal static class AgentRuntime
                 profile.UserSid,
                 channelCatalog,
                 clock,
+                presentationPolicy: presentationPolicy,
                 configuredChannels: channelCatalog.ChannelIds,
                 agentInstanceId: agentInstanceId,
                 committedTriggerSource: committedTriggerSource,
@@ -212,12 +258,22 @@ internal static class AgentRuntime
         CancellationToken cancellationToken)
     {
         var recovery = true;
+        var previousTickUtc = SystemClock.Instance.GetCurrentInstant();
+        var recoveryGap = Duration.FromMinutes(2);
         while (!cancellationToken.IsCancellationRequested)
         {
-            var run = recovery
+            var now = SystemClock.Instance.GetCurrentInstant();
+            // The loop delay is capped at 30 seconds, so a materially larger
+            // wall-clock gap is a reliable sleep/resume or process pause
+            // signal even when Windows does not deliver a resume callback to
+            // the console Agent. A backwards clock jump is recovered too.
+            var clockGap = now - previousTickUtc;
+            var shouldRecover = recovery || clockGap < Duration.Zero || clockGap >= recoveryGap;
+            var run = shouldRecover
                 ? await runtime.RecoverAsync(cancellationToken).ConfigureAwait(false)
                 : await runtime.RunDueCycleAsync(cancellationToken).ConfigureAwait(false);
             recovery = false;
+            previousTickUtc = SystemClock.Instance.GetCurrentInstant();
             await Task.Delay(
                     GetReminderLoopDelay(run.SchedulerResult?.NextWakeupUtc),
                     cancellationToken)

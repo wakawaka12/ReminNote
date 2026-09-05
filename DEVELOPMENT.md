@@ -26,6 +26,22 @@ SDK 版本由 `global.json` 固定到 .NET 10.0.100，并允许同一 LTS 小版
 
 `verify-p0-07.ps1` 检查 `global.json`、解决方案 Widget 登记、所有项目 lock 文件、默认资源键/非空值、Shell/TODAY/ANIME/Widget 的基础 UI Automation 标记和开发数据清理边界。它不能替代真实 UI 操作测试。
 
+## P3 Alpha 当前运行边界
+
+开发 checkout 默认使用 `.devdata/`；Portable 包和用户显式选择的目录使用稳定的
+`UserData/`/`--data-root`。Agent、Main、Widget 必须收到同一 `data-root`，不能让一个
+宿主回退到另一个 profile。`--repo-root` 仅保留给开发/隔离 clone，并映射到该 clone
+自己的 `.devdata/`；不要把它用于 Portable 包的日常数据。
+
+P3 的提醒写入、Rule/Schedule rebuild、DONE 联动、通知宿主桥和恢复策略都经过 Agent
+事务/回执/Change Journal。Quiet Hours 只影响呈现和投递尝试，不改写核心 Schedule。
+结构化导出从只读 Active 连接生成 artifact；恢复先做 dry-run，再在显式确认后创建
+Candidate；`--user-data-verify` 只读校验 Candidate，`--user-data-promote --confirm`
+还必须取得迁移锁和 writer-quiescence lease，未经这些门禁不会写 Active。
+
+Alpha 修复候选的完整领域矩阵、自动化证据和仍需人工验证的项目见
+[`docs/P3-ALPHA-CURRENT-STATE.md`](docs/P3-ALPHA-CURRENT-STATE.md)。
+
 ## P2.75 当前开发边界
 
 P2.75-00 只冻结最低迁移与数据安全契约，不在本窗口接入生产 migration runner、backup

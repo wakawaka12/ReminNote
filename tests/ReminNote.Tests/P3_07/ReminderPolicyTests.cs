@@ -43,6 +43,29 @@ public sealed class ReminderPolicyTests
     }
 
     [Fact]
+    public void QuietHoursReportsTheActiveWindowEndForPresentationRetry()
+    {
+        var policy = new QuietHoursPolicy(
+            [new QuietHoursWindow(new LocalTime(22, 0), new LocalTime(7, 0))]);
+        var now = Instant.FromUtc(2026, 8, 28, 15, 30); // 23:30 in Shanghai
+
+        Assert.Equal(
+            Instant.FromUtc(2026, 8, 28, 23, 0),
+            policy.GetActiveQuietHoursEnd(now, Shanghai));
+        Assert.Null(policy.GetActiveQuietHoursEnd(
+            Instant.FromUtc(2026, 8, 28, 8, 0),
+            Shanghai));
+
+        var bypass = new QuietHoursPolicy(
+            [new QuietHoursWindow(new LocalTime(22, 0), new LocalTime(7, 0))],
+            [new QuietHoursOverride(
+                now.Minus(Duration.FromMinutes(1)),
+                now.Plus(Duration.FromMinutes(1)),
+                QuietHoursOverrideMode.BYPASS)]);
+        Assert.Null(bypass.GetActiveQuietHoursEnd(now, Shanghai));
+    }
+
+    [Fact]
     public void PresentationSeparatesCoreTriggerChannelStateAndQuietHours()
     {
         var policy = new QuietHoursPolicy([new QuietHoursWindow(new LocalTime(22, 0), new LocalTime(7, 0))]);

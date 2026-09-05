@@ -174,17 +174,18 @@ public static class ProtocolOperations
     public const string TaskReorder = "command.task.reorder";
     public const string TaskContinue = "command.task.continue";
     public const string TaskDelete = "command.task.delete";
+    public const string ReminderRuleUpsert = "command.reminder.rule.upsert";
     public const string ReminderMarkRead = "command.reminder.mark_read";
     public const string ReminderResolve = "command.reminder.resolve";
 
     public static bool IsKnown(string operation) =>
         operation is SessionHello or CommandStatus or RequestCancel or ChangesGetSince or
             TaskCreate or TaskRename or TaskRecordResult or TaskUpdatePlan or TaskReorder or
-            TaskContinue or TaskDelete or ReminderMarkRead or ReminderResolve;
+            TaskContinue or TaskDelete or ReminderRuleUpsert or ReminderMarkRead or ReminderResolve;
 
     public static bool IsMutation(string operation) =>
         operation is TaskCreate or TaskRename or TaskRecordResult or TaskUpdatePlan or
-            TaskReorder or TaskContinue or TaskDelete or ReminderMarkRead or ReminderResolve;
+            TaskReorder or TaskContinue or TaskDelete or ReminderRuleUpsert or ReminderMarkRead or ReminderResolve;
 }
 
 public static class ProtocolEventTypes

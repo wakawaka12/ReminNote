@@ -4,7 +4,24 @@
 
 ## 当前阶段
 
-P0/P1 已完成并通过用户确认；当前执行 P2 Real TODAY / Widget Task loop。P2 的持久化、Today、Parser、Main Today ViewModel、Widget 及 Widget lock 文件已合并到当前分支。P2 将真实 Task 接入 Main TODAY 和 Widget，但不实现 Reminder、Anime 网络、Agent IPC、WAL、Change Journal 或 P2.5 单写者迁移。当前 Widget 正式入口已接入本地工作区；Main 的正式 live 组合与真实 SQLite 全量查询已在总成接管期间接通并修复（含 TODAY 改期/排序入口补齐）；Main/Widget 双宿主真实进程人工验收仍未执行，不能把独立测试当作该步骤的验收证据。
+P0/P1/P2 与 P2.75 的历史规则继续保留；当前分支处于 P3 Alpha 修复候选阶段。P3 的
+ReminderRule/ReminderSchedule/ReminderInstance 已接入正式 Agent 写入事务，Main/Widget
+通过统一 data-root 与 Agent IPC 访问；本文件以下 P2 段落描述历史兼容边界，不应被理解
+为当前 Alpha 尚未接入 Agent。
+
+P3 Alpha 仍未完成正常桌面、Toast registration、睡眠/唤醒和用户 sign-off 验收；自动化
+测试通过只证明隔离契约和代码路径。当前实现和证据矩阵见
+[`docs/P3-ALPHA-CURRENT-STATE.md`](docs/P3-ALPHA-CURRENT-STATE.md)。
+
+## P3 Alpha 当前规则
+
+- TIME/RANGE Task 经 Agent 创建时，在同一写事务中物化默认或显式 ReminderRule 与首条 Schedule；ANYTIME 不生成无意义的时间 Schedule。
+- Task 改期或提醒设置变化会递增 Rule/Schedule revision，使旧 pending 进入 superseded/cancelled 终态；已发生 Instance 不被回写。
+- Reminder Center 的 DONE 在同一 Agent 事务中记录对应 Task 的 `COMPLETED` 与历史，并取消同 occurrence 的 pending 计划；其他 occurrence 不受影响。重复请求遵守 receipt/idempotency 语义，冲突不覆盖既有结果。
+- Agent 调度器在启动、时钟回拨或明显间隔（睡眠/暂停）后走 recovery；普通 tick 不重分类已经提交的核心事实。
+- Quiet Hours 使用 data-root 下的 `notification-policy.json`，以用户时区、多区间/跨午夜和临时 override 求值。普通提醒可抑制并保留投递事实，HIGH/PIN 例外按设置呈现；策略不修改核心 Schedule。
+- 生产导出从只读 Active 连接生成带 checksum 的版本化 artifact；恢复只允许 dry-run、Candidate 暂存、独立 verify 和明确确认后的受控 promotion，不直接覆盖 Active，也不自动激活旧 pending Schedule。
+- Portable 包使用 `UserData/`；从 alpha.1 升级时复制旧 `.devdata/` 全部内容到新目录并保留旧目录作为回退，不删除或提交个人数据。
 
 ## 已冻结的核心边界
 

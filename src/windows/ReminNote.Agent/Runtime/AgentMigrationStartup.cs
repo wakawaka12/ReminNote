@@ -12,21 +12,7 @@ namespace ReminNote.Agent.Runtime;
 /// </summary>
 internal sealed class AgentMigrationStartupComposition
 {
-    private static readonly P275MigrationPlan DefaultPlan = new(
-        [
-            "20260828025922_InitialTaskSchema",
-            "20260828120000_P2TaskLoop",
-            "20260828130000_P2ContinuationDeleteBoundary",
-            "20260831090000_P25StorageConsistency"
-        ],
-        [
-            "20260828025922_InitialTaskSchema",
-            "20260828120000_P2TaskLoop",
-            "20260828130000_P2ContinuationDeleteBoundary",
-            "20260831090000_P25StorageConsistency",
-            "20260902141656_P3ReminderPersistence",
-            "20260904090000_P304"
-        ]);
+    private static P275MigrationPlan DefaultPlan => P275MigrationPlanCatalog.Current;
 
     private readonly Func<ResolvedTransportProfile, IP275MigrationRunner> runnerFactory;
     private readonly P275MigrationPlan migrationPlan;

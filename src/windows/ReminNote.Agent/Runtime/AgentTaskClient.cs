@@ -60,7 +60,8 @@ public sealed class AgentTaskClient :
     public AgentTaskClient(
         string repositoryRoot,
         string clientKind = ProtocolClientKinds.Main,
-        string? profileName = null)
+        string? profileName = null,
+        string? dataRoot = null)
     {
         if (clientKind is not (ProtocolClientKinds.Main or ProtocolClientKinds.Widget))
         {
@@ -68,7 +69,8 @@ public sealed class AgentTaskClient :
         }
 
         var arguments = new TransportProfileArguments(
-            RepoRoot: repositoryRoot,
+            DataRoot: dataRoot,
+            RepoRoot: dataRoot is null ? repositoryRoot : null,
             Profile: profileName);
         profile = TransportProfileResolver.ResolveForCurrentUser(
             arguments,
@@ -92,7 +94,7 @@ public sealed class AgentTaskClient :
         ArgumentNullException.ThrowIfNull(command);
         var response = await ExecuteMutationAsync(
                 ProtocolOperations.TaskCreate,
-                ProtocolJson.CreateTaskCreatePayload(command.Title, command.TimeSpec),
+                ProtocolJson.CreateTaskCreatePayload(command.Title, command.TimeSpec, command.Reminder),
                 cancellationToken)
             .ConfigureAwait(false);
         return await ReadResponseTaskAsync(response, cancellationToken).ConfigureAwait(false)
@@ -108,7 +110,7 @@ public sealed class AgentTaskClient :
         {
             var response = await ExecuteMutationAsync(
                     ProtocolOperations.TaskUpdatePlan,
-                    ProtocolJson.CreateTaskUpdatePlanPayload(command.TaskId.ToString(), command.Title, command.TimeSpec),
+                    ProtocolJson.CreateTaskUpdatePlanPayload(command.TaskId.ToString(), command.Title, command.TimeSpec, command.Reminder),
                     cancellationToken)
                 .ConfigureAwait(false);
             return await ReadResponseTaskAsync(response, cancellationToken).ConfigureAwait(false);
@@ -189,7 +191,11 @@ public sealed class AgentTaskClient :
         {
             var response = await ExecuteMutationAsync(
                     ProtocolOperations.TaskContinue,
-                    ProtocolJson.CreateTaskContinuePayload(command.SourceTaskId.ToString(), command.Title, command.TimeSpec),
+                    ProtocolJson.CreateTaskContinuePayload(
+                        command.SourceTaskId.ToString(),
+                        command.Title,
+                        command.TimeSpec,
+                        command.Reminder),
                     cancellationToken)
                 .ConfigureAwait(false);
             return await ReadResponseTaskAsync(response, cancellationToken).ConfigureAwait(false);
@@ -227,10 +233,50 @@ public sealed class AgentTaskClient :
         reminderReadOnly.GetAsync(query, cancellationToken);
 
     /// <summary>
-    /// Sends a Task reminder action through the business pipe. The current
-    /// Agent integration has not yet installed the P3 reminder domain handler;
-    /// its explicit rejection is surfaced to the UI as unavailable. There is
-    /// deliberately no call to the legacy Task writer here.
+    /// Creates or updates the reminder rule selected by a task-level command.
+    /// The operation is still committed by the Agent writer; this method only
+    /// exposes the public IPC client seam to callers that need more than the
+    /// default task-start rule materialized by TaskCreate.
+    /// </summary>
+    public async ValueTask<ReminderCommandResult> UpsertReminderRuleAsync(
+        TaskId taskId,
+        ReminderRuleOptions options,
+        ReminderRuleId? ruleId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        try
+        {
+            var response = await ExecuteMutationAsync(
+                    ProtocolOperations.ReminderRuleUpsert,
+                    ProtocolJson.CreateReminderRuleUpsertPayload(
+                        taskId.ToString(),
+                        options,
+                        ruleId?.ToString()),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return MapReminderCommandResponse(response);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (AgentCommandException exception) when (!IsFatal(exception))
+        {
+            return MapReminderCommandFailure(exception);
+        }
+        catch (Exception exception) when (!IsFatal(exception))
+        {
+            return new ReminderCommandResult(
+                ReminderCommandOutcome.Unavailable,
+                ErrorCode: ProtocolErrorCodes.AgentUnavailable);
+        }
+    }
+
+    /// <summary>
+    /// Sends a Task reminder action through the business pipe. The Agent owns
+    /// the ReminderInstance transition and any cross-aggregate DONE/SNOOZE
+    /// effects; there is deliberately no call to the legacy Task writer here.
     /// </summary>
     public async ValueTask<ReminderCommandResult> ExecuteAsync(
         ReminderActionCommand command,

@@ -92,6 +92,33 @@ public sealed class SafetyBackupTests
     }
 
     [Fact]
+    public async Task LongMigrationHeadsUseBoundedFilenameTokensAndKeepFullManifestHistory()
+    {
+        await using var fixture = await BackupFixture.CreateAsync();
+        var longTarget = new[]
+        {
+            "20260901000000_" + new string('L', 112)
+        };
+        var request = fixture.CreateRequest(Guid.CreateVersion7()) with
+        {
+            TargetSchema = longTarget
+        };
+
+        var result = await new SafetyBackupService().CreateAsync(
+            request,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsVerified, result.FailureCode);
+        Assert.NotNull(result.Artifact);
+        Assert.NotNull(result.Manifest);
+        Assert.Equal(longTarget, result.Manifest!.TargetSchema);
+        Assert.DoesNotContain(new string('L', 32), result.Artifact, StringComparison.Ordinal);
+        var artifactPath = Path.Combine(fixture.BackupDirectory, result.Artifact!);
+        Assert.True(artifactPath.Length <= SafetyBackupContract.MaxSafeArtifactPathChars);
+        Assert.True(File.Exists(artifactPath));
+    }
+
+    [Fact]
     public async Task SameRunIdCollisionDoesNotOverwriteExistingVerifiedBackup()
     {
         await using var fixture = await BackupFixture.CreateAsync();

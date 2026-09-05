@@ -11,6 +11,11 @@ namespace ReminNote.Widget.Startup;
 /// </summary>
 public static class WidgetStartupOptions
 {
+    public static AgentStartupPathSelection ResolveDataRoot(
+        IReadOnlyList<string> args,
+        string? currentDirectory = null) =>
+        AgentStartupPaths.ResolveDataRoot(args, currentDirectory);
+
     public static string ResolveRepositoryRoot(
         IReadOnlyList<string> args,
         string? currentDirectory = null)

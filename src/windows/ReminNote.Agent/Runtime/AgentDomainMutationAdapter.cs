@@ -4,7 +4,9 @@ using System.Text.Json;
 using ReminNote.Core;
 using ReminNote.Core.Application;
 using ReminNote.Core.Protocol;
+using Calculation = ReminNote.Core.Reminders.Calculation;
 using ReminNote.Core.Reminders.Domain;
+using ReminNote.Core.Time;
 using ReminNote.Core.Tasks;
 using ReminNote.Infrastructure.Application;
 using ReminNote.Infrastructure.Persistence;
@@ -42,13 +44,14 @@ internal static class AgentDomainMutationAdapter
         {
             return request.Operation switch
             {
-                ProtocolOperations.TaskCreate => await CreateAsync(application, request, metadata, cancellationToken).ConfigureAwait(false),
+                ProtocolOperations.TaskCreate => await CreateAsync(context, application, request, metadata, cancellationToken).ConfigureAwait(false),
                 ProtocolOperations.TaskRename => await RenameAsync(application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
                 ProtocolOperations.TaskRecordResult => await RecordResultAsync(context, application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
-                ProtocolOperations.TaskUpdatePlan => await UpdatePlanAsync(application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
+                ProtocolOperations.TaskUpdatePlan => await UpdatePlanAsync(context, application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
                 ProtocolOperations.TaskReorder => await ReorderAsync(application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
-                ProtocolOperations.TaskContinue => await ContinueAsync(application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
-                ProtocolOperations.TaskDelete => await DeleteAsync(application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
+                ProtocolOperations.TaskContinue => await ContinueAsync(context, application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
+                ProtocolOperations.TaskDelete => await DeleteAsync(context, application, repository, request, metadata, cancellationToken).ConfigureAwait(false),
+                ProtocolOperations.ReminderRuleUpsert => await UpsertReminderRuleAsync(context, repository, request, metadata, cancellationToken).ConfigureAwait(false),
                 ProtocolOperations.ReminderMarkRead => await MarkReadAsync(context, request, cancellationToken).ConfigureAwait(false),
                 ProtocolOperations.ReminderResolve => await ResolveAsync(context, request, cancellationToken).ConfigureAwait(false),
                 _ => P25MutationDecision.Rejected(ProtocolErrorCodes.InvalidRequest)
@@ -67,21 +70,42 @@ internal static class AgentDomainMutationAdapter
     }
 
     private static async ValueTask<P25MutationDecision> CreateAsync(
+        ReminNoteDbContext context,
         TaskApplicationService application,
         ProtocolRequest request,
         AgentMutationMetadata metadata,
         CancellationToken cancellationToken)
     {
         var payload = request.Payload;
+        var timeSpec = ParseTimeSpec(payload);
         var snapshot = await application.CreateAsync(
                 new CreateTaskCommand(
                     RequireString(payload, "title"),
-                    ParseTimeSpec(payload)),
+                    timeSpec),
                 cancellationToken)
             .ConfigureAwait(false);
         metadata.TaskId = snapshot.Id.ToString();
-        return P25MutationDecision.Changed(
-            [new P25JournalChange("task", metadata.TaskId, "created")]);
+
+        var changes = new List<P25JournalChange>
+        {
+            new("task", metadata.TaskId, "created")
+        };
+        var reminder = ReadReminderOptions(payload) ?? DefaultReminderFor(timeSpec);
+        if (reminder is not null)
+        {
+            var reminderChanges = await CreateReminderRuleAsync(
+                    context,
+                    snapshot.Id.Value,
+                    timeSpec,
+                    reminder,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            changes.AddRange(reminderChanges);
+        }
+
+        return changes.Count == 0
+            ? P25MutationDecision.NoOp()
+            : P25MutationDecision.Changed(changes);
     }
 
     private static async ValueTask<P25MutationDecision> RenameAsync(
@@ -228,16 +252,84 @@ internal static class AgentDomainMutationAdapter
         var instance = entity.ToDomain();
         var resolvedAtUtc = SystemClock.Instance.GetCurrentInstant();
         var action = payload.ToDomainAction();
-        if (!instance.Resolve(action, resolvedAtUtc))
+        var resolvedChanged = instance.Resolve(action, resolvedAtUtc);
+        var changes = new List<P25JournalChange>();
+        if (resolvedChanged)
+        {
+            entity.Apply(instance);
+            changes.Add(new P25JournalChange(
+                "reminder_instance",
+                instance.Id.ToString(),
+                "resolved"));
+        }
+
+        if (!resolvedChanged && action != ResolutionAction.DONE)
         {
             return P25MutationDecision.NoOp();
         }
 
-        entity.Apply(instance);
-        var changes = new List<P25JournalChange>
+        // DONE is a cross-aggregate action, not merely a visual dismissal. It
+        // records COMPLETED and cancels every future schedule in this
+        // occurrence in the same Agent writer transaction. Other occurrences
+        // are not selected by the occurrence predicate.
+        if (action == ResolutionAction.DONE)
         {
-            new("reminder_instance", instance.Id.ToString(), "resolved")
-        };
+            var schedule = await context.ReminderSchedules
+                .AsNoTracking()
+                .SingleOrDefaultAsync(
+                    candidate => candidate.Id == instance.ScheduleId.Value,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (schedule is null)
+            {
+                return P25MutationDecision.Rejected(ProtocolErrorCodes.NotFound);
+            }
+
+            var repository = new TransactionBoundTaskRepository(context);
+            var taskId = TaskId.From(schedule.OccurrenceId);
+            var task = await repository.FindAsync(taskId, cancellationToken).ConfigureAwait(false);
+            if (task is null)
+            {
+                return P25MutationDecision.Rejected(ProtocolErrorCodes.NotFound);
+            }
+
+            if (task.Result is not null && task.Result != TaskResult.COMPLETED)
+            {
+                throw new DomainValidationException(new DomainValidationError(
+                    "task.result.conflict",
+                    "DONE cannot replace an existing non-COMPLETED task result.",
+                    "action"));
+            }
+
+            if (task.Result is null)
+            {
+                var application = new TaskApplicationService(repository, SystemClock.Instance);
+                var completed = await application.RecordResultAsync(
+                        new RecordTaskResultCommand(taskId, TaskResult.COMPLETED),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (completed is null)
+                {
+                    return P25MutationDecision.Rejected(ProtocolErrorCodes.NotFound);
+                }
+
+                changes.Add(new P25JournalChange("task", taskId.ToString(), "result_recorded"));
+                changes.Add(new P25JournalChange("task_history", taskId.ToString(), "result_recorded"));
+            }
+
+            var cancelled = await ReminderPersistenceCommands.CancelPendingForOccurrenceAsync(
+                    context,
+                    schedule.OccurrenceId,
+                    resolvedAtUtc,
+                    ScheduleStateReason.TASK_RESULT_RECORDED,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            changes.AddRange(cancelled.Select(scheduleId => new P25JournalChange(
+                "reminder_schedule",
+                scheduleId.ToString("D"),
+                "cancelled")));
+        }
+
         if (action == ResolutionAction.SNOOZE)
         {
             var originEntity = await context.ReminderSchedules
@@ -276,11 +368,17 @@ internal static class AgentDomainMutationAdapter
                 "snoozed"));
         }
 
+        if (changes.Count == 0)
+        {
+            return P25MutationDecision.NoOp();
+        }
+
         await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         return P25MutationDecision.Changed(changes);
     }
 
     private static async ValueTask<P25MutationDecision> UpdatePlanAsync(
+        ReminNoteDbContext context,
         TaskApplicationService application,
         TransactionBoundTaskRepository repository,
         ProtocolRequest request,
@@ -296,18 +394,79 @@ internal static class AgentDomainMutationAdapter
 
         var title = ReadNullableString(request.Payload, "title") ?? before.Title;
         var timeSpec = ParseTimeSpec(request.Payload);
+        var reminder = ReadReminderOptions(request.Payload);
         metadata.TaskId = taskId.ToString();
-        if (string.Equals(before.Title, title.Trim(), StringComparison.Ordinal) && before.TimeSpec == timeSpec)
+        var taskChanged = !string.Equals(before.Title, title.Trim(), StringComparison.Ordinal) ||
+            before.TimeSpec != timeSpec;
+        if (!taskChanged && reminder is null)
         {
             return P25MutationDecision.NoOp();
         }
 
-        _ = await application.UpdateAsync(
-                new UpdateTaskCommand(taskId, title, timeSpec),
-                cancellationToken)
+        var changes = new List<P25JournalChange>();
+        if (taskChanged)
+        {
+            _ = await application.UpdateAsync(
+                    new UpdateTaskCommand(taskId, title, timeSpec),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            changes.Add(new P25JournalChange("task", metadata.TaskId, "plan_updated"));
+        }
+        var ruleEntities = await context.ReminderRules
+            .Where(rule => rule.TargetId == taskId.Value)
+            .OrderBy(rule => rule.Id)
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        return P25MutationDecision.Changed(
-            [new P25JournalChange("task", metadata.TaskId, "plan_updated")]);
+        if (reminder is not null)
+        {
+            if (ruleEntities.Count > 1)
+            {
+                throw new DomainValidationException(new DomainValidationError(
+                    "reminder.rule.selection_required",
+                    "Updating a task with multiple reminder rules requires command.reminder.rule.upsert.",
+                    "reminder"));
+            }
+
+            if (ruleEntities.Count == 0)
+            {
+                changes.AddRange(await CreateReminderRuleAsync(
+                        context,
+                        taskId.Value,
+                        timeSpec,
+                        reminder,
+                        cancellationToken)
+                    .ConfigureAwait(false));
+            }
+            else
+            {
+                changes.AddRange(await RebuildReminderRuleAsync(
+                        context,
+                        ruleEntities[0],
+                        before.TimeSpec,
+                        timeSpec,
+                        reminder,
+                        cancellationToken)
+                    .ConfigureAwait(false));
+            }
+        }
+        else if (before.TimeSpec != timeSpec)
+        {
+            foreach (var ruleEntity in ruleEntities)
+            {
+                changes.AddRange(await RebuildReminderRuleAsync(
+                        context,
+                        ruleEntity,
+                        before.TimeSpec,
+                        timeSpec,
+                        options: null,
+                        cancellationToken)
+                    .ConfigureAwait(false));
+            }
+        }
+
+        return changes.Count == 0
+            ? P25MutationDecision.NoOp()
+            : P25MutationDecision.Changed(changes);
     }
 
     private static async ValueTask<P25MutationDecision> ReorderAsync(
@@ -340,6 +499,7 @@ internal static class AgentDomainMutationAdapter
     }
 
     private static async ValueTask<P25MutationDecision> ContinueAsync(
+        ReminNoteDbContext context,
         TaskApplicationService application,
         TransactionBoundTaskRepository repository,
         ProtocolRequest request,
@@ -352,11 +512,14 @@ internal static class AgentDomainMutationAdapter
             return P25MutationDecision.Rejected(ProtocolErrorCodes.NotFound);
         }
 
+        var timeSpec = ParseTimeSpec(request.Payload);
+        var reminder = ReadReminderOptions(request.Payload);
         var snapshot = await application.ContinueAsync(
                 new ContinueTaskCommand(
                     sourceTaskId,
                     RequireString(request.Payload, "title"),
-                    ParseTimeSpec(request.Payload)),
+                    timeSpec,
+                    reminder),
                 cancellationToken)
             .ConfigureAwait(false);
         if (snapshot is null)
@@ -365,14 +528,28 @@ internal static class AgentDomainMutationAdapter
         }
 
         metadata.TaskId = snapshot.Id.ToString();
-        return P25MutationDecision.Changed(
-            [
-                new P25JournalChange("task", metadata.TaskId, "continued"),
-                new P25JournalChange("task_history", metadata.TaskId, "continued")
-            ]);
+        var changes = new List<P25JournalChange>
+        {
+            new("task", metadata.TaskId, "continued"),
+            new("task_history", metadata.TaskId, "continued")
+        };
+        var reminderOptions = reminder ?? DefaultReminderFor(timeSpec);
+        if (reminderOptions is not null)
+        {
+            changes.AddRange(await CreateReminderRuleAsync(
+                    context,
+                    snapshot.Id.Value,
+                    timeSpec,
+                    reminderOptions,
+                    cancellationToken)
+                .ConfigureAwait(false));
+        }
+
+        return P25MutationDecision.Changed(changes);
     }
 
     private static async ValueTask<P25MutationDecision> DeleteAsync(
+        ReminNoteDbContext context,
         TaskApplicationService application,
         TransactionBoundTaskRepository repository,
         ProtocolRequest request,
@@ -385,6 +562,40 @@ internal static class AgentDomainMutationAdapter
             return P25MutationDecision.Rejected(ProtocolErrorCodes.NotFound);
         }
 
+        var changes = new List<P25JournalChange>();
+        var now = SystemClock.Instance.GetCurrentInstant();
+        var cancelled = await ReminderPersistenceCommands.CancelPendingForOccurrenceAsync(
+                context,
+                taskId.Value,
+                now,
+                ScheduleStateReason.TASK_DELETED,
+                cancellationToken)
+            .ConfigureAwait(false);
+        changes.AddRange(cancelled.Select(scheduleId => new P25JournalChange(
+            "reminder_schedule",
+            scheduleId.ToString("D"),
+            "cancelled")));
+
+        var rules = await context.ReminderRules
+            .Where(rule => rule.TargetId == taskId.Value && rule.Enabled)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var ruleEntity in rules)
+        {
+            var rule = ruleEntity.ToDomain();
+            _ = rule.Update(
+                rule.Purpose,
+                rule.Timing,
+                rule.Priority,
+                rule.Pinned,
+                rule.RepeatPolicy,
+                rule.WakePolicy,
+                enabled: false,
+                now);
+            ruleEntity.Apply(rule);
+            changes.Add(new P25JournalChange("reminder_rule", rule.Id.ToString(), "disabled"));
+        }
+
         if (!await application.DeleteAsync(taskId, cancellationToken).ConfigureAwait(false))
         {
             return P25MutationDecision.Rejected(ProtocolErrorCodes.NotFound);
@@ -392,8 +603,403 @@ internal static class AgentDomainMutationAdapter
 
         metadata.TaskId = taskId.ToString();
         metadata.Deleted = true;
-        return P25MutationDecision.Changed(
-            [new P25JournalChange("task", metadata.TaskId, "deleted")]);
+        changes.Insert(0, new P25JournalChange("task", metadata.TaskId, "deleted"));
+        return P25MutationDecision.Changed(changes);
+    }
+
+    private static async ValueTask<IReadOnlyList<P25JournalChange>> CreateReminderRuleAsync(
+        ReminNoteDbContext context,
+        Guid taskId,
+        TimeSpec timeSpec,
+        ReminderRuleOptions options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var now = SystemClock.Instance.GetCurrentInstant();
+        var rule = ReminderRule.CreateForTask(
+            taskId,
+            options.Purpose,
+            options.Timing,
+            options.Priority,
+            options.Pinned,
+            options.EffectiveRepeatPolicy,
+            options.WakePolicy,
+            options.Enabled,
+            now);
+        var logicalReminderId = LogicalReminderId.New();
+        var calculation = ToCalculationInput(rule, timeSpec, logicalReminderId);
+        var derivation = Calculation.ReminderSchedulePlanner.DeriveInitialSchedule(
+            calculation,
+            new Calculation.ReminderScheduleRequest(
+                ReminderScheduleId.New().Value,
+                1),
+            UserTimeZone(),
+            ReminderCalculationLimits());
+
+        context.ReminderRules.Add(ReminderRuleEntity.FromDomain(rule));
+        var changes = new List<P25JournalChange>
+        {
+            new("reminder_rule", rule.Id.Value.ToString("D"), "created")
+        };
+        if (derivation.IsScheduled && derivation.Schedule is { } plan)
+        {
+            var schedule = ReminderSchedule.CreateFromRule(
+                rule,
+                LogicalReminderId.From(plan.LogicalReminderId),
+                plan.ScheduleRevision,
+                plan.TriggerAtUtc,
+                now,
+                plan.TimeZoneId,
+                ReminderScheduleId.From(plan.ScheduleId));
+            context.ReminderSchedules.Add(ReminderScheduleEntity.FromDomain(schedule));
+            changes.Add(new P25JournalChange(
+                "reminder_schedule",
+                schedule.Id.Value.ToString("D"),
+                "created"));
+        }
+
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return changes;
+    }
+
+    private static async ValueTask<IReadOnlyList<P25JournalChange>> RebuildReminderRuleAsync(
+        ReminNoteDbContext context,
+        ReminderRuleEntity ruleEntity,
+        TimeSpec previousTimeSpec,
+        TimeSpec nextTimeSpec,
+        ReminderRuleOptions? options,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(ruleEntity);
+        var previousRule = ruleEntity.ToDomain();
+        var nextOptions = options ?? ToOptions(previousRule);
+        if (previousTimeSpec == nextTimeSpec && OptionsEqual(previousRule, nextOptions))
+        {
+            return Array.Empty<P25JournalChange>();
+        }
+
+        var pendingEntities = await context.ReminderSchedules
+            .Where(schedule =>
+                schedule.RuleId == previousRule.Id.Value &&
+                schedule.OccurrenceId == previousRule.OccurrenceId.Value &&
+                schedule.State == ScheduleState.PENDING)
+            .OrderBy(schedule => schedule.ScheduleRevision)
+            .ThenBy(schedule => schedule.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var allRevisions = await context.ReminderSchedules
+            .Where(schedule =>
+                schedule.RuleId == previousRule.Id.Value &&
+                schedule.OccurrenceId == previousRule.OccurrenceId.Value)
+            .Select(schedule => schedule.ScheduleRevision)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var nextScheduleRevision = allRevisions.Count == 0
+            ? 1L
+            : checked(allRevisions.Max() + 1);
+        var previousLogicalReminderId = pendingEntities.Count > 0
+            ? pendingEntities[0].LogicalReminderId
+            : await context.ReminderSchedules
+                .Where(schedule =>
+                    schedule.RuleId == previousRule.Id.Value &&
+                    schedule.OccurrenceId == previousRule.OccurrenceId.Value)
+                .OrderByDescending(schedule => schedule.ScheduleRevision)
+                .Select(schedule => (Guid?)schedule.LogicalReminderId)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false) ?? LogicalReminderId.New().Value;
+
+        var nextLogicalReminderId = LogicalReminderId.New();
+        var previousCalculation = ToCalculationInput(
+            previousRule,
+            previousTimeSpec,
+            LogicalReminderId.From(previousLogicalReminderId));
+        var updatedAt = SystemClock.Instance.GetCurrentInstant();
+        _ = previousRule.Update(
+            nextOptions.Purpose,
+            nextOptions.Timing,
+            nextOptions.Priority,
+            nextOptions.Pinned,
+            nextOptions.EffectiveRepeatPolicy,
+            nextOptions.WakePolicy,
+            nextOptions.Enabled,
+            updatedAt);
+        var nextCalculation = ToCalculationInput(
+            previousRule,
+            nextTimeSpec,
+            nextLogicalReminderId);
+        var pendingSnapshots = pendingEntities
+            .Select(entity => ToPendingScheduleSnapshot(entity, previousRule.TargetId))
+            .ToArray();
+        var planner = Calculation.ReminderSchedulePlanner.Rebuild(
+            previousCalculation,
+            nextCalculation,
+            pendingSnapshots,
+            new Calculation.ReminderScheduleRequest(
+                ReminderScheduleId.New().Value,
+                nextScheduleRevision),
+            UserTimeZone(),
+            ReminderCalculationLimits());
+
+        ruleEntity.Apply(previousRule);
+        var changes = new List<P25JournalChange>
+        {
+            new("reminder_rule", previousRule.Id.Value.ToString("D"), "updated")
+        };
+        foreach (var transition in planner.InvalidatedSchedules)
+        {
+            var entity = pendingEntities.Single(schedule => schedule.Id == transition.ScheduleId);
+            var domain = entity.ToDomain();
+            if (transition.State == Calculation.ReminderScheduleState.SUPERSEDED)
+            {
+                domain.Supersede(
+                    ReminderScheduleId.From(transition.ReplacementScheduleId!.Value),
+                    ToDomainReason(transition.Reason),
+                    updatedAt);
+            }
+            else
+            {
+                domain.Cancel(ToDomainReason(transition.Reason), updatedAt);
+            }
+
+            entity.Apply(domain);
+            changes.Add(new P25JournalChange(
+                "reminder_schedule",
+                entity.Id.ToString("D"),
+                transition.State == Calculation.ReminderScheduleState.SUPERSEDED
+                    ? "superseded"
+                    : "cancelled"));
+        }
+
+        if (planner.ReplacementSchedule is { } replacement)
+        {
+            var schedule = ReminderSchedule.CreateFromRule(
+                previousRule,
+                LogicalReminderId.From(replacement.LogicalReminderId),
+                replacement.ScheduleRevision,
+                replacement.TriggerAtUtc,
+                updatedAt,
+                replacement.TimeZoneId,
+                ReminderScheduleId.From(replacement.ScheduleId));
+            context.ReminderSchedules.Add(ReminderScheduleEntity.FromDomain(schedule));
+            changes.Add(new P25JournalChange(
+                "reminder_schedule",
+                schedule.Id.Value.ToString("D"),
+                "created"));
+        }
+
+        await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return changes;
+    }
+
+    private static async ValueTask<P25MutationDecision> UpsertReminderRuleAsync(
+        ReminNoteDbContext context,
+        TransactionBoundTaskRepository repository,
+        ProtocolRequest request,
+        AgentMutationMetadata metadata,
+        CancellationToken cancellationToken)
+    {
+        var taskId = ParseTaskId(request.Payload, "taskId");
+        var task = await repository.FindAsync(taskId, cancellationToken).ConfigureAwait(false);
+        if (task is null)
+        {
+            return P25MutationDecision.Rejected(ProtocolErrorCodes.NotFound);
+        }
+
+        var options = ReadReminderOptions(request.Payload)
+            ?? throw new DomainValidationException(new DomainValidationError(
+                "reminder.options.required",
+                "A reminder rule intent is required.",
+                "reminder"));
+        ReminderRuleEntity? ruleEntity = null;
+        if (request.Payload.TryGetProperty("ruleId", out var ruleIdValue))
+        {
+            var ruleId = ReminderRuleId.Parse(RequireStringValue(ruleIdValue, "ruleId"));
+            ruleEntity = await context.ReminderRules
+                .SingleOrDefaultAsync(rule => rule.Id == ruleId.Value, cancellationToken)
+                .ConfigureAwait(false);
+            if (ruleEntity is null || ruleEntity.TargetId != taskId.Value)
+            {
+                return P25MutationDecision.Rejected(ProtocolErrorCodes.NotFound);
+            }
+        }
+        else
+        {
+            var candidates = await context.ReminderRules
+                .Where(rule => rule.TargetId == taskId.Value)
+                .OrderBy(rule => rule.Id)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (candidates.Count > 1)
+            {
+                throw new DomainValidationException(new DomainValidationError(
+                    "reminder.rule.selection_required",
+                    "A task with multiple reminder rules requires ruleId.",
+                    "ruleId"));
+            }
+
+            ruleEntity = candidates.SingleOrDefault();
+        }
+
+        metadata.TaskId = taskId.ToString();
+        var changes = ruleEntity is null
+            ? await CreateReminderRuleAsync(context, taskId.Value, task.TimeSpec, options, cancellationToken).ConfigureAwait(false)
+            : await RebuildReminderRuleAsync(context, ruleEntity, task.TimeSpec, task.TimeSpec, options, cancellationToken).ConfigureAwait(false);
+        return changes.Count == 0
+            ? P25MutationDecision.NoOp()
+            : P25MutationDecision.Changed(changes);
+    }
+
+    private static ReminderRuleOptions? ReadReminderOptions(JsonElement payload)
+    {
+        if (!payload.TryGetProperty("reminder", out var reminder))
+        {
+            return null;
+        }
+
+        return ProtocolReminderRulePayloadParser.Parse(reminder).ToOptions();
+    }
+
+    private static ReminderRuleOptions? DefaultReminderFor(TimeSpec timeSpec) =>
+        timeSpec switch
+        {
+            TimePointSpec => new ReminderRuleOptions(
+                ReminderPurpose.TASK_START,
+                ReminderTiming.Relative(ReminderAnchor.TASK_TIME, 0)),
+            TimeRangeSpec => new ReminderRuleOptions(
+                ReminderPurpose.TASK_START,
+                ReminderTiming.Relative(ReminderAnchor.RANGE_START, 0)),
+            _ => null
+        };
+
+    private static ReminderRuleOptions ToOptions(ReminderRule rule) => new(
+        rule.Purpose,
+        rule.Timing,
+        rule.Priority,
+        rule.Pinned,
+        rule.RepeatPolicy,
+        rule.WakePolicy,
+        rule.Enabled);
+
+    private static bool OptionsEqual(ReminderRule rule, ReminderRuleOptions options) =>
+        rule.Purpose == options.Purpose &&
+        Equals(rule.Timing, options.Timing) &&
+        rule.Priority == options.Priority &&
+        rule.Pinned == options.Pinned &&
+        Equals(rule.RepeatPolicy, options.EffectiveRepeatPolicy) &&
+        rule.WakePolicy == options.WakePolicy &&
+        rule.Enabled == options.Enabled;
+
+    private static Calculation.ReminderRuleCalculationInput ToCalculationInput(
+        ReminderRule rule,
+        TimeSpec timeSpec,
+        LogicalReminderId logicalReminderId) =>
+        new(
+            rule.Id.Value,
+            Calculation.ReminderTargetKind.TASK_INSTANCE,
+            rule.TargetId,
+            rule.OccurrenceId.Value,
+            logicalReminderId.Value,
+            ToCalculationPurpose(rule.Purpose),
+            ToCalculationTiming(rule.Timing),
+            ToCalculationPriority(rule.Priority),
+            rule.Pinned,
+            rule.Enabled,
+            rule.RuleRevision,
+            timeSpec);
+
+    private static Calculation.PendingScheduleSnapshot ToPendingScheduleSnapshot(
+        ReminderScheduleEntity entity,
+        Guid targetId) =>
+        new(
+            entity.Id,
+            entity.RuleId,
+            targetId,
+            entity.OccurrenceId,
+            entity.LogicalReminderId,
+            ToCalculationPurpose(entity.PurposeSnapshot),
+            ToCalculationPriority(entity.PrioritySnapshot),
+            entity.PinnedSnapshot,
+            entity.RuleRevision,
+            entity.ScheduleRevision,
+            entity.TriggerAtUtc,
+            entity.TimeZoneId)
+        {
+            Cause = entity.Cause switch
+            {
+                ScheduleCause.RULE => Calculation.ReminderScheduleCause.RULE,
+                ScheduleCause.SNOOZE => Calculation.ReminderScheduleCause.SNOOZE,
+                ScheduleCause.REPEAT => Calculation.ReminderScheduleCause.REPEAT,
+                _ => throw new ArgumentOutOfRangeException(nameof(entity))
+            },
+            OriginScheduleId = entity.OriginScheduleId
+        };
+
+    private static Calculation.ReminderPurpose ToCalculationPurpose(ReminderPurpose purpose) =>
+        purpose switch
+        {
+            ReminderPurpose.TASK_PRE_START => Calculation.ReminderPurpose.TASK_PRE_START,
+            ReminderPurpose.TASK_START => Calculation.ReminderPurpose.TASK_START,
+            ReminderPurpose.TASK_RANGE_END => Calculation.ReminderPurpose.TASK_RANGE_END,
+            ReminderPurpose.TASK_CUSTOM => Calculation.ReminderPurpose.TASK_CUSTOM,
+            _ => throw new ArgumentOutOfRangeException(nameof(purpose))
+        };
+
+    private static Calculation.ReminderPriority ToCalculationPriority(ReminderPriority priority) =>
+        priority switch
+        {
+            ReminderPriority.LOW => Calculation.ReminderPriority.LOW,
+            ReminderPriority.NORMAL => Calculation.ReminderPriority.NORMAL,
+            ReminderPriority.HIGH => Calculation.ReminderPriority.HIGH,
+            _ => throw new ArgumentOutOfRangeException(nameof(priority))
+        };
+
+    private static Calculation.ReminderTiming ToCalculationTiming(ReminderTiming timing) =>
+        timing switch
+        {
+            RelativeReminderTiming relative => new Calculation.ReminderTiming.Relative(
+                relative.Anchor switch
+                {
+                    ReminderAnchor.TASK_TIME => Calculation.ReminderAnchor.TASK_TIME,
+                    ReminderAnchor.RANGE_START => Calculation.ReminderAnchor.RANGE_START,
+                    ReminderAnchor.RANGE_END => Calculation.ReminderAnchor.RANGE_END,
+                    _ => throw new ArgumentOutOfRangeException(nameof(timing))
+                },
+                relative.OffsetSeconds),
+            AbsoluteReminderTiming absolute => new Calculation.ReminderTiming.AbsoluteUtc(absolute.AtUtc),
+            _ => throw new ArgumentOutOfRangeException(nameof(timing))
+        };
+
+    private static Calculation.ReminderCalculationLimits ReminderCalculationLimits() =>
+        Calculation.ReminderCalculationLimits.Default;
+
+    private static DateTimeZone UserTimeZone() =>
+        new SystemUserTimeZoneProvider().TimeZone;
+
+    private static ScheduleStateReason ToDomainReason(
+        Calculation.ReminderScheduleTerminalReason reason) =>
+        reason switch
+        {
+            Calculation.ReminderScheduleTerminalReason.RULE_REVISED => ScheduleStateReason.RULE_REBUILT,
+            Calculation.ReminderScheduleTerminalReason.TASK_TIME_CHANGED => ScheduleStateReason.TASK_PLAN_CHANGED,
+            Calculation.ReminderScheduleTerminalReason.TIME_ZONE_CHANGED => ScheduleStateReason.TIME_ZONE_CHANGED,
+            Calculation.ReminderScheduleTerminalReason.RULE_DISABLED => ScheduleStateReason.RULE_DISABLED,
+            Calculation.ReminderScheduleTerminalReason.TASK_RESULT_RECORDED => ScheduleStateReason.TASK_RESULT_RECORDED,
+            Calculation.ReminderScheduleTerminalReason.TASK_DELETED => ScheduleStateReason.TASK_DELETED,
+            Calculation.ReminderScheduleTerminalReason.RECOVERY_OBSOLETE => ScheduleStateReason.RECOVERY_OBSOLETE,
+            _ => throw new ArgumentOutOfRangeException(nameof(reason))
+        };
+
+    private static string RequireStringValue(JsonElement value, string name)
+    {
+        if (value.ValueKind != JsonValueKind.String || value.GetString() is not { } text)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "ipc.request.invalid",
+                $"Payload field '{name}' must be a string.",
+                name));
+        }
+
+        return text;
     }
 
     private static TimeSpec ParseTimeSpec(JsonElement payload) =>

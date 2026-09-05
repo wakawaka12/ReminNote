@@ -150,6 +150,49 @@ public sealed class QuietHoursPolicy
         return windows.Any(window => window.Contains(localTime));
     }
 
+    /// <summary>
+    /// Returns the first instant after <paramref name="instant"/> at which
+    /// the currently active quiet window ends. This is a presentation-layer
+    /// scheduling hint only; it never moves a core ReminderSchedule. A
+    /// bypass override or a non-quiet instant returns <c>null</c>.
+    /// </summary>
+    public Instant? GetActiveQuietHoursEnd(Instant instant, DateTimeZone timeZone)
+    {
+        ArgumentNullException.ThrowIfNull(timeZone);
+
+        var activeOverride = overrides
+            .Where(item => item.Contains(instant))
+            .LastOrDefault();
+        if (activeOverride is not null)
+        {
+            return activeOverride.Mode == QuietHoursOverrideMode.FORCE_QUIET
+                ? activeOverride.EndsAtUtc
+                : null;
+        }
+
+        var zoned = instant.InZone(timeZone);
+        var endCandidates = new List<Instant>();
+        foreach (var window in windows)
+        {
+            if (!window.Contains(zoned.TimeOfDay))
+            {
+                continue;
+            }
+
+            var endDate = window.CrossesMidnight && zoned.TimeOfDay >= window.Start
+                ? zoned.Date.PlusDays(1)
+                : zoned.Date;
+            var endLocal = endDate.At(window.End);
+            var endInstant = timeZone.AtLeniently(endLocal).ToInstant();
+            if (endInstant > instant)
+            {
+                endCandidates.Add(endInstant);
+            }
+        }
+
+        return endCandidates.Count == 0 ? null : endCandidates.Min();
+    }
+
     public ReminderPresentationDecision Evaluate(ReminderPresentationInput input)
     {
         ArgumentNullException.ThrowIfNull(input);

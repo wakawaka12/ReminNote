@@ -428,18 +428,30 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
                 NotificationErrorCodes.DeliveryFailed);
         }
 
-        var retryable = retryPolicy.CanScheduleNext(
+        // Quiet Hours is an intentional user policy, not a transient channel
+        // failure. Keep it recoverable until the active window ends instead
+        // of exhausting the bounded transport retry budget while the user is
+        // still quiet. Other outcomes retain the normal bounded policy.
+        var quietHoursSuppressed =
+            response.Outcome == NotificationDeliveryOutcome.SUPPRESSED_QUIET_HOURS;
+        var retryable = quietHoursSuppressed || retryPolicy.CanScheduleNext(
             pending.AttemptNumber,
             response.Outcome,
             response.ErrorCode);
         Instant? nextAttemptAtUtc = null;
         if (retryable)
         {
-            nextAttemptAtUtc = retryPolicy.CalculateNextAttempt(
-                clock.GetCurrentInstant(),
-                pending.AttemptNumber,
-                response.Outcome,
-                response.ErrorCode);
+            var recordedAtUtc = clock.GetCurrentInstant();
+            nextAttemptAtUtc = quietHoursSuppressed &&
+                response.NextAttemptAtUtc is { } policyRetryAt && policyRetryAt > recordedAtUtc
+                ? policyRetryAt
+                : quietHoursSuppressed
+                    ? recordedAtUtc + Duration.FromTimeSpan(retryPolicy.InitialBackoff)
+                    : retryPolicy.CalculateNextAttempt(
+                        recordedAtUtc,
+                        pending.AttemptNumber,
+                        response.Outcome,
+                        response.ErrorCode);
         }
 
         var completed = await attemptStore.AppendOutcomeAsync(
@@ -764,7 +776,7 @@ public static class AgentNotificationRuntimeComposition
         var dispatcher = new NotificationDeliveryDispatcher(
             channelCatalog,
             attempts,
-            presentationPolicy ?? new AllowAllNotificationPresentationPolicy(),
+            presentationPolicy ?? new QuietHoursNotificationPresentationPolicy(),
             clock,
             retryPolicy,
             safetyGate);
