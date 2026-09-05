@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+-alpha\.\d+$')]
-    [string]$Version = '0.3.0-alpha.1',
+    [string]$Version = '0.3.0-alpha.2',
 
     [ValidateSet('Release')]
     [string]$Configuration = 'Release',
@@ -73,6 +73,10 @@ function Write-Utf8NoBom {
 
 if (-not (Test-Path -LiteralPath $solutionPath -PathType Leaf)) {
     throw "找不到解决方案：$solutionPath"
+}
+
+if ($Version -eq '0.3.0-alpha.1') {
+    throw '0.3.0-alpha.1 是历史构建身份；请使用新的 alpha 版本号，避免生成同版本不同内容。'
 }
 
 $artifactParent = if ([string]::IsNullOrWhiteSpace($OutputRoot)) {

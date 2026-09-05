@@ -4,7 +4,9 @@ ReminNote 是面向 Windows 的本地优先提醒与个人记录应用，目标�
 
 ## 当前版本：P3 Alpha 修复候选
 
-`0.3.0-alpha.1` 是历史首个 P3 Alpha 构建包；当前分支包含审核报告后的修复候选，适合在新建隔离目录中试用和问题收集，不代表稳定版或最终验收结论。本轮仍未执行正常桌面人工验收。
+`0.3.0-alpha.1` 是历史首个 P3 Alpha 构建包；当前分支包含审核报告后的修复候选，下一
+个对外版本使用新的 `0.3.0-alpha.2` 身份。修复候选适合在新建隔离目录中试用和收集
+问题，不代表稳定版或最终验收结论。本轮仍未执行正常桌面人工验收。
 
 已包含：
 
@@ -17,9 +19,12 @@ ReminNote 是面向 Windows 的本地优先提醒与个人记录应用，目标�
 
 ### 下载与启动
 
-从 [GitHub Releases](https://github.com/wakawaka12/ReminNote/releases/tag/v0.3.0-alpha.1) 下载：
+历史首个包仍可从 [GitHub Releases](https://github.com/wakawaka12/ReminNote/releases/tag/v0.3.0-alpha.1) 下载：
 
 `ReminNote-0.3.0-alpha.1-win-x64.zip`
+
+审核修复候选尚未覆盖历史 Release；需要试用当前工作树时，请按下方命令在仓库外生成
+新的、独立的 Portable 包。
 
 解压到独立目录后运行 `run-alpha.cmd`，或直接运行 `ReminNote.Bootstrap.exe --data-root <数据目录>`。这是自包含 x64 包，不需要另行安装 .NET Runtime；`run-alpha.cmd` 默认把数据写入包目录下的 `UserData/`。请勿把个人数据目录提交到仓库或上传到公开位置。
 
@@ -67,10 +72,10 @@ ReminNote.Bootstrap.exe --user-data-promote C:\Temp\reminnote-candidate\recovery
 ./scripts/test.ps1 -Configuration Release
 ```
 
-生成首个 Alpha Portable 包：
+生成下一个 Alpha Portable 修复候选包：
 
 ```powershell
-./scripts/package-alpha.ps1 -Version 0.3.0-alpha.1 -OutputRoot C:\RNAlpha
+./scripts/package-alpha.ps1 -Version 0.3.0-alpha.2 -OutputRoot C:\RNAlpha
 ```
 
 产物目录必须位于工作树之外；脚本会生成 ZIP、SHA-256 sidecar 和版本清单。构建、测试、架构和安全约束详见 `DEVELOPMENT.md`、`ARCHITECTURE.md` 与 `SECURITY.md`。

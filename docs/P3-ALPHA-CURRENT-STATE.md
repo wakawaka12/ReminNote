@@ -28,7 +28,7 @@
 ```powershell
 ./scripts/test.ps1 -Configuration Release
 ./scripts/verify-p3-09.ps1 -Configuration Release -ArtifactRoot C:\Temp\ReminNote-P3-09
-./scripts/package-alpha.ps1 -Version 0.3.0-alpha.3 -OutputRoot C:\Temp\ReminNote-Alpha
+./scripts/package-alpha.ps1 -Version 0.3.0-alpha.2 -OutputRoot C:\Temp\ReminNote-Alpha
 ```
 
 脚本产生的数据库、Candidate、migration marker、日志和 ZIP 必须位于这些临时目录，

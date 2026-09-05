@@ -2,7 +2,7 @@
 
 本文件记录对外可见的 ReminNote 版本变化。未列出的历史提交仍保留在 Git 历史中。
 
-## 0.3.0-alpha.2（待发布）
+## 0.3.0-alpha.2（修复候选，尚未发布）
 
 - 修复 TIME/RANGE Task 经 Agent 命令创建时缺少首条 ReminderRule/Schedule 的问题。
 - 接通 Main/Widget 与 Agent 的受控通知宿主桥；通道不可用时保留核心提醒事实和投递回执。
