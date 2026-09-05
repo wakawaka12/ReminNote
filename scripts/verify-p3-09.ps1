@@ -604,21 +604,25 @@ function Invoke-P25Fixture {
 
     $fixtureRoot = Join-Path $RunRoot 'p25-fixture'
     $fixtureBinRoot = Join-Path $fixtureRoot 'bin'
-    $fixtureObjRoot = Join-Path $fixtureRoot 'obj'
     $fixtureLogRoot = Join-Path $fixtureRoot 'logs'
-    foreach ($directory in @($fixtureRoot, $fixtureBinRoot, $fixtureObjRoot, $fixtureLogRoot)) {
+    foreach ($directory in @($fixtureRoot, $fixtureBinRoot, $fixtureLogRoot)) {
         [System.IO.Directory]::CreateDirectory($directory) | Out-Null
     }
 
+    # Keep the clone's normal obj graph so every ProjectReference receives its
+    # own assets file. Redirecting BaseIntermediateOutputPath globally makes
+    # referenced projects share one assets path and can overwrite the graph
+    # with the last project restored (for example, Core instead of Infrastructure).
+    # The clone is disposable, so its obj state is already isolated from the
+    # working tree; only compiled output needs to be redirected into the gate
+    # artifact for evidence collection.
     $baseOutputArgument = '-p:BaseOutputPath=' + $fixtureBinRoot + '\'
-    $baseIntermediateArgument = '-p:BaseIntermediateOutputPath=' + $fixtureObjRoot + '\'
     $restoreArguments = @(
         'restore',
         $fixtureProject,
         '--locked-mode',
         '--nologo',
-        $baseOutputArgument,
-        $baseIntermediateArgument
+        $baseOutputArgument
     )
     $restoreOutput = & $DotNetPath @restoreArguments 2>&1
     $restoreExitCode = $LASTEXITCODE
@@ -645,8 +649,7 @@ function Invoke-P25Fixture {
         $Configuration,
         '--no-restore',
         '--nologo',
-        $baseOutputArgument,
-        $baseIntermediateArgument
+        $baseOutputArgument
     )
     $buildOutput = & $DotNetPath @buildArguments 2>&1
     $buildExitCode = $LASTEXITCODE
