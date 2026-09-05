@@ -28,12 +28,13 @@
 ```powershell
 ./scripts/test.ps1 -Configuration Release
 ./scripts/verify-p3-09.ps1 -Configuration Release -ArtifactRoot C:\Temp\ReminNote-P3-09
-./scripts/package-alpha.ps1 -Version 0.3.0-alpha.2 -OutputRoot C:\Temp\ReminNote-Alpha
+./scripts/package-alpha.ps1 -Version 0.3.0-alpha.3 -OutputRoot C:\Temp\ReminNote-Alpha
 ```
 
 脚本产生的数据库、Candidate、migration marker、日志和 ZIP 必须位于这些临时目录，
 不得指向 `D:\Anime\.devdata\reminnote.sqlite`，不得复制或连接该文件。真实进程 gate
-必须显式传隔离 clone、二进制和 `--data-root`；未执行的人工项保持 `PENDING`。
+必须显式传隔离 clone、二进制和 `--data-root`；真实进程探针会在同一隔离 root
+预置 P2.5 fixture，未执行的人工项保持 `PENDING`。
 
 ## 用户数据 CLI
 
