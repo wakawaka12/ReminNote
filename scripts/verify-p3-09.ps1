@@ -616,7 +616,9 @@ function Invoke-P25Fixture {
         'restore',
         $fixtureProject,
         '--locked-mode',
-        '--nologo'
+        '--nologo',
+        $baseOutputArgument,
+        $baseIntermediateArgument
     )
     $restoreOutput = & $DotNetPath @restoreArguments 2>&1
     $restoreExitCode = $LASTEXITCODE
