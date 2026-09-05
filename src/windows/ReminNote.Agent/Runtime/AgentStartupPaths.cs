@@ -1,3 +1,5 @@
+using ReminNote.Core.Runtime;
+
 namespace ReminNote.Agent.Runtime;
 
 /// <summary>
@@ -13,12 +15,14 @@ public static class AgentStartupPaths
         var root = Path.GetFullPath(repositoryRoot);
         var hasGitMetadata = Directory.Exists(Path.Combine(root, ".git")) ||
             File.Exists(Path.Combine(root, ".git"));
+        var hasPackageMarker = ProductRootMarker.IsValid(root);
         if (!Directory.Exists(root) ||
-            !hasGitMetadata ||
-            !File.Exists(Path.Combine(root, "ReminNote.sln")))
+            (!hasPackageMarker &&
+             (!hasGitMetadata ||
+              !File.Exists(Path.Combine(root, "ReminNote.sln")))))
         {
             throw new ArgumentException(
-                $"Repository root must contain .git and ReminNote.sln: {root}",
+                $"Root must contain .git/ReminNote.sln or a valid {ProductRootMarker.FileName}: {root}",
                 nameof(repositoryRoot));
         }
 

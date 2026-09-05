@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using System.Security;
 using System.Security.Principal;
+using ReminNote.Core.Runtime;
 
 namespace ReminNote.Agent.Transport;
 
@@ -333,11 +334,14 @@ internal static class TransportProfileResolver
         var hasGitMarker =
             File.Exists(Path.Combine(finalPath, ".git")) ||
             Directory.Exists(Path.Combine(finalPath, ".git"));
-        if (requireRepositoryMarkers && (!hasSolutionMarker || !hasGitMarker))
+        var hasPackageMarker = ProductRootMarker.IsValid(finalPath);
+        if (requireRepositoryMarkers &&
+            !hasPackageMarker &&
+            (!hasSolutionMarker || !hasGitMarker))
         {
             throw new TransportProfileResolutionException(
                 TransportProfileFailureKind.InvalidRoot,
-                "The repository root markers are missing.");
+                $"The repository or package root markers are missing ({ProductRootMarker.FileName}).");
         }
 
         return finalPath;

@@ -1,5 +1,14 @@
 <Project>
   <PropertyGroup>
+    <!-- P3 first Alpha identity. Override AppVersion/Version explicitly for
+         later releases; keep the assembly/file versions numeric for Windows
+         metadata while preserving the SemVer prerelease in informational data. -->
+    <AppVersion Condition="'$(AppVersion)' == ''">0.3.0-alpha.1</AppVersion>
+    <Version Condition="'$(Version)' == ''">$(AppVersion)</Version>
+    <AssemblyVersion Condition="'$(AssemblyVersion)' == ''">0.3.0.0</AssemblyVersion>
+    <FileVersion Condition="'$(FileVersion)' == ''">0.3.0.0</FileVersion>
+    <InformationalVersion Condition="'$(InformationalVersion)' == ''">$(AppVersion)</InformationalVersion>
+    <RuntimeIdentifiers Condition="'$(RuntimeIdentifiers)' == ''">win-x64</RuntimeIdentifiers>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
