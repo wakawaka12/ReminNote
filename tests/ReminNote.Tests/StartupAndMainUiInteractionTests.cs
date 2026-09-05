@@ -87,6 +87,24 @@ public sealed class StartupAndMainUiInteractionTests
     }
 
     [Fact]
+    public void IsolatedProcessProbeCanComposeHostsWithoutShowingWindows()
+    {
+        var mainApp = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "App.xaml.cs"));
+        var widgetApp = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Widget", "App.xaml.cs"));
+        var gate = ReadWorkspaceFile(
+            Path.Combine("scripts", "verify-p3-09.ps1"));
+
+        Assert.Contains("--headless", mainApp, StringComparison.Ordinal);
+        Assert.Contains("OnExplicitShutdown", mainApp, StringComparison.Ordinal);
+        Assert.Contains("--headless", widgetApp, StringComparison.Ordinal);
+        Assert.Contains("OnExplicitShutdown", widgetApp, StringComparison.Ordinal);
+        Assert.Contains("--headless", gate, StringComparison.Ordinal);
+        Assert.Contains("-WindowStyle Hidden", gate, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MainTodayDetailsClosesWhenTheSelectedTaskIsInvalidated()
     {
         var mainWindow = ReadWorkspaceFile(

@@ -813,6 +813,7 @@ function Invoke-RealProcessProbe {
             -ArgumentList @('--data-root', $realProcessDataRoot, '--profile', 'p3-09-gate') `
             -RedirectStandardOutput $agentLog `
             -RedirectStandardError (Join-Path $processLogRoot 'agent.err.log') `
+            -WindowStyle Hidden `
             -PassThru
         $processes.Add($agent)
         $startedDescriptions.Add("Agent pid=$($agent.Id) path=$AgentPath")
@@ -858,9 +859,10 @@ function Invoke-RealProcessProbe {
             $hostProcess = Start-Process `
                 -FilePath (Convert-ToCanonicalPath $specification.Path) `
                 -WorkingDirectory $canonicalRepositoryClone `
-                -ArgumentList @('--data-root', $realProcessDataRoot, '--profile', 'p3-09-gate') `
+                -ArgumentList @('--data-root', $realProcessDataRoot, '--profile', 'p3-09-gate', '--headless') `
                 -RedirectStandardOutput (Join-Path $processLogRoot $specification.Log) `
                 -RedirectStandardError (Join-Path $processLogRoot $specification.ErrorLog) `
+                -WindowStyle Hidden `
                 -PassThru
             $processes.Add($hostProcess)
             $startedDescriptions.Add("$($specification.Name) pid=$($hostProcess.Id) path=$($specification.Path)")
@@ -899,6 +901,7 @@ function Invoke-RealProcessProbe {
             -ArgumentList @('--data-root', $realProcessDataRoot, '--profile', 'p3-09-gate') `
             -RedirectStandardOutput $restartLog `
             -RedirectStandardError $restartErrorLog `
+            -WindowStyle Hidden `
             -PassThru
         $processes.Add($restartedAgent)
         $startedDescriptions.Add("Agent restart pid=$($restartedAgent.Id) path=$AgentPath")

@@ -32,6 +32,7 @@ public partial class App : Application, IDisposable
             var roots = WidgetStartupOptions.ResolveDataRoot(e.Args);
             var repositoryRoot = roots.RepositoryRoot ?? AppContext.BaseDirectory;
             Directory.CreateDirectory(roots.DataRoot);
+            var headless = HasHeadlessFlag(e.Args);
             var profileName = WidgetStartupOptions.ResolveProfileName(e.Args);
             var widgetInstanceId = WidgetStartupOptions.ResolveWidgetInstanceId(e.Args);
             _agentClient = new AgentTaskClient(
@@ -58,8 +59,6 @@ public partial class App : Application, IDisposable
                 _agentClient,
                 SystemClock.Instance);
 
-            var window = new WidgetWindow(_viewModel);
-            MainWindow = window;
             _notificationHost = WidgetNotificationChannelComposition.CreateHostOwned(
                 SystemClock.Instance,
                 () => MainWindow,
@@ -69,6 +68,18 @@ public partial class App : Application, IDisposable
                 NotificationHostBridgeKind.Widget,
                 _notificationHost.Catalog);
             _lifetimeCancellation = new CancellationTokenSource();
+
+            if (headless)
+            {
+                // The isolated process gate exercises Widget composition and
+                // lifetime without creating a visible window or stealing
+                // focus from the operator's desktop session.
+                ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
+                return;
+            }
+
+            var window = new WidgetWindow(_viewModel);
+            MainWindow = window;
             _singleInstance.StartListener(() =>
                 Dispatcher.BeginInvoke(new Action(() => _ = RefreshAndActivateAsync())));
             window.Show();
@@ -184,4 +195,8 @@ public partial class App : Application, IDisposable
         window.Activate();
         window.Focus();
     }
+
+    private static bool HasHeadlessFlag(string[] args) =>
+        args.Any(argument =>
+            string.Equals(argument, "--headless", StringComparison.OrdinalIgnoreCase));
 }

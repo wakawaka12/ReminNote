@@ -33,6 +33,7 @@ public partial class App : Application, IDisposable
         var roots = AgentStartupPaths.ResolveDataRoot(e.Args);
         var repositoryRoot = roots.RepositoryRoot ?? AppContext.BaseDirectory;
         Directory.CreateDirectory(roots.DataRoot);
+        var headless = HasHeadlessFlag(e.Args);
         var profileName = ResolveProfileName(e.Args);
         var agentClient = new AgentTaskClient(
             repositoryRoot,
@@ -83,6 +84,14 @@ public partial class App : Application, IDisposable
             agentClient.ProfileScope,
             NotificationHostBridgeKind.Main,
             notificationHost.Catalog);
+
+        if (headless)
+        {
+            // The isolated process gate exercises host composition and
+            // lifetime without taking focus or showing a desktop window.
+            ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown;
+            return;
+        }
 
         var window = _host.Services.GetRequiredService<MainWindow>();
         MainWindow = window;
@@ -153,6 +162,10 @@ public partial class App : Application, IDisposable
 
         return profile;
     }
+
+    private static bool HasHeadlessFlag(string[] args) =>
+        args.Any(argument =>
+            string.Equals(argument, "--headless", StringComparison.OrdinalIgnoreCase));
 
     private static WindowsNotificationHostOptions ResolveNotificationHostOptions(string[] args)
     {
