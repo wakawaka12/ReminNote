@@ -1,5 +1,6 @@
 using ReminNote.Widget.Startup;
 using ReminNote.Widget.ViewModels;
+using ReminNote.Core.Protocol;
 using ReminNote.Windows.Features.Today;
 using ReminNote.Windows.Resources.Localization;
 using ReminNote.Windows.Startup;
@@ -105,6 +106,31 @@ public sealed class StartupAndMainUiInteractionTests
     }
 
     [Fact]
+    public void ToastProtocolActivationIsRegisteredForwardedAndRoutedToReminderCenter()
+    {
+        var sink = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "Notifications", "WindowsNotificationEffectSinks.cs"));
+        var registration = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "Notifications", "WindowsToastRegistration.cs"));
+        var app = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "App.xaml.cs"));
+        var coordinator = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "Startup", "SingleInstanceCoordinator.cs"));
+        var center = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "Features", "Reminders", "ReminderCenterViewModel.cs"));
+        var mainWindow = ReadWorkspaceFile(
+            Path.Combine("src", "windows", "ReminNote.Windows", "MainWindow.xaml.cs"));
+
+        Assert.Contains("activationType=\\\"protocol\\\"", sink, StringComparison.Ordinal);
+        Assert.Contains("TryEnsureAndVerifyProtocolRegistration", registration, StringComparison.Ordinal);
+        Assert.Contains("Software\\Classes\\reminnote", registration, StringComparison.Ordinal);
+        Assert.Contains("TryActivateExisting(activationArgument)", app, StringComparison.Ordinal);
+        Assert.Contains("ReadLineAsync(cancellationToken)", coordinator, StringComparison.Ordinal);
+        Assert.Contains("HandleNotificationActivationAsync", mainWindow, StringComparison.Ordinal);
+        Assert.Contains("OpenForActivationAsync", center, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MainTodayDetailsClosesWhenTheSelectedTaskIsInvalidated()
     {
         var mainWindow = ReadWorkspaceFile(
@@ -159,6 +185,36 @@ public sealed class StartupAndMainUiInteractionTests
 
         Assert.True(secondary.TryActivateExisting());
         Assert.True(await activated.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task SecondaryInstanceForwardsToastActivationUriToThePrimary()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var logicalReminderId = Guid.CreateVersion7();
+        var activationUri = ReminderNotificationActivation.CreateSingleUri(logicalReminderId);
+        using var primary = new SingleInstanceCoordinator(
+            $"Local\\ReminNote.Tests.Main.Activation.{suffix}",
+            $"ReminNote.Tests.Main.Activation.{suffix}");
+        using var secondary = await Task.Factory.StartNew(
+            () => new SingleInstanceCoordinator(
+                $"Local\\ReminNote.Tests.Main.Activation.{suffix}",
+                $"ReminNote.Tests.Main.Activation.{suffix}"),
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+        var forwarded = new TaskCompletionSource<string?>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        primary.StartListener(argument => forwarded.TrySetResult(argument));
+
+        Assert.True(secondary.TryActivateExisting(activationUri));
+        var received = await forwarded.Task.WaitAsync(
+            TimeSpan.FromSeconds(2),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(activationUri, received);
+        Assert.True(ReminderNotificationActivation.TryParse(received, out var activation));
+        Assert.Equal([logicalReminderId], activation!.LogicalReminderIds);
     }
 
     [Fact]

@@ -22,6 +22,7 @@ internal static class MainInstanceIdentity
 internal sealed class SingleInstanceCoordinator : IDisposable
 {
     private const string ActivationMessage = "activate";
+    private const int MaxActivationArgumentCharacters = 4_096;
     private readonly Mutex _mutex;
     private readonly string _pipeName;
     private readonly CancellationTokenSource _cancellation = new();
@@ -56,6 +57,17 @@ internal sealed class SingleInstanceCoordinator : IDisposable
     public void StartListener(Action activatePrimaryWindow)
     {
         ArgumentNullException.ThrowIfNull(activatePrimaryWindow);
+        StartListener(_ => activatePrimaryWindow());
+    }
+
+    /// <summary>
+    /// Starts the primary listener. The optional second line is the validated
+    /// Toast/protocol activation URI; an empty line means an ordinary app
+    /// activation request.
+    /// </summary>
+    public void StartListener(Action<string?> activatePrimaryWindow)
+    {
+        ArgumentNullException.ThrowIfNull(activatePrimaryWindow);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (!IsPrimary)
@@ -66,11 +78,26 @@ internal sealed class SingleInstanceCoordinator : IDisposable
         _listenerTask = ListenForActivationAsync(activatePrimaryWindow, _cancellation.Token);
     }
 
-    public bool TryActivateExisting()
+    public bool TryActivateExisting() => TryActivateExisting(null);
+
+    /// <summary>
+    /// Signals the primary instance and optionally forwards a bounded launch
+    /// URI. The URI is treated as opaque here; App validates it before routing
+    /// it to the UI.
+    /// </summary>
+    public bool TryActivateExisting(string? activationArgument)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (IsPrimary)
+        {
+            return false;
+        }
+
+        if (activationArgument is not null &&
+            (activationArgument.Length > MaxActivationArgumentCharacters ||
+             activationArgument.Contains('\r') ||
+             activationArgument.Contains('\n')))
         {
             return false;
         }
@@ -83,6 +110,7 @@ internal sealed class SingleInstanceCoordinator : IDisposable
                 client.Connect(250);
                 using var writer = new StreamWriter(client) { AutoFlush = true };
                 writer.WriteLine(ActivationMessage);
+                writer.WriteLine(activationArgument ?? string.Empty);
                 return true;
             }
             catch (IOException)
@@ -142,7 +170,9 @@ internal sealed class SingleInstanceCoordinator : IDisposable
         _mutex.Dispose();
     }
 
-    private async Task ListenForActivationAsync(Action activatePrimaryWindow, CancellationToken cancellationToken)
+    private async Task ListenForActivationAsync(
+        Action<string?> activatePrimaryWindow,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -166,7 +196,16 @@ internal sealed class SingleInstanceCoordinator : IDisposable
                     using var reader = new StreamReader(server);
                     if (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) == ActivationMessage)
                     {
-                        activatePrimaryWindow();
+                        var activationArgument = await reader
+                            .ReadLineAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                        if (activationArgument is null ||
+                            activationArgument.Length <= MaxActivationArgumentCharacters)
+                        {
+                            activatePrimaryWindow(string.IsNullOrWhiteSpace(activationArgument)
+                                ? null
+                                : activationArgument);
+                        }
                     }
                 }
                 finally

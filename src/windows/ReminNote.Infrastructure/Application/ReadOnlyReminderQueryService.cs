@@ -70,6 +70,7 @@ public sealed class ReadOnlyReminderQueryService : IReminderQueryService
                 ri.schedule_id,
                 ri.rule_id,
                 ri.occurrence_id,
+                ri.logical_reminder_id,
                 ri.purpose_snapshot,
                 ri.priority_snapshot,
                 ri.pinned_snapshot,
@@ -106,16 +107,17 @@ public sealed class ReadOnlyReminderQueryService : IReminderQueryService
                 ReminderScheduleId.Parse(rows.GetString(1)),
                 ReminderRuleId.Parse(rows.GetString(2)),
                 OccurrenceId.Parse(rows.GetString(3)),
-                TaskId.Parse(rows.GetString(10)),
-                rows.GetString(11),
-                ParseEnum<ReminderPurpose>(rows.GetString(4), "purpose_snapshot"),
-                ParseEnum<ReminderPriority>(rows.GetString(5), "priority_snapshot"),
-                ParseBoolean(rows, 6, "pinned_snapshot"),
-                ParseInstant(rows.GetString(7), "triggered_at_utc"),
-                ParseEnum<ReminderLifecycle>(rows.GetString(8), "lifecycle"),
-                rows.IsDBNull(9)
+                TaskId.Parse(rows.GetString(11)),
+                rows.GetString(12),
+                ParseEnum<ReminderPurpose>(rows.GetString(5), "purpose_snapshot"),
+                ParseEnum<ReminderPriority>(rows.GetString(6), "priority_snapshot"),
+                ParseBoolean(rows, 7, "pinned_snapshot"),
+                ParseInstant(rows.GetString(8), "triggered_at_utc"),
+                ParseEnum<ReminderLifecycle>(rows.GetString(9), "lifecycle"),
+                rows.IsDBNull(10)
                     ? null
-                    : ParseEnum<ResolutionAction>(rows.GetString(9), "resolution_action")));
+                    : ParseEnum<ResolutionAction>(rows.GetString(10), "resolution_action"),
+                logicalReminderId: LogicalReminderId.Parse(rows.GetString(4)).Value));
         }
 
         return items;

@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using NodaTime;
+using ReminNote.Core.Protocol;
 using ReminNote.Core.Reminders.Notifications;
 using ReminNote.Core.Reminders.Notifications.Adapters;
 
@@ -388,12 +389,16 @@ public sealed class WindowsToastNotificationEffectSink : INotificationChannelEff
         ArgumentNullException.ThrowIfNull(request);
         var summary = request.Summary;
         var launch = summary is { Count: > 1 }
-            ? $"reminnote://reminders?ids={string.Join(',', summary.LogicalReminderIds.Select(id => id.ToString("D")))}"
-            : $"reminnote://reminder/{request.LogicalReplacementKey}";
+            ? ReminderNotificationActivation.CreateSummaryUri(summary.LogicalReminderIds)
+            : ReminderNotificationActivation.CreateSingleUri(request.LogicalReminderId);
         var message = summary is { Count: > 1 }
             ? $"有 {summary.Count} 项提醒需要查看。"
             : "有一项提醒需要查看。";
-        return $"<toast launch=\"{launch}\"><visual><binding template=\"ToastGeneric\"><text>ReminNote</text><text>{message}</text></binding></visual></toast>";
+        // Explicit protocol activation makes the launch URI a ShellExecute
+        // request. The App's protocol registration starts/forwards the URI
+        // through the profile-scoped single-instance pipe, so this path works
+        // both for an existing Main window and for a cold launch.
+        return $"<toast activationType=\"protocol\" launch=\"{launch}\"><visual><binding template=\"ToastGeneric\"><text>ReminNote</text><text>{message}</text></binding></visual></toast>";
     }
 
     private static NotificationChannelStatus StatusFromException(

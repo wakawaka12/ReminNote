@@ -40,6 +40,29 @@ public sealed class ReminderUiAndProtocolTests
     }
 
     [Fact]
+    public async SystemTask MainCenterOpensForToastActivationAndMarksAllFoundMembers()
+    {
+        var firstId = Guid.CreateVersion7();
+        var secondId = Guid.CreateVersion7();
+        var first = CreateItem("摘要提醒 A", firstId);
+        var second = CreateItem("摘要提醒 B", secondId);
+        var query = new FakeReminderQueryService(
+            ReminderReadSnapshot.Fresh(19, [first, second]));
+        var commands = new FakeReminderCommandClient();
+        using var center = new ReminderCenterViewModel(query, commands);
+
+        await center.OpenForActivationAsync(
+            [secondId, firstId],
+            TestContext.Current.CancellationToken);
+
+        Assert.True(center.IsOpen);
+        Assert.Equal(2, center.ActivationRequestedCount);
+        Assert.Equal(2, center.ActivationMatchCount);
+        Assert.All(center.Items, item => Assert.True(item.IsActivationMatch));
+        Assert.Contains("找到全部", center.InteractionMessage, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async SystemTask MainCenterRetainsLastModelAsUnavailableAndDisablesWrites()
     {
         var item = CreateItem("保留的提醒");
@@ -291,7 +314,7 @@ public sealed class ReminderUiAndProtocolTests
         error.Validate();
     }
 
-    private static ReminderReadModel CreateItem(string title)
+    private static ReminderReadModel CreateItem(string title, Guid? logicalReminderId = null)
     {
         var taskId = Guid.CreateVersion7();
         return new ReminderReadModel(
@@ -305,7 +328,8 @@ public sealed class ReminderUiAndProtocolTests
             ReminderPriority.HIGH,
             pinned: true,
             Instant.FromUtc(2026, 9, 2, 8, 30),
-            ReminderLifecycle.UNREAD);
+            ReminderLifecycle.UNREAD,
+            logicalReminderId: logicalReminderId);
     }
 
     private sealed class FakeReminderQueryService(ReminderReadSnapshot initial) : IReminderQueryService

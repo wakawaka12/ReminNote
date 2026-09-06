@@ -277,8 +277,14 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
         var orderedSummaryGroups = summaryGroups.ToDictionary(
             pair => pair.Key,
             pair => pair.Value
-                .OrderBy(record => record.UpdatedAtUtc)
-                .ThenBy(record => record.AttemptId)
+                // The batch boundary must remain stable when the records are
+                // deferred and the retry attempts receive new timestamps and
+                // IDs.  LogicalReminderId is the immutable member identity,
+                // so sorting by it keeps a failed 65/129-member group split
+                // into the same bounded chunks on the next recovery pass.
+                .OrderBy(record => record.LogicalReminderId.ToString("D"), StringComparer.Ordinal)
+                .ThenBy(record => record.InstanceId.ToString("D"), StringComparer.Ordinal)
+                .ThenBy(record => record.AttemptId.ToString("D"), StringComparer.Ordinal)
                 .ToArray());
         var summaryGroupsHandled = new HashSet<SummaryGroupKey>();
         foreach (var record in recoverable)
@@ -291,53 +297,18 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
                     out var summaryRecords) &&
                 summaryRecords.Length > 1)
             {
-                // A quiet-hours summary is one bounded channel effect for a
-                // window. The request carries the complete bounded member
-                // list, so the host can show a count and open the reminder
-                // collection instead of presenting the first item as if it
-                // were the whole summary.
                 var summaryKey = new SummaryGroupKey(record.ChannelId, windowEndUnixSeconds);
                 if (!summaryGroupsHandled.Add(summaryKey))
                 {
                     continue;
                 }
 
-                var representative = summaryRecords[0];
-                var summary = new NotificationSummarySnapshot(
-                    summaryRecords.Select(item => item.LogicalReminderId),
-                    Instant.FromUnixTimeSeconds(windowEndUnixSeconds));
-                var representativeResult = await DispatchAsync(
-                        ToRecoveryRequest(representative, summary),
+                await RecoverSummaryGroupAsync(
+                        summaryRecords,
+                        Instant.FromUnixTimeSeconds(windowEndUnixSeconds),
+                        results,
                         cancellationToken)
                     .ConfigureAwait(false);
-                results.Add(representativeResult);
-                if (representativeResult.Outcome == NotificationDeliveryOutcome.DELIVERED)
-                {
-                    foreach (var aggregated in summaryRecords.Skip(1))
-                    {
-                        results.Add(await MarkSummaryAggregatedAsync(
-                                aggregated,
-                                cancellationToken)
-                            .ConfigureAwait(false));
-                    }
-                }
-                else if (representativeResult.Attempt is { Retryable: true, NextAttemptAtUtc: { } retryAtUtc })
-                {
-                    // Keep the whole group behind the representative's
-                    // backoff. Otherwise the representative becomes a
-                    // retryable FAILED/UNAVAILABLE row while the remaining
-                    // quiet-queued rows are immediately dispatched one by
-                    // one on the next recovery pass.
-                    foreach (var deferred in summaryRecords.Skip(1))
-                    {
-                        results.Add(await DeferSummaryAsync(
-                                deferred,
-                                Instant.FromUnixTimeSeconds(windowEndUnixSeconds),
-                                retryAtUtc,
-                                cancellationToken)
-                            .ConfigureAwait(false));
-                    }
-                }
 
                 continue;
             }
@@ -352,6 +323,79 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Recovers one quiet-hours group as deterministic, bounded effects. A
+    /// summary payload is capped by the Core contract at 64 members; larger
+    /// groups therefore produce ceil(memberCount / 64) effects. Only members
+    /// in a successfully presented batch are marked aggregated. If a batch
+    /// fails transiently, every unprocessed member is deferred behind the
+    /// representative's retry time so a later pass cannot leak individual
+    /// notifications or lose the tail of the group.
+    /// </summary>
+    private async ValueTask RecoverSummaryGroupAsync(
+        NotificationDeliveryAttemptRecord[] summaryRecords,
+        Instant summaryWindowEndUtc,
+        List<NotificationDurableDispatchResult> results,
+        CancellationToken cancellationToken)
+    {
+        for (var offset = 0;
+             offset < summaryRecords.Length;
+             offset += NotificationContractLimits.MaxSummaryMemberCount)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var batch = summaryRecords
+                .Skip(offset)
+                .Take(NotificationContractLimits.MaxSummaryMemberCount)
+                .ToArray();
+            var summary = batch.Length > 1
+                ? new NotificationSummarySnapshot(
+                    batch.Select(item => item.LogicalReminderId),
+                    summaryWindowEndUtc)
+                : null;
+            var representativeResult = await DispatchAsync(
+                    ToRecoveryRequest(batch[0], summary),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            results.Add(representativeResult);
+
+            if (representativeResult.Outcome == NotificationDeliveryOutcome.DELIVERED)
+            {
+                foreach (var aggregated in batch.Skip(1))
+                {
+                    results.Add(await MarkSummaryAggregatedAsync(
+                            aggregated,
+                            cancellationToken)
+                        .ConfigureAwait(false));
+                }
+
+                continue;
+            }
+
+            if (representativeResult.Attempt is not
+                { Retryable: true, NextAttemptAtUtc: { } retryAtUtc })
+            {
+                // A terminal batch remains durable as-is. Continue with later
+                // batches so one blocked channel cannot strand their members.
+                continue;
+            }
+
+            // Keep the failed batch's non-representatives and every later
+            // batch behind the same backoff. The representative already owns
+            // its retry marker from DispatchAsync.
+            foreach (var deferred in summaryRecords.Skip(offset + 1))
+            {
+                results.Add(await DeferSummaryAsync(
+                        deferred,
+                        summaryWindowEndUtc,
+                        retryAtUtc,
+                        cancellationToken)
+                    .ConfigureAwait(false));
+            }
+
+            break;
+        }
     }
 
     private static bool IsSummaryRecoverable(NotificationDeliveryAttemptRecord record) =>

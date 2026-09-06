@@ -441,6 +441,185 @@ public sealed class NotificationDeliveryPersistenceTests
             TestContext.Current.CancellationToken));
     }
 
+    [Theory]
+    [InlineData(64)]
+    [InlineData(65)]
+    [InlineData(129)]
+    public async Task QuietHoursSummarySplitsAtTheBoundedMemberLimitWithoutDroppingMembers(
+        int memberCount)
+    {
+        using var database = await P304Database.CreateAsync();
+        var quietStart = Instant.FromUtc(2026, 9, 4, 15, 0);
+        var quietEnd = Instant.FromUtc(2026, 9, 4, 23, 0);
+        var policy = CreateQuietHoursPolicy();
+        var channel = new RecordingChannel(
+            NotificationChannelId.Toast,
+            new NotificationChannelDeliveryResponse(NotificationDeliveryOutcome.DELIVERED));
+        var requests = Enumerable
+            .Range(0, memberCount)
+            .Select(index => NewUniqueRequest(NotificationChannelId.Toast, index))
+            .ToArray();
+        var expectedEffects = (memberCount + NotificationContractLimits.MaxSummaryMemberCount - 1) /
+            NotificationContractLimits.MaxSummaryMemberCount;
+
+        await using (var quietDispatcher = new ReminNote.Agent.Notifications.NotificationDeliveryDispatcher(
+                         new NotificationChannelCatalog([channel]),
+                         database.Attempts,
+                         policy,
+                         new FixedClock(quietStart)))
+        {
+            foreach (var request in requests)
+            {
+                var queued = await quietDispatcher.DispatchAsync(
+                    request,
+                    TestContext.Current.CancellationToken);
+                Assert.Equal(
+                    NotificationErrorCodes.PolicySummaryQueued,
+                    queued.Attempt!.ErrorCode);
+            }
+        }
+
+        await using var recoveryDispatcher = new ReminNote.Agent.Notifications.NotificationDeliveryDispatcher(
+            new NotificationChannelCatalog([channel]),
+            database.Attempts,
+            policy,
+            new FixedClock(quietEnd));
+        var recovered = await recoveryDispatcher.RecoverAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(memberCount, recovered.Count);
+        Assert.Equal(expectedEffects, channel.DeliveryCount);
+        Assert.All(
+            channel.Requests,
+            request => Assert.True(
+                request.Summary is null ||
+                request.Summary.Count <= NotificationContractLimits.MaxSummaryMemberCount));
+
+        var represented = channel.Requests
+            .SelectMany(request => request.Summary?.LogicalReminderIds ??
+                [request.CoreTrigger.LogicalReminderId])
+            .ToHashSet();
+        Assert.Equal(
+            requests.Select(request => request.CoreTrigger.LogicalReminderId).ToHashSet(),
+            represented);
+        Assert.Empty(await database.Attempts.ListRecoverableAsync(
+            quietEnd,
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task QuietHoursSummaryFailureAtTheLimitDefersAndRetriesTheTail()
+    {
+        const int memberCount = 65;
+        using var database = await P304Database.CreateAsync();
+        var quietStart = Instant.FromUtc(2026, 9, 4, 15, 0);
+        var quietEnd = Instant.FromUtc(2026, 9, 4, 23, 0);
+        var policy = CreateQuietHoursPolicy();
+        var channel = new RecordingChannel(
+            NotificationChannelId.Toast,
+            new NotificationChannelDeliveryResponse(
+                NotificationDeliveryOutcome.FAILED,
+                NotificationErrorCodes.DeliveryFailed));
+        var requests = Enumerable
+            .Range(0, memberCount)
+            .Select(index => NewUniqueRequest(NotificationChannelId.Toast, index + 10_000))
+            .ToArray();
+
+        await using (var quietDispatcher = new ReminNote.Agent.Notifications.NotificationDeliveryDispatcher(
+                         new NotificationChannelCatalog([channel]),
+                         database.Attempts,
+                         policy,
+                         new FixedClock(quietStart)))
+        {
+            foreach (var request in requests)
+            {
+                _ = await quietDispatcher.DispatchAsync(
+                    request,
+                    TestContext.Current.CancellationToken);
+            }
+        }
+
+        await using var firstRecovery = new ReminNote.Agent.Notifications.NotificationDeliveryDispatcher(
+            new NotificationChannelCatalog([channel]),
+            database.Attempts,
+            policy,
+            new FixedClock(quietEnd));
+        var failed = await firstRecovery.RecoverAsync(
+            TestContext.Current.CancellationToken);
+        var failedRepresentative = Assert.Single(failed, result => result.ChannelInvoked);
+        Assert.Equal(NotificationDeliveryOutcome.FAILED, failedRepresentative.Outcome);
+        Assert.Equal(1, channel.DeliveryCount);
+        Assert.NotNull(channel.Requests[0].Summary);
+        Assert.Equal(NotificationContractLimits.MaxSummaryMemberCount, channel.Requests[0].Summary!.Count);
+        var retryAtUtc = failedRepresentative.Attempt!.NextAttemptAtUtc!.Value;
+        Assert.Empty(await database.Attempts.ListRecoverableAsync(
+            quietEnd,
+            TestContext.Current.CancellationToken));
+
+        channel.Response = new NotificationChannelDeliveryResponse(
+            NotificationDeliveryOutcome.DELIVERED);
+        await using var secondRecovery = new ReminNote.Agent.Notifications.NotificationDeliveryDispatcher(
+            new NotificationChannelCatalog([channel]),
+            database.Attempts,
+            policy,
+            new FixedClock(retryAtUtc));
+        var retried = await secondRecovery.RecoverAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(memberCount, retried.Count);
+        Assert.Equal(3, channel.DeliveryCount);
+        var represented = channel.Requests
+            .Skip(1)
+            .SelectMany(request => request.Summary?.LogicalReminderIds ??
+                [request.CoreTrigger.LogicalReminderId])
+            .ToHashSet();
+        var allRepresented = channel.Requests[0].Summary!.LogicalReminderIds
+            .Concat(represented)
+            .ToHashSet();
+        Assert.Equal(
+            requests.Select(request => request.CoreTrigger.LogicalReminderId).ToHashSet(),
+            allRepresented);
+        Assert.Contains(
+            requests[^1].CoreTrigger.LogicalReminderId,
+            allRepresented);
+        Assert.Empty(await database.Attempts.ListRecoverableAsync(
+            retryAtUtc,
+            TestContext.Current.CancellationToken));
+    }
+
+    private static ReminNote.Agent.Notifications.QuietHoursNotificationPresentationPolicy CreateQuietHoursPolicy() =>
+        new(
+            new ReminNote.Core.Reminders.Policy.QuietHoursPolicy(
+                [new ReminNote.Core.Reminders.Policy.QuietHoursWindow(
+                    new LocalTime(22, 0),
+                    new LocalTime(7, 0))]),
+            DateTimeZoneProviders.Tzdb["Asia/Shanghai"]);
+
+    private static NotificationDeliveryRequest NewUniqueRequest(
+        NotificationChannelId channelId,
+        int seed)
+    {
+        _ = seed;
+        var core = new NotificationTriggerFact(
+            Guid.CreateVersion7(),
+            Guid.CreateVersion7(),
+            Guid.CreateVersion7(),
+            Guid.CreateVersion7(),
+            Guid.CreateVersion7(),
+            attemptOrdinal: 1,
+            NotificationPurposeSnapshot.TaskStart,
+            NotificationPriority.NORMAL,
+            pinnedSnapshot: false,
+            Now,
+            Now - Duration.FromMinutes(1));
+        return new NotificationDeliveryRequest(
+            core,
+            channelId,
+            Guid.CreateVersion7(),
+            Guid.CreateVersion7(),
+            Guid.CreateVersion7());
+    }
+
     private static NotificationDeliveryRequest NewRequest(
         NotificationChannelId channelId,
         int idOffset = 0,

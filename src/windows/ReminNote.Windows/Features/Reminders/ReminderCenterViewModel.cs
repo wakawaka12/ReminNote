@@ -21,6 +21,7 @@ public sealed class ReminderCenterViewModel : ObservableObject, IDisposable
     private readonly IReminderCommandClient commandClient;
     private readonly SemaphoreSlim refreshGate = new(1, 1);
     private readonly CancellationTokenSource lifetimeCancellation = new();
+    private readonly HashSet<Guid> activationIds = [];
     private ReminderSnapshotState snapshot = ReminderSnapshotState.Empty;
     private bool isOpen;
     private string interactionMessage = string.Empty;
@@ -123,6 +124,12 @@ public sealed class ReminderCenterViewModel : ObservableObject, IDisposable
 
     public bool HasInteractionMessage => !string.IsNullOrEmpty(InteractionMessage);
 
+    public bool HasActivationContext => activationIds.Count > 0;
+
+    public int ActivationRequestedCount => activationIds.Count;
+
+    public int ActivationMatchCount => Items.Count(item => item.IsActivationMatch);
+
     /// <summary>
     /// Atomically applies the complete read result. An unavailable read keeps
     /// an existing list visible but marks the state unavailable; it never
@@ -170,6 +177,10 @@ public sealed class ReminderCenterViewModel : ObservableObject, IDisposable
                 : UiText.Format(
                     UiText.ReminderSnapshotReadFailedKey,
                     snapshot.StatusCode ?? "unknown");
+            if (snapshot.Status == ReminderSnapshotStatus.Fresh && HasActivationContext)
+            {
+                UpdateActivationMessage();
+            }
         }
         finally
         {
@@ -187,6 +198,44 @@ public sealed class ReminderCenterViewModel : ObservableObject, IDisposable
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    /// Opens the current profile's Reminder Center for a Toast activation and
+    /// refreshes the complete read snapshot. Matching rows are marked through
+    /// <see cref="ReminderItemViewModel.IsActivationMatch"/> and the header
+    /// reports how many activated members are present in the snapshot.
+    /// </summary>
+    public async System.Threading.Tasks.Task OpenForActivationAsync(
+        IEnumerable<Guid> logicalReminderIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(logicalReminderIds);
+        var ids = logicalReminderIds.ToArray();
+        if (ids.Length == 0 || ids.Length > 64 || ids.Distinct().Count() != ids.Length)
+        {
+            throw new ArgumentException(
+                "A reminder activation must contain between one and 64 unique logical IDs.",
+                nameof(logicalReminderIds));
+        }
+
+        foreach (var id in ids)
+        {
+            _ = LogicalReminderId.From(id);
+        }
+
+        activationIds.Clear();
+        activationIds.UnionWith(ids);
+        OnPropertyChanged(nameof(HasActivationContext));
+        OnPropertyChanged(nameof(ActivationRequestedCount));
+        ReplaceActivationMatches();
+
+        IsOpen = true;
+        await RefreshAsync(cancellationToken).ConfigureAwait(true);
+        if (SnapshotStatus == ReminderSnapshotStatus.Fresh)
+        {
+            UpdateActivationMessage();
+        }
+    }
+
     private async System.Threading.Tasks.Task ToggleAsync()
     {
         if (IsOpen)
@@ -195,6 +244,7 @@ public sealed class ReminderCenterViewModel : ObservableObject, IDisposable
             return;
         }
 
+        ClearActivationContext();
         IsOpen = true;
         await RefreshAsync(lifetimeCancellation.Token).ConfigureAwait(true);
     }
@@ -202,6 +252,7 @@ public sealed class ReminderCenterViewModel : ObservableObject, IDisposable
     private void Close()
     {
         IsOpen = false;
+        ClearActivationContext();
     }
 
     private async System.Threading.Tasks.Task ExecuteActionAsync(
@@ -327,12 +378,16 @@ public sealed class ReminderCenterViewModel : ObservableObject, IDisposable
         foreach (var model in models)
         {
             var rowRevision = revision;
-            Items.Add(new ReminderItemViewModel(
+            var item = new ReminderItemViewModel(
                 model,
                 () => ActionsEnabled && SnapshotRevision == rowRevision,
                 ExecuteActionAsync,
                 MarkReadAsync,
-                rowRevision));
+                rowRevision);
+            item.SetActivationMatch(
+                model.LogicalReminderId is { } logicalReminderId &&
+                activationIds.Contains(logicalReminderId));
+            Items.Add(item);
         }
     }
 
@@ -351,7 +406,43 @@ public sealed class ReminderCenterViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(ReminderCount));
         OnPropertyChanged(nameof(HasItems));
         OnPropertyChanged(nameof(HasNoItems));
+        OnPropertyChanged(nameof(HasActivationContext));
+        OnPropertyChanged(nameof(ActivationRequestedCount));
+        OnPropertyChanged(nameof(ActivationMatchCount));
         RefreshItemCommandStates();
+    }
+
+    private void ReplaceActivationMatches()
+    {
+        foreach (var item in Items)
+        {
+            item.SetActivationMatch(
+                item.Model.LogicalReminderId is { } logicalReminderId &&
+                activationIds.Contains(logicalReminderId));
+        }
+
+        OnPropertyChanged(nameof(ActivationMatchCount));
+    }
+
+    private void UpdateActivationMessage()
+    {
+        var matched = ActivationMatchCount;
+        InteractionMessage = matched == ActivationRequestedCount
+            ? $"摘要包含 {ActivationRequestedCount} 项提醒，当前提醒中心已找到全部。"
+            : $"摘要包含 {ActivationRequestedCount} 项提醒，当前提醒中心找到 {matched} 项。";
+    }
+
+    private void ClearActivationContext()
+    {
+        if (activationIds.Count == 0)
+        {
+            return;
+        }
+
+        activationIds.Clear();
+        ReplaceActivationMatches();
+        OnPropertyChanged(nameof(HasActivationContext));
+        OnPropertyChanged(nameof(ActivationRequestedCount));
     }
 
     private void RefreshItemCommandStates()

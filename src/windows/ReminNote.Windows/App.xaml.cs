@@ -30,6 +30,7 @@ public partial class App : Application, IDisposable
     {
         base.OnStartup(e);
 
+        var activationArgument = ResolveNotificationActivationArgument(e.Args);
         var roots = AgentStartupPaths.ResolveDataRoot(e.Args);
         var repositoryRoot = roots.RepositoryRoot ?? AppContext.BaseDirectory;
         Directory.CreateDirectory(roots.DataRoot);
@@ -46,7 +47,7 @@ public partial class App : Application, IDisposable
         if (!_singleInstance.IsPrimary)
         {
             agentClient.Dispose();
-            Shutdown(_singleInstance.TryActivateExisting() ? 0 : 1);
+            Shutdown(_singleInstance.TryActivateExisting(activationArgument) ? 0 : 1);
             return;
         }
 
@@ -72,7 +73,7 @@ public partial class App : Application, IDisposable
                 serviceProvider.GetRequiredService<IClock>(),
                 () => Application.Current?.MainWindow,
                 Dispatcher,
-                ResolveNotificationHostOptions(headless)));
+                ResolveNotificationHostOptions(headless, roots.DataRoot, profileName)));
         builder.Services.AddSingleton<INotificationChannelCatalog>(serviceProvider =>
             serviceProvider.GetRequiredService<WindowsNotificationChannelHost>().Catalog);
         builder.Services.AddTodayFeature();
@@ -100,8 +101,16 @@ public partial class App : Application, IDisposable
 
         var window = _host.Services.GetRequiredService<MainWindow>();
         MainWindow = window;
-        _singleInstance.StartListener(() => Dispatcher.BeginInvoke(new Action(ActivateMainWindow)));
+        _singleInstance.StartListener(argument =>
+        {
+            var activation = ParseNotificationActivation(argument);
+            _ = Dispatcher.BeginInvoke(new Action(() => ActivateMainWindow(activation)));
+        });
         window.Show();
+        if (activationArgument is not null)
+        {
+            ActivateMainWindow(ParseNotificationActivation(activationArgument));
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -129,15 +138,39 @@ public partial class App : Application, IDisposable
         }
     }
 
-    private void ActivateMainWindow()
+    private void ActivateMainWindow(ReminderNotificationActivation? activation = null)
     {
         if (MainWindow is not MainWindow window)
         {
             return;
         }
 
-        window.ActivateFromExternalRequest();
+        if (activation is null)
+        {
+            window.ActivateFromExternalRequest();
+            return;
+        }
+
+        window.ActivateFromExternalRequest(activation);
     }
+
+    private static string? ResolveNotificationActivationArgument(IReadOnlyList<string> args)
+    {
+        foreach (var argument in args)
+        {
+            if (ReminderNotificationActivation.TryParse(argument, out _))
+            {
+                return argument;
+            }
+        }
+
+        return null;
+    }
+
+    private static ReminderNotificationActivation? ParseNotificationActivation(string? argument) =>
+        ReminderNotificationActivation.TryParse(argument, out var activation)
+            ? activation
+            : null;
 
     public void Dispose()
     {
@@ -172,7 +205,10 @@ public partial class App : Application, IDisposable
         args.Any(argument =>
             string.Equals(argument, "--headless", StringComparison.OrdinalIgnoreCase));
 
-    private static WindowsNotificationHostOptions ResolveNotificationHostOptions(bool headless)
+    private static WindowsNotificationHostOptions ResolveNotificationHostOptions(
+        bool headless,
+        string dataRoot,
+        string? profileName)
     {
         // A command-line switch is not evidence that the OS registration exists.
         // Normal startup creates and reads back the Start-menu shortcut; headless
@@ -181,7 +217,9 @@ public partial class App : Application, IDisposable
         var verified = !headless && WindowsToastRegistration.TryEnsureAndVerify(
             WindowsNotificationHostOptions.DefaultApplicationUserModelId,
             Environment.ProcessPath,
-            out failureCode);
+            out failureCode,
+            dataRoot,
+            profileName);
         if (!verified && !headless && failureCode is not null)
         {
             Debug.WriteLine($"Toast registration not verified: {failureCode}");
