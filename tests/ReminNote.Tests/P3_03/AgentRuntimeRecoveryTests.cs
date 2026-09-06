@@ -41,4 +41,18 @@ public sealed class AgentRuntimeRecoveryTests
         Assert.True(coverage.ConsumeSignal());
         Assert.False(coverage.ConsumeSignal());
     }
+
+    [Fact]
+    public void CoverageDetectsShortSuspendRelativeToScheduledDelay()
+    {
+        Assert.False(AgentResumeCoverage.IsUnexpectedGap(
+            elapsedMilliseconds: 30_000,
+            expectedDelayMilliseconds: 30_000));
+        Assert.True(AgentResumeCoverage.IsUnexpectedGap(
+            elapsedMilliseconds: 30_501,
+            expectedDelayMilliseconds: 30_000));
+        Assert.True(AgentResumeCoverage.IsUnexpectedGap(
+            elapsedMilliseconds: 90_000,
+            expectedDelayMilliseconds: -1));
+    }
 }

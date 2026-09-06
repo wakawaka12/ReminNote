@@ -510,6 +510,20 @@ internal static class NotificationHostBridgeProtocol
                 writer.WriteString("scheduledTriggerAtUtc", InstantPattern.Format(scheduled));
             }
 
+            if (request.Summary is { } summary)
+            {
+                writer.WriteStartObject("summary");
+                writer.WriteNumber("count", summary.Count);
+                writer.WriteStartArray("logicalReminderIds");
+                foreach (var logicalReminderId in summary.LogicalReminderIds)
+                {
+                    writer.WriteStringValue(logicalReminderId.ToString("D"));
+                }
+
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
+
             writer.WriteEndObject();
         }
 
@@ -549,12 +563,14 @@ internal static class NotificationHostBridgeProtocol
             RequireBoolean(root, "pinned"),
             ParseInstant(root, "triggeredAtUtc"),
             ParseOptionalInstant(root, "scheduledTriggerAtUtc"));
+        var summary = ParseOptionalSummary(root);
         var delivery = new NotificationDeliveryRequest(
             trigger,
             channelId,
             ParseGuid(root, "correlationId"),
             ParseGuid(root, "idempotencyKey"),
-            ParseGuid(root, "requestId"));
+            ParseGuid(root, "requestId"),
+            summary);
         return new NotificationHostBridgeRequest(
             new NotificationChannelEffectRequest(delivery, surfaceKind));
     }
@@ -733,6 +749,51 @@ internal static class NotificationHostBridgeProtocol
 
     private static Instant? ParseOptionalInstant(JsonElement root, string name) =>
         root.TryGetProperty(name, out _) ? ParseInstant(root, name) : null;
+
+    private static NotificationSummarySnapshot? ParseOptionalSummary(JsonElement root)
+    {
+        if (!root.TryGetProperty("summary", out var summary))
+        {
+            return null;
+        }
+
+        if (summary.ValueKind != JsonValueKind.Object ||
+            !summary.TryGetProperty("count", out var countElement) ||
+            !countElement.TryGetInt32(out var count) ||
+            !summary.TryGetProperty("logicalReminderIds", out var idsElement) ||
+            idsElement.ValueKind != JsonValueKind.Array)
+        {
+            throw new NotificationContractException(
+                NotificationErrorCodes.SerializationInvalid,
+                "Notification summary must contain an Int32 count and an ID array.",
+                "summary");
+        }
+
+        var ids = new List<Guid>();
+        foreach (var element in idsElement.EnumerateArray())
+        {
+            if (element.ValueKind != JsonValueKind.String ||
+                !Guid.TryParse(element.GetString(), out var id))
+            {
+                throw new NotificationContractException(
+                    NotificationErrorCodes.SerializationInvalid,
+                    "Notification summary IDs must be UUIDs.",
+                    "summary.logicalReminderIds");
+            }
+
+            ids.Add(id);
+        }
+
+        if (count != ids.Count)
+        {
+            throw new NotificationContractException(
+                NotificationErrorCodes.SerializationInvalid,
+                "Notification summary count must match its ID array.",
+                "summary.count");
+        }
+
+        return new NotificationSummarySnapshot(ids);
+    }
 }
 
 internal sealed record NotificationHostBridgeRequest(

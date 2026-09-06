@@ -119,7 +119,6 @@ internal static class WindowsToastRegistration
                 link.SetWorkingDirectory(Path.GetDirectoryName(executablePath)!),
                 "IShellLinkW.SetWorkingDirectory");
             ThrowIfFailed(link.SetDescription("ReminNote"), "IShellLinkW.SetDescription");
-            ((IPersistFile)linkObject).Save(shortcutPath, true);
 
             propertyStore = (IPropertyStore)linkObject;
             value = PropVariant.FromString(applicationUserModelId);
@@ -128,6 +127,12 @@ internal static class WindowsToastRegistration
                 propertyStore.SetValue(ref propertyKey, ref value),
                 "IPropertyStore.SetValue(PKEY_AppUserModel_ID)");
             ThrowIfFailed(propertyStore.Commit(), "IPropertyStore.Commit");
+
+            // Persist only after the property store has committed the AUMID.
+            // Saving first creates a valid-looking .lnk but leaves the
+            // subsequently assigned property out of the file that a fresh
+            // ShellLink instance reads during verification.
+            ((IPersistFile)linkObject).Save(shortcutPath, true);
         }
         finally
         {
@@ -214,14 +219,33 @@ internal static class WindowsToastRegistration
         public uint PropertyId { get; } = propertyId;
     }
 
-    [StructLayout(LayoutKind.Explicit)]
+    // PROPVARIANT is 24 bytes on win-x64: an eight-byte header followed by a
+    // 16-byte union (for example DECIMAL and counted array members). The
+    // previous two-field declaration was only 16 bytes, so IPropertyStore
+    // could write past the managed buffer during GetValue/PropVariantClear.
+    [StructLayout(LayoutKind.Explicit, Size = 24)]
     private struct PropVariant
     {
         [FieldOffset(0)]
         public ushort VariantType;
 
+        [FieldOffset(2)]
+        private ushort Reserved1;
+
+        [FieldOffset(4)]
+        private ushort Reserved2;
+
+        [FieldOffset(6)]
+        private ushort Reserved3;
+
         [FieldOffset(8)]
         public IntPtr Pointer;
+
+        // Keep the complete native union size even though this integration
+        // only uses the LPWStr arm. These bytes are intentionally zeroed by
+        // default construction and are never interpreted by managed code.
+        [FieldOffset(16)]
+        private long UnionPadding;
 
         public static PropVariant FromString(string value) => new()
         {

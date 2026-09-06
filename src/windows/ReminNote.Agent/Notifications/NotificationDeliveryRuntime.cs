@@ -184,6 +184,14 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
     private readonly SemaphoreSlim dispatchGate = new(1, 1);
     private int disposed;
 
+    // Quiet-hours summary members are grouped by channel and the immutable
+    // end of their quiet window.  Retry backoff is deliberately not part of
+    // the key: a failed representative and its deferred members must stay in
+    // one group even after the next-attempt instant moves.
+    private readonly record struct SummaryGroupKey(
+        NotificationChannelId ChannelId,
+        long WindowEndUnixSeconds);
+
     public NotificationDeliveryDispatcher(
         INotificationChannelCatalog channelCatalog,
         INotificationDeliveryAttemptJournalStore attemptStore,
@@ -247,36 +255,59 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
                 cancellationToken)
             .ConfigureAwait(false);
         var results = new List<NotificationDurableDispatchResult>(recoverable.Count);
-        var summaryGroups = recoverable
-            .Where(IsSummaryQueued)
-            .GroupBy(record => record.ChannelId)
-            .ToDictionary(
-                group => group.Key,
-                group => group
-                    .OrderBy(record => record.UpdatedAtUtc)
-                    .ThenBy(record => record.AttemptId)
-                    .ToArray());
-        var summaryChannelsHandled = new HashSet<NotificationChannelId>();
+        var summaryGroups = new Dictionary<SummaryGroupKey, List<NotificationDeliveryAttemptRecord>>();
+        foreach (var record in recoverable)
+        {
+            if (!IsSummaryRecoverable(record) ||
+                !TryGetSummaryWindowEndUnixSeconds(record, out var windowEndUnixSeconds))
+            {
+                continue;
+            }
+
+            var key = new SummaryGroupKey(record.ChannelId, windowEndUnixSeconds);
+            if (!summaryGroups.TryGetValue(key, out var records))
+            {
+                records = [];
+                summaryGroups.Add(key, records);
+            }
+
+            records.Add(record);
+        }
+
+        var orderedSummaryGroups = summaryGroups.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value
+                .OrderBy(record => record.UpdatedAtUtc)
+                .ThenBy(record => record.AttemptId)
+                .ToArray());
+        var summaryGroupsHandled = new HashSet<SummaryGroupKey>();
         foreach (var record in recoverable)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (IsSummaryQueued(record) &&
-                summaryGroups.TryGetValue(record.ChannelId, out var summaryRecords) &&
+            if (IsSummaryRecoverable(record) &&
+                TryGetSummaryWindowEndUnixSeconds(record, out var windowEndUnixSeconds) &&
+                orderedSummaryGroups.TryGetValue(
+                    new SummaryGroupKey(record.ChannelId, windowEndUnixSeconds),
+                    out var summaryRecords) &&
                 summaryRecords.Length > 1)
             {
                 // A quiet-hours summary is one bounded channel effect for a
-                // channel. If that representative cannot be delivered yet,
-                // leave every queued core fact recoverable and retry the group
-                // as a unit on the next pass; never emit a burst of individual
-                // effects merely because their retry hints share a deadline.
-                if (!summaryChannelsHandled.Add(record.ChannelId))
+                // window. The request carries the complete bounded member
+                // list, so the host can show a count and open the reminder
+                // collection instead of presenting the first item as if it
+                // were the whole summary.
+                var summaryKey = new SummaryGroupKey(record.ChannelId, windowEndUnixSeconds);
+                if (!summaryGroupsHandled.Add(summaryKey))
                 {
                     continue;
                 }
 
                 var representative = summaryRecords[0];
+                var summary = new NotificationSummarySnapshot(
+                    summaryRecords.Select(item => item.LogicalReminderId),
+                    Instant.FromUnixTimeSeconds(windowEndUnixSeconds));
                 var representativeResult = await DispatchAsync(
-                        ToRecoveryRequest(representative),
+                        ToRecoveryRequest(representative, summary),
                         cancellationToken)
                     .ConfigureAwait(false);
                 results.Add(representativeResult);
@@ -286,6 +317,23 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
                     {
                         results.Add(await MarkSummaryAggregatedAsync(
                                 aggregated,
+                                cancellationToken)
+                            .ConfigureAwait(false));
+                    }
+                }
+                else if (representativeResult.Attempt is { Retryable: true, NextAttemptAtUtc: { } retryAtUtc })
+                {
+                    // Keep the whole group behind the representative's
+                    // backoff. Otherwise the representative becomes a
+                    // retryable FAILED/UNAVAILABLE row while the remaining
+                    // quiet-queued rows are immediately dispatched one by
+                    // one on the next recovery pass.
+                    foreach (var deferred in summaryRecords.Skip(1))
+                    {
+                        results.Add(await DeferSummaryAsync(
+                                deferred,
+                                Instant.FromUnixTimeSeconds(windowEndUnixSeconds),
+                                retryAtUtc,
                                 cancellationToken)
                             .ConfigureAwait(false));
                     }
@@ -306,22 +354,103 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
         return results;
     }
 
-    private static bool IsSummaryQueued(NotificationDeliveryAttemptRecord record) =>
+    private static bool IsSummaryRecoverable(NotificationDeliveryAttemptRecord record) =>
         !record.IsPending &&
-        record.Outcome == NotificationDeliveryOutcome.SUPPRESSED_QUIET_HOURS &&
-        string.Equals(
-            record.ErrorCode,
-            NotificationErrorCodes.PolicySummaryQueued,
-            StringComparison.Ordinal);
+        record.Retryable &&
+        record.NextAttemptAtUtc is not null &&
+        ((record.Outcome == NotificationDeliveryOutcome.SUPPRESSED_QUIET_HOURS &&
+          string.Equals(
+              record.ErrorCode,
+              NotificationErrorCodes.PolicySummaryQueued,
+              StringComparison.Ordinal)) ||
+         NotificationErrorCodes.TryParsePolicySummaryRetryCode(
+             record.ErrorCode,
+             out _));
+
+    private static bool TryGetSummaryWindowEndUnixSeconds(
+        NotificationDeliveryAttemptRecord record,
+        out long windowEndUnixSeconds)
+    {
+        if (NotificationErrorCodes.TryParsePolicySummaryRetryCode(
+                record.ErrorCode,
+                out windowEndUnixSeconds))
+        {
+            return true;
+        }
+
+        if (record.NextAttemptAtUtc is { } nextAttemptAtUtc)
+        {
+            windowEndUnixSeconds = nextAttemptAtUtc.ToUnixTimeSeconds();
+            return true;
+        }
+
+        windowEndUnixSeconds = default;
+        return false;
+    }
 
     private static NotificationDeliveryRequest ToRecoveryRequest(
-        NotificationDeliveryAttemptRecord record) =>
+        NotificationDeliveryAttemptRecord record,
+        NotificationSummarySnapshot? summary = null) =>
         new(
             record.ToTriggerFact(),
             record.ChannelId,
             record.CorrelationId,
             record.IsPending ? record.IdempotencyKey : Guid.CreateVersion7(),
-            Guid.CreateVersion7());
+            Guid.CreateVersion7(),
+            summary);
+
+    private async ValueTask<NotificationDurableDispatchResult> DeferSummaryAsync(
+        NotificationDeliveryAttemptRecord record,
+        Instant summaryWindowEndUtc,
+        Instant retryAtUtc,
+        CancellationToken cancellationToken)
+    {
+        var request = ToRecoveryRequest(record);
+        var pending = await attemptStore.AppendPendingAsync(
+                request,
+                retryPolicy.MaxAttempts,
+                clock.GetCurrentInstant(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!pending.Record.IsPending)
+        {
+            var terminalDisposition = pending.Disposition switch
+            {
+                NotificationDeliveryPendingDisposition.REPLAYED =>
+                    NotificationDurableDispatchDisposition.REPLAYED,
+                NotificationDeliveryPendingDisposition.DEFERRED =>
+                    NotificationDurableDispatchDisposition.DEFERRED,
+                _ => NotificationDurableDispatchDisposition.TERMINAL,
+            };
+            return Result(
+                request.CoreTrigger,
+                pending.Record,
+                terminalDisposition,
+                channelInvoked: false,
+                pending.Record.ErrorCode);
+        }
+
+        var queuedCode = NotificationErrorCodes.CreatePolicySummaryRetryCode(
+            summaryWindowEndUtc);
+        var completed = await attemptStore.AppendOutcomeAsync(
+                pending.Record,
+                NotificationChannelDeliveryResponse.SuppressedByPolicy(queuedCode),
+                retryable: true,
+                clock.GetCurrentInstant(),
+                nextAttemptAtUtc: retryAtUtc,
+                request.RequestId,
+                CancellationToken.None)
+            .ConfigureAwait(false);
+        var disposition = completed.EventOrdinal > pending.Record.EventOrdinal
+            ? NotificationDurableDispatchDisposition.APPENDED
+            : NotificationDurableDispatchDisposition.REPLAYED;
+        return Result(
+            request.CoreTrigger,
+            completed,
+            disposition,
+            channelInvoked: false,
+            completed.ErrorCode);
+    }
 
     private async ValueTask<NotificationDurableDispatchResult> MarkSummaryAggregatedAsync(
         NotificationDeliveryAttemptRecord record,
@@ -566,6 +695,21 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
                         response.ErrorCode);
         }
 
+        if (request.Summary is { Count: > 1, SummaryWindowEndUtc: { } summaryWindowEndUtc } &&
+            retryable &&
+            response.Outcome is NotificationDeliveryOutcome.UNAVAILABLE or
+                NotificationDeliveryOutcome.FAILED or
+                NotificationDeliveryOutcome.NOT_ATTEMPTED)
+        {
+            // Keep a transient summary failure grouped with its deferred
+            // members.  The original outcome remains durable; the bounded
+            // marker carries only the immutable quiet-window identity.
+            response = new NotificationChannelDeliveryResponse(
+                response.Outcome,
+                NotificationErrorCodes.CreatePolicySummaryRetryCode(summaryWindowEndUtc),
+                response.NextAttemptAtUtc);
+        }
+
         var completed = await attemptStore.AppendOutcomeAsync(
                 pending,
                 response,
@@ -666,7 +810,8 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
             record.ChannelId,
             record.CorrelationId,
             record.IdempotencyKey,
-            Guid.CreateVersion7());
+            Guid.CreateVersion7(),
+            source.Summary);
 
     private static NotificationDeliveryRequest RequestForRetry(
         NotificationDeliveryRequest source,
@@ -676,7 +821,8 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
             current.ChannelId,
             current.CorrelationId,
             source.IdempotencyKey,
-            source.RequestId);
+            source.RequestId,
+            source.Summary);
 
     private static NotificationDurableDispatchResult Result(
         NotificationTriggerFact coreTrigger,

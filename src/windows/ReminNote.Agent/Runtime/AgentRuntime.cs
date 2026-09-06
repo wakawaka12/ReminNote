@@ -272,10 +272,10 @@ internal static class AgentRuntime
             var now = clock.GetCurrentInstant();
             // The loop delay is capped at 30 seconds, so a materially larger
             // wall-clock gap is a supplementary sleep/resume signal. The
-            // monotonic AgentResumeCoverage observation covers the common
-            // 60-90 second suspend interval even when Windows does not deliver
-            // a resume callback to the console Agent. A backwards clock jump
-            // is recovered too.
+            // monotonic AgentResumeCoverage observation is armed with the
+            // actual next delay, covering short and long suspend intervals
+            // even when Windows does not deliver a resume callback. A
+            // backwards clock jump is recovered too.
             var clockGap = now - previousTickUtc;
             var shouldRecover = ShouldRecover(
                 recovery,
@@ -286,10 +286,9 @@ internal static class AgentRuntime
                 : await runtime.RunDueCycleAsync(cancellationToken).ConfigureAwait(false);
             recovery = false;
             previousTickUtc = clock.GetCurrentInstant();
-            await Task.Delay(
-                    GetReminderLoopDelay(run.SchedulerResult?.NextWakeupUtc, clock),
-                    cancellationToken)
-                .ConfigureAwait(false);
+            var delay = GetReminderLoopDelay(run.SchedulerResult?.NextWakeupUtc, clock);
+            resumeCoverage.ArmForDelay(delay);
+            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
         }
     }
 

@@ -178,6 +178,52 @@ public sealed class ReminderSchedulerTests
     }
 
     [Fact]
+    public async Task NormalDueCycleExpiresPreStartAfterShortWakeCrossesTaskStart()
+    {
+        using var root = new IsolatedTempRoot();
+        var store = new InMemorySchedulerStore(root.Path);
+        var clock = new MutableClock(EvaluatedAt);
+        var preStart = AddTaskSchedule(
+            store,
+            160,
+            ReminderPurpose.TASK_PRE_START,
+            EvaluatedAt - Duration.FromSeconds(30),
+            taskStartAtUtc: EvaluatedAt - Duration.FromSeconds(1));
+        var taskStart = AddTaskSchedule(
+            store,
+            180,
+            ReminderPurpose.TASK_START,
+            EvaluatedAt - Duration.FromSeconds(1),
+            taskStartAtUtc: EvaluatedAt + Duration.FromMinutes(1));
+
+        await using var scheduler = new ReminderScheduler(
+            store,
+            clock,
+            identityGenerator: new FixedIdentityGenerator(209, 229));
+
+        var run = await scheduler.RunDueCycleAsync(
+            isRecovery: false,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var expired = Assert.Single(
+            run.DueResults,
+            result => result.ScheduleId == preStart.Schedule.Id);
+        Assert.Equal(ReminderDueResultKind.EXPIRED, expired.Kind);
+        Assert.Equal(ReminderPolicyCodes.RecoveryPreStartObsolete, expired.ReasonCode);
+        Assert.Equal(ScheduleState.EXPIRED, preStart.Schedule.State);
+        Assert.Null(expired.Instance);
+        Assert.False(expired.ShouldDispatch);
+
+        var triggered = Assert.Single(
+            run.DueResults,
+            result => result.ScheduleId == taskStart.Schedule.Id);
+        Assert.Equal(ReminderDueResultKind.TRIGGERED, triggered.Kind);
+        Assert.True(triggered.ShouldDispatch);
+        Assert.Equal(ScheduleState.CONSUMED, taskStart.Schedule.State);
+        Assert.Equal(1, store.InstanceCount);
+    }
+
+    [Fact]
     public async Task TaskResultRecordedCancelsDueScheduleWithoutCreatingCoreInstance()
     {
         using var root = new IsolatedTempRoot();

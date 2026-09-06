@@ -190,6 +190,12 @@ public sealed record NotificationChannelEffectRequest
         DeliveryRequest.CoreTrigger.ScheduledTriggerAtUtc;
 
     /// <summary>
+    /// Optional bounded quiet-hours summary metadata. Presenters may render
+    /// the count and use the logical IDs to open the reminder collection.
+    /// </summary>
+    public NotificationSummarySnapshot? Summary => DeliveryRequest.Summary;
+
+    /// <summary>
     /// Stable replace/update key for Toast, Tray and Widget presenters. It is
     /// the logical reminder identity, never a window handle or process ID.
     /// </summary>

@@ -216,8 +216,8 @@ internal sealed class WindowsWindowHandleResolver
 
 /// <summary>
 /// Real WinRT toast presenter. No arbitrary Reminder text crosses this seam;
-/// the host uses constant text and the validated logical UUID as the launch,
-/// tag and replacement identity.
+/// the host uses bounded summary metadata and the validated logical UUID as
+/// the launch, tag and replacement identity.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class WindowsToastNotificationEffectSink : INotificationChannelEffectSink
@@ -293,7 +293,7 @@ public sealed class WindowsToastNotificationEffectSink : INotificationChannelEff
         {
             using var scope = WindowsRuntimeScope.Enter();
             using var notifier = CreateNotifier();
-            using var document = CreateToastDocument(request.LogicalReplacementKey);
+            using var document = CreateToastDocument(request);
             using var factory = GetActivationFactory(
                 "Windows.UI.Notifications.ToastNotification",
                 ToastNotificationFactoryIid);
@@ -342,7 +342,7 @@ public sealed class WindowsToastNotificationEffectSink : INotificationChannelEff
         return new ComReference(notifier);
     }
 
-    private static ComReference CreateToastDocument(string logicalReplacementKey)
+    private static ComReference CreateToastDocument(NotificationChannelEffectRequest request)
     {
         using var documentObjectClass = WindowsRuntimeString.Create("Windows.Data.Xml.Dom.XmlDocument");
         var documentObject = IntPtr.Zero;
@@ -351,7 +351,7 @@ public sealed class WindowsToastNotificationEffectSink : INotificationChannelEff
             "RoActivateInstance(XmlDocument)");
         using var documentInspectable = new ComReference(documentObject);
         using var document = documentInspectable.QueryInterface(XmlDocumentIoIid);
-        using var xml = WindowsRuntimeString.Create(BuildToastXml(logicalReplacementKey));
+        using var xml = WindowsRuntimeString.Create(BuildToastXml(request));
         WindowsRuntime.ThrowIfFailed(
             GetDelegate<LoadXmlDelegate>(document.Value, 6)(document.Value, xml.Value),
             "IXmlDocumentIO.LoadXml");
@@ -383,8 +383,18 @@ public sealed class WindowsToastNotificationEffectSink : INotificationChannelEff
         return new ComReference(factory);
     }
 
-    private static string BuildToastXml(string logicalReplacementKey) =>
-        $"<toast launch=\"reminnote://reminder/{logicalReplacementKey}\"><visual><binding template=\"ToastGeneric\"><text>ReminNote</text><text>有一项提醒需要查看。</text></binding></visual></toast>";
+    private static string BuildToastXml(NotificationChannelEffectRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var summary = request.Summary;
+        var launch = summary is { Count: > 1 }
+            ? $"reminnote://reminders?ids={string.Join(',', summary.LogicalReminderIds.Select(id => id.ToString("D")))}"
+            : $"reminnote://reminder/{request.LogicalReplacementKey}";
+        var message = summary is { Count: > 1 }
+            ? $"有 {summary.Count} 项提醒需要查看。"
+            : "有一项提醒需要查看。";
+        return $"<toast launch=\"{launch}\"><visual><binding template=\"ToastGeneric\"><text>ReminNote</text><text>{message}</text></binding></visual></toast>";
+    }
 
     private static NotificationChannelStatus StatusFromException(
         Instant observedAtUtc,
@@ -607,7 +617,8 @@ public sealed class WindowsTrayNotificationEffectSink : INotificationChannelEffe
                     snapshot.Handle,
                     icon,
                     request.LogicalReminderId,
-                    includeInfo: true);
+                    includeInfo: true,
+                    summary: request.Summary);
                 var message = iconRegistered ? NimModify : NimAdd;
                 if (!WindowsNative.ShellNotifyIcon(message, data))
                 {
@@ -623,7 +634,8 @@ public sealed class WindowsTrayNotificationEffectSink : INotificationChannelEffe
                             snapshot.Handle,
                             icon,
                             request.LogicalReminderId,
-                            includeInfo: true);
+                            includeInfo: true,
+                            summary: request.Summary);
                         if (WindowsNative.ShellNotifyIcon(NimAdd, data))
                         {
                             iconRegistered = true;
@@ -711,8 +723,12 @@ public sealed class WindowsTrayNotificationEffectSink : INotificationChannelEffe
         IntPtr windowHandle,
         IntPtr icon,
         Guid logicalReminderId,
-        bool includeInfo)
+        bool includeInfo,
+        NotificationSummarySnapshot? summary = null)
     {
+        var info = summary is { Count: > 1 }
+            ? $"有 {summary.Count} 项提醒需要查看。"
+            : "有一项提醒需要查看。";
         return new WindowsNative.NotifyIconData
         {
             CbSize = (uint)Marshal.SizeOf<WindowsNative.NotifyIconData>(),
@@ -723,7 +739,7 @@ public sealed class WindowsTrayNotificationEffectSink : INotificationChannelEffe
                 : 0),
             HIcon = icon,
             SzTip = "ReminNote",
-            SzInfo = includeInfo ? "有一项提醒需要查看。" : string.Empty,
+            SzInfo = includeInfo ? info : string.Empty,
             UTimeoutOrVersion = 5_000,
             SzInfoTitle = includeInfo ? "ReminNote 提醒" : string.Empty,
             DwInfoFlags = NotificationInfo,
