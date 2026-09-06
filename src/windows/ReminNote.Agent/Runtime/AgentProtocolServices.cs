@@ -188,6 +188,21 @@ internal sealed class AgentProtocolDispatcher : ITransportRequestDispatcher
                 .ConfigureAwait(false);
         }
 
+        if (metadata.RuleId is null &&
+            request.Operation == ProtocolOperations.ReminderRuleUpsert &&
+            result.CommittedRevision is { } reminderRevision)
+        {
+            var changeKind = request.Payload.TryGetProperty("mode", out var modeValue) &&
+                string.Equals(modeValue.GetString(), ReminderRuleUpsertModes.Update, StringComparison.Ordinal)
+                ? "updated"
+                : "created";
+            metadata.RuleId = await store.FindJournalEntityIdAsync(
+                    reminderRevision,
+                    "reminder_rule",
+                    changeKind)
+                .ConfigureAwait(false);
+        }
+
         var state = await store.ReadRevisionStateAsync().ConfigureAwait(false);
         var outcome = ToProtocolOutcome(result.Outcome);
         var success = result.Outcome is P25MutationOutcome.Changed or P25MutationOutcome.NoOp or P25MutationOutcome.Replayed;
@@ -321,8 +336,23 @@ internal sealed class AgentProtocolDispatcher : ITransportRequestDispatcher
             return JsonSerializer.SerializeToElement(new { deleted = true, taskId = metadata.TaskId });
         }
 
-        return metadata.TaskId is { } taskId
-            ? JsonSerializer.SerializeToElement(new { changed = result.Changed, taskId })
+        if (metadata.TaskId is { } taskId && metadata.RuleId is { } taskRuleId)
+        {
+            return JsonSerializer.SerializeToElement(new
+            {
+                changed = result.Changed,
+                taskId,
+                ruleId = taskRuleId
+            });
+        }
+
+        if (metadata.TaskId is { } taskIdOnly)
+        {
+            return JsonSerializer.SerializeToElement(new { changed = result.Changed, taskId = taskIdOnly });
+        }
+
+        return metadata.RuleId is { } ruleId
+            ? JsonSerializer.SerializeToElement(new { changed = result.Changed, ruleId })
             : JsonSerializer.SerializeToElement(new { changed = result.Changed });
     }
 

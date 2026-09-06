@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using ReminNote.Core.Protocol;
 using ReminNote.Core.Reminders.Domain;
+using ReminNote.Core.Reminders.Export;
 using ReminNote.Infrastructure.Persistence.P25;
 using ReminNote.Infrastructure.Persistence.P275;
 
@@ -75,6 +76,7 @@ public static class UserDataCandidateService
         "candidateDatabase",
         "notificationPolicy",
         "pendingSchedulesDeferred",
+        "deferredScheduleIds",
         "activeWrite"
     ];
 
@@ -149,7 +151,7 @@ public static class UserDataCandidateService
 
         try
         {
-            await VerifyCandidateDatabaseAsync(candidatePath, profileScope, document, marker, cancellationToken)
+            await VerifyCandidateDatabaseAsync(candidatePath, root, profileScope, document, marker, cancellationToken)
                 .ConfigureAwait(false);
             return new(
                 true,
@@ -677,6 +679,7 @@ public static class UserDataCandidateService
             var candidateDatabase = ReadString(document.RootElement, "candidateDatabase");
             var notificationPolicy = ReadNullableString(document.RootElement, "notificationPolicy");
             var pendingDeferred = ReadInt(document.RootElement, "pendingSchedulesDeferred");
+            var deferredScheduleIds = ReadStringArray(document.RootElement, "deferredScheduleIds");
             var activeWrite = ReadBoolean(document.RootElement, "activeWrite");
             if (!string.Equals(schema, UserDataExportContract.Schema, StringComparison.Ordinal) ||
                 schemaVersion != UserDataExportContract.SchemaVersion ||
@@ -684,12 +687,13 @@ public static class UserDataCandidateService
                 !string.Equals(candidateDatabase, "candidate.sqlite", StringComparison.Ordinal) ||
                 notificationPolicy is not (null or "notification-policy.json") ||
                 pendingDeferred < 0 ||
+                pendingDeferred != deferredScheduleIds.Length ||
                 activeWrite)
             {
                 throw new UserDataExportContractException("candidate.marker_invalid", "Candidate marker 与受控恢复契约不匹配。", "candidate-restore.json");
             }
 
-            return new(sourceChecksum, notificationPolicy, pendingDeferred);
+            return new(sourceChecksum, notificationPolicy, pendingDeferred, deferredScheduleIds);
         }
         catch (UserDataExportContractException)
         {
@@ -753,6 +757,7 @@ public static class UserDataCandidateService
 
     private static async ValueTask VerifyCandidateDatabaseAsync(
         string candidatePath,
+        string candidateRoot,
         string profileScope,
         UserDataExportDocument document,
         CandidateMarker marker,
@@ -807,8 +812,17 @@ public static class UserDataCandidateService
                 throw new UserDataExportContractException("candidate.profile_mismatch", "Candidate profile scope 与当前目标不一致。", "profileScope");
             }
 
-            var expectedPendingSchedules = document.Reminders.Schedules
-                .Count(value => string.Equals(value.State, ScheduleState.PENDING.ToString(), StringComparison.Ordinal));
+            var expectedDeferredScheduleIds = document.Reminders.Schedules
+                .Where(value => string.Equals(value.State, ScheduleState.PENDING.ToString(), StringComparison.Ordinal))
+                .Select(value => value.Id)
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .ToArray();
+            if (!marker.DeferredScheduleIds.SequenceEqual(expectedDeferredScheduleIds, StringComparer.Ordinal))
+            {
+                throw new UserDataExportContractException("candidate.marker_invalid", "Candidate marker 的延期 Schedule ID 集合与导出内容不一致。", "deferredScheduleIds");
+            }
+
+            var expectedPendingSchedules = expectedDeferredScheduleIds.Length;
             if (marker.PendingSchedulesDeferred != expectedPendingSchedules)
             {
                 throw new UserDataExportContractException("candidate.marker_invalid", "Candidate marker 的 pending Schedule 延期计数与导出内容不一致。", "pendingSchedulesDeferred");
@@ -819,12 +833,8 @@ public static class UserDataCandidateService
             var ruleCount = await context.ReminderRules.AsNoTracking().CountAsync(cancellationToken).ConfigureAwait(false);
             var scheduleCount = await context.ReminderSchedules.AsNoTracking().CountAsync(cancellationToken).ConfigureAwait(false);
             var instanceCount = await context.ReminderInstances.AsNoTracking().CountAsync(cancellationToken).ConfigureAwait(false);
-            var expectedSchedules = document.Reminders.Schedules.Count(value =>
-                !string.Equals(value.State, ScheduleState.PENDING.ToString(), StringComparison.Ordinal));
-            var expectedInstances = document.Reminders.Instances.Count(value =>
-                document.Reminders.Schedules.Any(schedule =>
-                    string.Equals(schedule.Id, value.ScheduleId, StringComparison.Ordinal) &&
-                    !string.Equals(schedule.State, ScheduleState.PENDING.ToString(), StringComparison.Ordinal)));
+            var expectedSchedules = document.Reminders.Schedules.Count;
+            var expectedInstances = document.Reminders.Instances.Count;
             if (taskCount != document.Tasks.Count ||
                 historyCount != document.TaskHistory.Count ||
                 ruleCount != document.Reminders.Rules.Count ||
@@ -841,6 +851,15 @@ public static class UserDataCandidateService
             {
                 throw new UserDataExportContractException("candidate.pending_schedule", "Candidate 不得直接激活旧 pending Schedule。", "reminders.schedules");
             }
+
+            await VerifyCandidateContentAsync(
+                    candidatePath,
+                    candidateRoot,
+                    profileScope,
+                    document,
+                    marker,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -848,6 +867,125 @@ public static class UserDataCandidateService
             TryDeleteDirectory(tempRoot);
         }
     }
+
+    /// <summary>
+    /// Counts are only a liveness check. Promotion additionally requires the
+    /// complete structured export to round-trip through the Candidate DB.
+    /// The only intentional transformation is source PENDING schedules being
+    /// represented as CANCELLED/RECOVERY_OBSOLETE so the scheduler cannot
+    /// activate an unconfirmed reminder.
+    /// </summary>
+    private static async ValueTask VerifyCandidateContentAsync(
+        string candidatePath,
+        string candidateRoot,
+        string profileScope,
+        UserDataExportDocument expected,
+        CandidateMarker marker,
+        CancellationToken cancellationToken)
+    {
+        UserDataExportArtifact actualArtifact;
+        try
+        {
+            actualArtifact = await UserDataExportService
+                .CreateAsync(candidatePath, candidateRoot, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (UserDataExportContractException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is IOException or SqliteException or InvalidOperationException or FormatException)
+        {
+            throw new UserDataExportContractException(
+                "candidate.content_read_failed",
+                "Candidate 结构化内容无法重新导出。",
+                "candidate.sqlite",
+                exception);
+        }
+
+        var actual = actualArtifact.Document;
+        if (!string.Equals(actual.Schema, expected.Schema, StringComparison.Ordinal) ||
+            actual.SchemaVersion != expected.SchemaVersion ||
+            actual.GlobalRevision != expected.GlobalRevision ||
+            !string.Equals(actual.NotificationPolicyJson, expected.NotificationPolicyJson, StringComparison.Ordinal) ||
+            actual.AppSettings != expected.AppSettings)
+        {
+            throw ContentMismatch("envelope");
+        }
+
+        RequireEqual("tasks", expected.Tasks, actual.Tasks, static value => value.Id);
+        RequireEqual("taskHistory", expected.TaskHistory, actual.TaskHistory, static value => value.Id);
+        RequireEqual("deliveryAttempts", expected.DeliveryAttempts, actual.DeliveryAttempts, static value => value.AttemptId);
+        RequireEqual(
+            "deliveryAttemptEvents",
+            expected.DeliveryAttemptEvents ?? Array.Empty<UserDeliveryAttemptEventExport>(),
+            actual.DeliveryAttemptEvents ?? Array.Empty<UserDeliveryAttemptEventExport>(),
+            static value => $"{value.AttemptId}:{value.EventOrdinal:D20}");
+        RequireEqual("reminders.rules", expected.Reminders.Rules, actual.Reminders.Rules, static value => value.Id);
+        RequireEqual("reminders.instances", expected.Reminders.Instances, actual.Reminders.Instances, static value => value.Id);
+
+        var expectedSchedules = expected.Reminders.Schedules
+            .OrderBy(value => value.Id, StringComparer.Ordinal)
+            .ToArray();
+        var expectedSchedulesById = expectedSchedules.ToDictionary(value => value.Id, StringComparer.Ordinal);
+        var deferredIds = marker.DeferredScheduleIds.ToHashSet(StringComparer.Ordinal);
+        var actualSchedules = actual.Reminders.Schedules
+            .Select(value =>
+            {
+                if (!deferredIds.Contains(value.Id))
+                {
+                    return value;
+                }
+
+                if (!expectedSchedulesById.TryGetValue(value.Id, out var sourceSchedule) ||
+                    !string.Equals(value.State, ScheduleState.CANCELLED.ToString(), StringComparison.Ordinal) ||
+                    !string.Equals(value.TerminalReason, ScheduleStateReason.RECOVERY_OBSOLETE.ToString(), StringComparison.Ordinal) ||
+                    value.ReplacementScheduleId is not null ||
+                    !string.Equals(value.TerminalAtUtc, value.CreatedAtUtc, StringComparison.Ordinal))
+                {
+                    throw ContentMismatch($"reminders.schedules[{value.Id}].deferred_state");
+                }
+
+                // Only the four fields that represent the explicit deferred
+                // decision are normalized. All other schedule fields remain
+                // Candidate-derived so a count-preserving mutation cannot be
+                // hidden by the normalization step.
+                return value with
+                {
+                    State = sourceSchedule.State,
+                    TerminalReason = sourceSchedule.TerminalReason,
+                    ReplacementScheduleId = sourceSchedule.ReplacementScheduleId,
+                    TerminalAtUtc = sourceSchedule.TerminalAtUtc
+                };
+            })
+            .ToArray();
+        RequireEqual("reminders.schedules", expectedSchedules, actualSchedules, static value => value.Id);
+
+        // Exporting the Candidate also verifies that its event stream was
+        // rebound to the requested profile scope. Keep the explicit argument
+        // in the method contract so future readers cannot accidentally compare
+        // a different profile's rows.
+        _ = profileScope;
+    }
+
+    private static void RequireEqual<T, TKey>(
+        string field,
+        IEnumerable<T> expected,
+        IEnumerable<T> actual,
+        Func<T, TKey> keySelector)
+        where TKey : notnull
+    {
+        var expectedArray = expected.OrderBy(keySelector).ToArray();
+        var actualArray = actual.OrderBy(keySelector).ToArray();
+        if (expectedArray.Length != actualArray.Length ||
+            !expectedArray.SequenceEqual(actualArray))
+        {
+            throw ContentMismatch(field);
+        }
+    }
+
+    private static UserDataExportContractException ContentMismatch(string field) =>
+        new("candidate.content_mismatch", $"Candidate 内容与结构化导出在 {field} 字段不一致，拒绝 promotion。", field);
 
     private static async ValueTask<P275SourceInventory> ReadSourceAsync(
         P275ProfilePaths paths,
@@ -1082,6 +1220,37 @@ public static class UserDataCandidateService
         value.Length == UserDataExportContract.ChecksumPrefix.Length + 64 &&
         value[UserDataExportContract.ChecksumPrefix.Length..].All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');
 
+    private static string[] ReadStringArray(JsonElement root, string name)
+    {
+        if (!root.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.Array)
+        {
+            throw new UserDataExportContractException("candidate.marker_invalid", $"Candidate marker 字段 {name} 类型无效。", name);
+        }
+
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var item in value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(item.GetString()))
+            {
+                throw new UserDataExportContractException("candidate.marker_invalid", $"Candidate marker 字段 {name} 必须是非空字符串数组。", name);
+            }
+
+            var itemValue = item.GetString()!;
+            if (!Guid.TryParseExact(itemValue, "D", out var parsed) ||
+                parsed.Version != 7 ||
+                !string.Equals(parsed.ToString("D"), itemValue, StringComparison.Ordinal) ||
+                !seen.Add(itemValue))
+            {
+                throw new UserDataExportContractException("candidate.marker_invalid", $"Candidate marker 字段 {name} 包含重复或无效 Schedule ID。", name);
+            }
+
+            result.Add(itemValue);
+        }
+
+        return result.OrderBy(value => value, StringComparer.Ordinal).ToArray();
+    }
+
     private static string ReadString(JsonElement root, string name) =>
         root.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(value.GetString())
             ? value.GetString()!
@@ -1123,5 +1292,6 @@ public static class UserDataCandidateService
     private sealed record CandidateMarker(
         string SourceChecksum,
         string? NotificationPolicy,
-        int PendingSchedulesDeferred);
+        int PendingSchedulesDeferred,
+        IReadOnlyList<string> DeferredScheduleIds);
 }

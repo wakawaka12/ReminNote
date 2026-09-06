@@ -1,4 +1,5 @@
 using NodaTime;
+using ReminNote.Core.Application;
 using ReminNote.Core.Reminders.Domain;
 using ReminNote.Core.Tasks;
 using ResolutionActionKind = ReminNote.Core.Reminders.Domain.ResolutionAction;
@@ -51,6 +52,216 @@ public sealed record ReminderQuery
     public int MaxItems { get; }
 
     public static ReminderQuery ActiveOnly { get; } = new();
+}
+
+/// <summary>
+/// Bounded read query for the rules that describe a Task's reminder intent.
+/// Rules are queried separately from triggered instances so a user can edit a
+/// future reminder before its first delivery exists.
+/// </summary>
+public sealed record ReminderRuleQuery
+{
+    public const int DefaultMaxItems = 128;
+    public const int MaxAllowedItems = 256;
+
+    public ReminderRuleQuery(TaskId? taskId = null, int maxItems = DefaultMaxItems)
+    {
+        if (maxItems is < 1 or > MaxAllowedItems)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.query.max_items.invalid",
+                $"Reminder rule query maxItems must be between 1 and {MaxAllowedItems}.",
+                nameof(maxItems)));
+        }
+
+        TaskId = taskId;
+        MaxItems = maxItems;
+    }
+
+    public TaskId? TaskId { get; }
+
+    public int MaxItems { get; }
+}
+
+/// <summary>
+/// Complete immutable rule projection used by the Settings surface. It
+/// carries the same semantic fields as the persisted Rule, including the
+/// timing shape and repeat/wake policy, without exposing storage types.
+/// </summary>
+public sealed record ReminderRuleReadModel
+{
+    public ReminderRuleReadModel(
+        ReminderRuleId ruleId,
+        ReminderTargetKind targetKind,
+        TaskId taskId,
+        OccurrenceId occurrenceId,
+        ReminderPurpose purpose,
+        ReminderTiming timing,
+        ReminderPriority priority,
+        bool pinned,
+        RepeatPolicy repeatPolicy,
+        WakePolicy wakePolicy,
+        bool enabled,
+        long ruleRevision,
+        Instant createdAtUtc,
+        Instant updatedAtUtc)
+    {
+        _ = ReminderRuleId.From(ruleId.Value);
+        _ = TaskId.From(taskId.Value);
+        _ = OccurrenceId.From(occurrenceId.Value);
+        ArgumentNullException.ThrowIfNull(timing);
+        ArgumentNullException.ThrowIfNull(repeatPolicy);
+        if (!Enum.IsDefined(targetKind) || targetKind != ReminderTargetKind.TASK_INSTANCE)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.read_model.target.unsupported",
+                "Reminder rule query only exposes Task-instance targets.",
+                nameof(targetKind)));
+        }
+
+        if (!Enum.IsDefined(purpose) ||
+            purpose is ReminderPurpose.ANIME_PRE_AIRING or ReminderPurpose.ANIME_AIRING or ReminderPurpose.ANIME_CUSTOM)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.read_model.purpose.unsupported",
+                "Reminder rule query only exposes executable Task purposes.",
+                nameof(purpose)));
+        }
+
+        if (!Enum.IsDefined(priority) || !Enum.IsDefined(wakePolicy))
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.read_model.state.invalid",
+                "Reminder rule query contains an unsupported state value.",
+                nameof(priority)));
+        }
+
+        if (ruleRevision < 1)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.read_model.revision.invalid",
+                "Reminder rule revision must be positive.",
+                nameof(ruleRevision)));
+        }
+
+        if (updatedAtUtc < createdAtUtc)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.read_model.timestamp_order.invalid",
+                "Reminder rule updatedAtUtc cannot precede createdAtUtc.",
+                nameof(updatedAtUtc)));
+        }
+
+        RuleId = ruleId;
+        TargetKind = targetKind;
+        TaskId = taskId;
+        OccurrenceId = occurrenceId;
+        Purpose = purpose;
+        Timing = timing;
+        Priority = priority;
+        Pinned = pinned;
+        RepeatPolicy = repeatPolicy;
+        WakePolicy = wakePolicy;
+        Enabled = enabled;
+        RuleRevision = ruleRevision;
+        CreatedAtUtc = createdAtUtc;
+        UpdatedAtUtc = updatedAtUtc;
+    }
+
+    public ReminderRuleId RuleId { get; }
+
+    public ReminderTargetKind TargetKind { get; }
+
+    public TaskId TaskId { get; }
+
+    public OccurrenceId OccurrenceId { get; }
+
+    public ReminderPurpose Purpose { get; }
+
+    public ReminderTiming Timing { get; }
+
+    public ReminderPriority Priority { get; }
+
+    public bool Pinned { get; }
+
+    public RepeatPolicy RepeatPolicy { get; }
+
+    public WakePolicy WakePolicy { get; }
+
+    public bool Enabled { get; }
+
+    public long RuleRevision { get; }
+
+    public Instant CreatedAtUtc { get; }
+
+    public Instant UpdatedAtUtc { get; }
+}
+
+public sealed class ReminderRuleReadSnapshot
+{
+    public ReminderRuleReadSnapshot(
+        long? snapshotRevision,
+        IReadOnlyList<ReminderRuleReadModel> items,
+        ReminderSnapshotStatus status,
+        string? statusCode = null)
+    {
+        if (snapshotRevision is < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(snapshotRevision));
+        }
+
+        ArgumentNullException.ThrowIfNull(items);
+        if (status is not ReminderSnapshotStatus.Fresh and not ReminderSnapshotStatus.Stale and not ReminderSnapshotStatus.Unavailable)
+        {
+            throw new ArgumentOutOfRangeException(nameof(status));
+        }
+
+        if ((status is ReminderSnapshotStatus.Fresh or ReminderSnapshotStatus.Stale) && snapshotRevision is null)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.snapshot.revision_missing",
+                "A usable reminder rule snapshot must carry its revision.",
+                nameof(snapshotRevision)));
+        }
+
+        if (status != ReminderSnapshotStatus.Fresh && string.IsNullOrWhiteSpace(statusCode))
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.snapshot.status_code_missing",
+                "A stale or unavailable reminder rule snapshot must carry a status code.",
+                nameof(statusCode)));
+        }
+
+        if (status == ReminderSnapshotStatus.Unavailable &&
+            (snapshotRevision is not null || items.Count != 0))
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.snapshot.unavailable_payload_invalid",
+                "An unavailable reminder rule snapshot cannot carry rows or a revision.",
+                nameof(items)));
+        }
+
+        SnapshotRevision = snapshotRevision;
+        Items = Array.AsReadOnly(items.ToArray());
+        Status = status;
+        StatusCode = statusCode;
+    }
+
+    public long? SnapshotRevision { get; }
+
+    public IReadOnlyList<ReminderRuleReadModel> Items { get; }
+
+    public ReminderSnapshotStatus Status { get; }
+
+    public string? StatusCode { get; }
+
+    public static ReminderRuleReadSnapshot Fresh(
+        long snapshotRevision,
+        IReadOnlyList<ReminderRuleReadModel> items) =>
+        new(snapshotRevision, items, ReminderSnapshotStatus.Fresh);
+
+    public static ReminderRuleReadSnapshot Unavailable(string statusCode) =>
+        new(null, Array.Empty<ReminderRuleReadModel>(), ReminderSnapshotStatus.Unavailable, statusCode);
 }
 
 /// <summary>
@@ -479,7 +690,8 @@ public enum ReminderCommandOutcome
 public sealed record ReminderCommandResult(
     ReminderCommandOutcome Outcome,
     long? CommittedRevision = null,
-    string? ErrorCode = null)
+    string? ErrorCode = null,
+    ReminderRuleId? RuleId = null)
 {
     public bool Succeeded => Outcome is ReminderCommandOutcome.Changed or ReminderCommandOutcome.NoOp;
 
@@ -492,6 +704,22 @@ public interface IReminderQueryService
 {
     ValueTask<ReminderReadSnapshot> GetAsync(
         ReminderQuery query,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IReminderRuleQueryService
+{
+    ValueTask<ReminderRuleReadSnapshot> GetAsync(
+        ReminderRuleQuery query,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IReminderRuleCommandClient
+{
+    ValueTask<ReminderCommandResult> UpsertAsync(
+        TaskId taskId,
+        ReminderRuleOptions options,
+        ReminderRuleId? ruleId = null,
         CancellationToken cancellationToken = default);
 }
 

@@ -138,6 +138,7 @@ public partial class MainWindow : Window, IDisposable
         _hasLoaded = true;
         _todayRefreshTimer.Start();
         RequestTodayRefresh();
+        _viewModel.ReminderSettings?.RefreshCommand.Execute(null);
     }
 
     private void OnActivated(object? sender, EventArgs e)
@@ -215,6 +216,7 @@ public partial class MainWindow : Window, IDisposable
         _todayRefreshTimer.Tick -= OnTodayRefreshTimerTick;
         _lifetimeCancellation.Cancel();
         _viewModel.TodayPage.Dispose();
+        _viewModel.ReminderSettings?.Dispose();
         _lifetimeCancellation.Dispose();
         GC.SuppressFinalize(this);
     }

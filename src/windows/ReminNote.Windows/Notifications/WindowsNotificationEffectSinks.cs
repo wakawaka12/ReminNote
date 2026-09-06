@@ -10,9 +10,10 @@ using ReminNote.Core.Reminders.Notifications.Adapters;
 namespace ReminNote.Windows.Notifications;
 
 /// <summary>
-/// Host configuration for the Windows notification surfaces. Toasts remain
-/// fail-closed until the unpackaged-app AUMID/Start-menu registration has been
-/// verified by the host installer or an operator.
+/// Host configuration for the Windows notification surfaces. Normal Main
+/// startup performs the unpackaged-app AUMID/Start-menu registration and only
+/// sets the verified flag after reading the shortcut back successfully. Tests
+/// and headless gates keep the default fail-closed.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class WindowsNotificationHostOptions

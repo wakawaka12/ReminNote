@@ -285,26 +285,91 @@ public sealed class NotificationDeliveryPersistenceTests
 
     }
 
-    private static NotificationDeliveryRequest NewRequest(NotificationChannelId channelId)
+    [Fact]
+    public async Task QuietHoursRecoveryAggregatesQueuedNormalRemindersIntoOneEffect()
     {
+        using var database = await P304Database.CreateAsync();
+        var quietStart = Instant.FromUtc(2026, 9, 4, 15, 0); // 23:00 Asia/Shanghai
+        var quietEnd = Instant.FromUtc(2026, 9, 4, 23, 0); // 07:00 Asia/Shanghai
+        var policy = new ReminNote.Agent.Notifications.QuietHoursNotificationPresentationPolicy(
+            new ReminNote.Core.Reminders.Policy.QuietHoursPolicy(
+                [new ReminNote.Core.Reminders.Policy.QuietHoursWindow(
+                    new LocalTime(22, 0),
+                    new LocalTime(7, 0))]),
+            DateTimeZoneProviders.Tzdb["Asia/Shanghai"]);
+        var channel = new RecordingChannel(
+            NotificationChannelId.Toast,
+            new NotificationChannelDeliveryResponse(NotificationDeliveryOutcome.DELIVERED));
+
+        await using (var quietDispatcher = new ReminNote.Agent.Notifications.NotificationDeliveryDispatcher(
+                         new NotificationChannelCatalog([channel]),
+                         database.Attempts,
+                         policy,
+                         new FixedClock(quietStart)))
+        {
+            var first = await quietDispatcher.DispatchAsync(
+                NewRequest(NotificationChannelId.Toast, 0, NotificationPriority.NORMAL, pinned: false),
+                TestContext.Current.CancellationToken);
+            var second = await quietDispatcher.DispatchAsync(
+                NewRequest(NotificationChannelId.Toast, 1, NotificationPriority.NORMAL, pinned: false),
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(
+                NotificationErrorCodes.PolicySummaryQueued,
+                first.Attempt!.ErrorCode);
+            Assert.Equal(quietEnd, first.Attempt.NextAttemptAtUtc);
+            Assert.Equal(
+                NotificationErrorCodes.PolicySummaryQueued,
+                second.Attempt!.ErrorCode);
+            Assert.Equal(0, channel.DeliveryCount);
+        }
+
+        await using var recoveryDispatcher = new ReminNote.Agent.Notifications.NotificationDeliveryDispatcher(
+            new NotificationChannelCatalog([channel]),
+            database.Attempts,
+            policy,
+            new FixedClock(quietEnd));
+        var recovered = await recoveryDispatcher.RecoverAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, recovered.Count);
+        Assert.Equal(1, channel.DeliveryCount);
+        Assert.Single(recovered, result => result.Outcome == NotificationDeliveryOutcome.DELIVERED);
+        var aggregated = Assert.Single(
+            recovered,
+            result => result.Attempt?.ErrorCode == NotificationErrorCodes.PolicySummaryAggregated);
+        Assert.Equal(NotificationDeliveryOutcome.SUPPRESSED_QUIET_HOURS, aggregated.Outcome);
+        Assert.False(aggregated.Attempt!.Retryable);
+        Assert.Empty(await database.Attempts.ListRecoverableAsync(
+            quietEnd,
+            TestContext.Current.CancellationToken));
+    }
+
+    private static NotificationDeliveryRequest NewRequest(
+        NotificationChannelId channelId,
+        int idOffset = 0,
+        NotificationPriority priority = NotificationPriority.HIGH,
+        bool pinned = true)
+    {
+        var offset = idOffset * 20;
         var core = new NotificationTriggerFact(
-            Id(1),
-            Id(2),
-            Id(3),
-            Id(4),
-            Id(5),
+            Id(1 + offset),
+            Id(2 + offset),
+            Id(3 + offset),
+            Id(4 + offset),
+            Id(5 + offset),
             attemptOrdinal: 1,
             NotificationPurposeSnapshot.TaskStart,
-            NotificationPriority.HIGH,
-            pinnedSnapshot: true,
+            priority,
+            pinnedSnapshot: pinned,
             Now,
             Now - Duration.FromMinutes(1));
         return new NotificationDeliveryRequest(
             core,
             channelId,
-            Id(12),
-            Id(channelId == NotificationChannelId.Toast ? 13 : 23),
-            Id(channelId == NotificationChannelId.Toast ? 14 : 24));
+            Id(12 + offset),
+            Id((channelId == NotificationChannelId.Toast ? 13 : 23) + offset),
+            Id((channelId == NotificationChannelId.Toast ? 14 : 24) + offset));
     }
 
     private static Guid Id(int suffix) =>

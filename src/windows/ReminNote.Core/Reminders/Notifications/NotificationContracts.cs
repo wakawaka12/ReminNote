@@ -82,6 +82,18 @@ public static class NotificationErrorCodes
     public const string SerializationUnknownField = "notification.serialization.unknown_field";
     public const string SerializationTooLarge = "notification.serialization.too_large";
     public const string PolicySuppressedQuietHours = "notification.policy.suppressed_quiet_hours";
+    /// <summary>
+    /// A normal reminder was intentionally held for the end-of-quiet summary
+    /// window. It remains retryable until the Agent emits the bounded summary
+    /// effect.
+    /// </summary>
+    public const string PolicySummaryQueued = "notification.policy.summary_queued";
+    /// <summary>
+    /// This core reminder was included in an already-delivered quiet-hours
+    /// summary. The core trigger and its durable attempt remain queryable; no
+    /// second channel effect is required for the same summary window.
+    /// </summary>
+    public const string PolicySummaryAggregated = "notification.policy.summary_aggregated";
 }
 
 /// <summary>

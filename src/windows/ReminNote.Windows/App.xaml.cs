@@ -60,6 +60,10 @@ public partial class App : Application, IDisposable
             serviceProvider.GetRequiredService<AgentTaskClient>());
         builder.Services.AddSingleton<IReminderQueryService>(serviceProvider =>
             serviceProvider.GetRequiredService<AgentTaskClient>());
+        builder.Services.AddSingleton<IReminderRuleQueryService>(serviceProvider =>
+            serviceProvider.GetRequiredService<AgentTaskClient>());
+        builder.Services.AddSingleton<IReminderRuleCommandClient>(serviceProvider =>
+            serviceProvider.GetRequiredService<AgentTaskClient>());
         builder.Services.AddSingleton<IReminderCommandClient>(serviceProvider =>
             serviceProvider.GetRequiredService<AgentTaskClient>());
         builder.Services.AddSingleton<IClock>(SystemClock.Instance);
@@ -68,12 +72,13 @@ public partial class App : Application, IDisposable
                 serviceProvider.GetRequiredService<IClock>(),
                 () => Application.Current?.MainWindow,
                 Dispatcher,
-                ResolveNotificationHostOptions(e.Args)));
+                ResolveNotificationHostOptions(headless)));
         builder.Services.AddSingleton<INotificationChannelCatalog>(serviceProvider =>
             serviceProvider.GetRequiredService<WindowsNotificationChannelHost>().Catalog);
         builder.Services.AddTodayFeature();
         builder.Services.AddAnimeFeature();
         builder.Services.AddSingleton<ReminderCenterViewModel>();
+        builder.Services.AddSingleton<ReminderSettingsViewModel>();
         builder.Services.AddSingleton<MainWindowViewModel>();
         builder.Services.AddSingleton<MainWindow>();
 
@@ -167,10 +172,21 @@ public partial class App : Application, IDisposable
         args.Any(argument =>
             string.Equals(argument, "--headless", StringComparison.OrdinalIgnoreCase));
 
-    private static WindowsNotificationHostOptions ResolveNotificationHostOptions(string[] args)
+    private static WindowsNotificationHostOptions ResolveNotificationHostOptions(bool headless)
     {
-        var verified = args.Any(argument =>
-            string.Equals(argument, "--toast-registration-verified", StringComparison.OrdinalIgnoreCase));
+        // A command-line switch is not evidence that the OS registration exists.
+        // Normal startup creates and reads back the Start-menu shortcut; headless
+        // gates intentionally avoid mutating the user's Start menu.
+        string? failureCode = null;
+        var verified = !headless && WindowsToastRegistration.TryEnsureAndVerify(
+            WindowsNotificationHostOptions.DefaultApplicationUserModelId,
+            Environment.ProcessPath,
+            out failureCode);
+        if (!verified && !headless && failureCode is not null)
+        {
+            Debug.WriteLine($"Toast registration not verified: {failureCode}");
+        }
+
         return new WindowsNotificationHostOptions(toastRegistrationVerified: verified);
     }
 }

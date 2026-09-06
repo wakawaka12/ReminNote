@@ -247,9 +247,53 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
                 cancellationToken)
             .ConfigureAwait(false);
         var results = new List<NotificationDurableDispatchResult>(recoverable.Count);
+        var summaryGroups = recoverable
+            .Where(IsSummaryQueued)
+            .GroupBy(record => record.ChannelId)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderBy(record => record.UpdatedAtUtc)
+                    .ThenBy(record => record.AttemptId)
+                    .ToArray());
+        var summaryChannelsHandled = new HashSet<NotificationChannelId>();
         foreach (var record in recoverable)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (IsSummaryQueued(record) &&
+                summaryGroups.TryGetValue(record.ChannelId, out var summaryRecords) &&
+                summaryRecords.Length > 1)
+            {
+                // A quiet-hours summary is one bounded channel effect for a
+                // channel. If that representative cannot be delivered yet,
+                // leave every queued core fact recoverable and retry the group
+                // as a unit on the next pass; never emit a burst of individual
+                // effects merely because their retry hints share a deadline.
+                if (!summaryChannelsHandled.Add(record.ChannelId))
+                {
+                    continue;
+                }
+
+                var representative = summaryRecords[0];
+                var representativeResult = await DispatchAsync(
+                        ToRecoveryRequest(representative),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                results.Add(representativeResult);
+                if (representativeResult.Outcome == NotificationDeliveryOutcome.DELIVERED)
+                {
+                    foreach (var aggregated in summaryRecords.Skip(1))
+                    {
+                        results.Add(await MarkSummaryAggregatedAsync(
+                                aggregated,
+                                cancellationToken)
+                            .ConfigureAwait(false));
+                    }
+                }
+
+                continue;
+            }
+
             var request = new NotificationDeliveryRequest(
                 record.ToTriggerFact(),
                 record.ChannelId,
@@ -260,6 +304,74 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
         }
 
         return results;
+    }
+
+    private static bool IsSummaryQueued(NotificationDeliveryAttemptRecord record) =>
+        !record.IsPending &&
+        record.Outcome == NotificationDeliveryOutcome.SUPPRESSED_QUIET_HOURS &&
+        string.Equals(
+            record.ErrorCode,
+            NotificationErrorCodes.PolicySummaryQueued,
+            StringComparison.Ordinal);
+
+    private static NotificationDeliveryRequest ToRecoveryRequest(
+        NotificationDeliveryAttemptRecord record) =>
+        new(
+            record.ToTriggerFact(),
+            record.ChannelId,
+            record.CorrelationId,
+            record.IsPending ? record.IdempotencyKey : Guid.CreateVersion7(),
+            Guid.CreateVersion7());
+
+    private async ValueTask<NotificationDurableDispatchResult> MarkSummaryAggregatedAsync(
+        NotificationDeliveryAttemptRecord record,
+        CancellationToken cancellationToken)
+    {
+        var request = ToRecoveryRequest(record);
+        var pending = await attemptStore.AppendPendingAsync(
+                request,
+                retryPolicy.MaxAttempts,
+                clock.GetCurrentInstant(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!pending.Record.IsPending)
+        {
+            var terminalDisposition = pending.Disposition switch
+            {
+                NotificationDeliveryPendingDisposition.REPLAYED =>
+                    NotificationDurableDispatchDisposition.REPLAYED,
+                NotificationDeliveryPendingDisposition.DEFERRED =>
+                    NotificationDurableDispatchDisposition.DEFERRED,
+                _ => NotificationDurableDispatchDisposition.TERMINAL,
+            };
+            return Result(
+                request.CoreTrigger,
+                pending.Record,
+                terminalDisposition,
+                channelInvoked: false,
+                pending.Record.ErrorCode);
+        }
+
+        var response = NotificationChannelDeliveryResponse.SuppressedByPolicy(
+            NotificationErrorCodes.PolicySummaryAggregated);
+        var completed = await attemptStore.AppendOutcomeAsync(
+                pending.Record,
+                response,
+                retryable: false,
+                clock.GetCurrentInstant(),
+                nextAttemptAtUtc: null,
+                request.RequestId,
+                CancellationToken.None)
+            .ConfigureAwait(false);
+        var disposition = completed.EventOrdinal > pending.Record.EventOrdinal
+            ? NotificationDurableDispatchDisposition.APPENDED
+            : NotificationDurableDispatchDisposition.REPLAYED;
+        return Result(
+            request.CoreTrigger,
+            completed,
+            disposition,
+            channelInvoked: false,
+            completed.ErrorCode);
     }
 
     public ValueTask DisposeAsync()
@@ -537,7 +649,8 @@ public sealed class NotificationDeliveryDispatcher : IAsyncDisposable
         if (policyDecision.Kind == NotificationPresentationDecisionKind.SUPPRESSED_QUIET_HOURS)
         {
             return NotificationChannelDeliveryResponse.SuppressedByPolicy(
-                policyDecision.ReasonCode!);
+                policyDecision.ReasonCode!,
+                policyDecision.RetryAtUtc);
         }
 
         markInvoked();
