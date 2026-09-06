@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using ReminNote.Core.Protocol;
 using ReminNote.Core.Tasks;
 using ReminNote.Windows.Features.Anime;
 using ReminNote.Windows.Features.Today;
@@ -23,6 +24,7 @@ public partial class MainWindow : Window, IDisposable
     private bool _todayRefreshInProgress;
     private bool _isClosing;
     private bool _lifetimeDisposed;
+    private ReminderNotificationActivation? _pendingNotificationActivation;
 
     public MainWindow(MainWindowViewModel viewModel)
     {
@@ -43,11 +45,16 @@ public partial class MainWindow : Window, IDisposable
         Closed += OnClosed;
     }
 
-    public void ActivateFromExternalRequest()
+    public void ActivateFromExternalRequest(ReminderNotificationActivation? activation = null)
     {
         if (_isClosing)
         {
             return;
+        }
+
+        if (activation is not null)
+        {
+            _pendingNotificationActivation = activation;
         }
 
         if (WindowState == WindowState.Minimized)
@@ -58,6 +65,10 @@ public partial class MainWindow : Window, IDisposable
         Activate();
         Focus();
         RequestTodayRefresh();
+        if (_hasLoaded)
+        {
+            _ = HandlePendingNotificationActivationAsync();
+        }
     }
 
     private void OnQuickTaskAdded(TodayTaskViewModel task)
@@ -139,6 +150,31 @@ public partial class MainWindow : Window, IDisposable
         _todayRefreshTimer.Start();
         RequestTodayRefresh();
         _viewModel.ReminderSettings?.RefreshCommand.Execute(null);
+        _ = HandlePendingNotificationActivationAsync();
+    }
+
+    private async System.Threading.Tasks.Task HandlePendingNotificationActivationAsync()
+    {
+        var activation = _pendingNotificationActivation;
+        _pendingNotificationActivation = null;
+        if (activation is null || _isClosing)
+        {
+            return;
+        }
+
+        try
+        {
+            await _viewModel
+                .HandleNotificationActivationAsync(activation)
+                .ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine($"Main notification activation failed: {exception}");
+        }
     }
 
     private void OnActivated(object? sender, EventArgs e)

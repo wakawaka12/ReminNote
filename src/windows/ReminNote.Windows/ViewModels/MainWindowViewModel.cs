@@ -1,5 +1,6 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using ReminNote.Core.Protocol;
 using ReminNote.Windows.Features.Anime;
 using ReminNote.Windows.Features.Reminders;
 using ReminNote.Windows.Features.Today;
@@ -64,6 +65,23 @@ public sealed class MainWindowViewModel : ObservableObject
     public IRelayCommand<NavigationItemViewModel?> NavigateCommand { get; }
 
     public IAsyncRelayCommand OpenReminderCenterCommand { get; }
+
+    /// <summary>
+    /// Handles a validated Toast activation in the current profile. The
+    /// Reminder Center owns the read/row matching logic; this shell method
+    /// only coordinates the visible surface.
+    /// </summary>
+    public async System.Threading.Tasks.Task HandleNotificationActivationAsync(
+        ReminderNotificationActivation activation)
+    {
+        ArgumentNullException.ThrowIfNull(activation);
+        if (ReminderCenter is not null)
+        {
+            await ReminderCenter
+                .OpenForActivationAsync(activation.LogicalReminderIds)
+                .ConfigureAwait(true);
+        }
+    }
 
     public ShellPageViewModel CurrentPage
     {

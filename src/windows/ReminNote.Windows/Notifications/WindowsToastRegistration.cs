@@ -3,6 +3,7 @@ using System.Runtime.InteropServices.ComTypes;
 using System.Runtime.Versioning;
 using System.Text;
 using System.IO;
+using Microsoft.Win32;
 
 namespace ReminNote.Windows.Notifications;
 
@@ -24,7 +25,9 @@ internal static class WindowsToastRegistration
     public static bool TryEnsureAndVerify(
         string applicationUserModelId,
         string? executablePath,
-        out string? failureCode)
+        out string? failureCode,
+        string? dataRoot = null,
+        string? profileName = null)
     {
         failureCode = null;
         if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(applicationUserModelId))
@@ -74,6 +77,15 @@ internal static class WindowsToastRegistration
                 return false;
             }
 
+            if (!TryEnsureAndVerifyProtocolRegistration(
+                    target,
+                    dataRoot,
+                    profileName,
+                    out failureCode))
+            {
+                return false;
+            }
+
             return true;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -101,6 +113,102 @@ internal static class WindowsToastRegistration
             }
         }
     }
+
+    /// <summary>
+    /// Registers the same executable as the handler for the bounded
+    /// <c>reminnote://</c> launch URI used by Toasts. The command line carries
+    /// the already-selected isolated data root/profile so a protocol launch
+    /// does not depend on the shell's current directory.
+    /// </summary>
+    private static bool TryEnsureAndVerifyProtocolRegistration(
+        string executablePath,
+        string? dataRoot,
+        string? profileName,
+        out string? failureCode)
+    {
+        failureCode = null;
+        if (executablePath.Contains('"') ||
+            dataRoot?.Contains('"') == true ||
+            profileName?.Contains('"') == true ||
+            executablePath.Contains('\0') ||
+            dataRoot?.Contains('\0') == true ||
+            profileName?.Contains('\0') == true)
+        {
+            failureCode = "windows.toast.registration.protocol.path_invalid";
+            return false;
+        }
+
+        try
+        {
+            var command = BuildProtocolCommand(executablePath, dataRoot, profileName);
+            using (var protocol = Registry.CurrentUser.CreateSubKey(
+                       @"Software\Classes\reminnote",
+                       writable: true))
+            {
+                if (protocol is null)
+                {
+                    failureCode = "windows.toast.registration.protocol.unavailable";
+                    return false;
+                }
+
+                protocol.SetValue(string.Empty, "URL:ReminNote Protocol");
+                protocol.SetValue("URL Protocol", string.Empty);
+                using var shell = protocol.CreateSubKey(@"shell\open\command", writable: true);
+                if (shell is null)
+                {
+                    failureCode = "windows.toast.registration.protocol.unavailable";
+                    return false;
+                }
+
+                shell.SetValue(string.Empty, command);
+            }
+
+            using var verified = Registry.CurrentUser.OpenSubKey(
+                @"Software\Classes\reminnote\shell\open\command",
+                writable: false);
+            var registered = verified?.GetValue(string.Empty) as string;
+            if (!string.Equals(registered, command, StringComparison.Ordinal))
+            {
+                failureCode = "windows.toast.registration.protocol.verification_failed";
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            failureCode = exception switch
+            {
+                UnauthorizedAccessException => "windows.toast.registration.protocol.access_denied",
+                IOException => "windows.toast.registration.protocol.io_failed",
+                System.Security.SecurityException => "windows.toast.registration.protocol.access_denied",
+                _ => "windows.toast.registration.protocol.failed"
+            };
+            return false;
+        }
+    }
+
+    private static string BuildProtocolCommand(
+        string executablePath,
+        string? dataRoot,
+        string? profileName)
+    {
+        var arguments = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(dataRoot))
+        {
+            arguments.Append(" --data-root ").Append(QuoteCommandLineValue(dataRoot));
+        }
+
+        if (!string.IsNullOrWhiteSpace(profileName))
+        {
+            arguments.Append(" --profile ").Append(QuoteCommandLineValue(profileName));
+        }
+
+        arguments.Append(" \"%1\"");
+        return QuoteCommandLineValue(executablePath) + arguments;
+    }
+
+    private static string QuoteCommandLineValue(string value) => $"\"{value}\"";
 
     private static void WriteShortcut(
         string shortcutPath,

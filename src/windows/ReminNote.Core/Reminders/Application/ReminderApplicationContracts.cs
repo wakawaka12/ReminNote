@@ -3,6 +3,7 @@ using ReminNote.Core.Application;
 using ReminNote.Core.Reminders.Domain;
 using ReminNote.Core.Tasks;
 using ResolutionActionKind = ReminNote.Core.Reminders.Domain.ResolutionAction;
+using LogicalReminderIdentity = ReminNote.Core.Reminders.Domain.LogicalReminderId;
 
 namespace ReminNote.Core.Reminders.Application;
 
@@ -283,13 +284,18 @@ public sealed record ReminderReadModel
         bool pinned,
         Instant triggeredAtUtc,
         ReminderLifecycle lifecycle,
-        ResolutionActionKind? resolutionAction = null)
+        ResolutionActionKind? resolutionAction = null,
+        Guid? logicalReminderId = null)
     {
         _ = ReminderInstanceId.From(instanceId.Value);
         _ = ReminderScheduleId.From(scheduleId.Value);
         _ = ReminderRuleId.From(ruleId.Value);
         _ = OccurrenceId.From(occurrenceId.Value);
         _ = TaskId.From(taskId.Value);
+        if (logicalReminderId is { } logicalId)
+        {
+            _ = LogicalReminderIdentity.From(logicalId);
+        }
 
         if (string.IsNullOrWhiteSpace(title))
         {
@@ -357,6 +363,7 @@ public sealed record ReminderReadModel
         TriggeredAtUtc = triggeredAtUtc;
         Lifecycle = lifecycle;
         ResolutionAction = resolutionAction;
+        LogicalReminderId = logicalReminderId;
     }
 
     public ReminderInstanceId InstanceId { get; }
@@ -382,6 +389,13 @@ public sealed record ReminderReadModel
     public ReminderLifecycle Lifecycle { get; }
 
     public ResolutionActionKind? ResolutionAction { get; }
+
+    /// <summary>
+    /// Stable notification identity. Older adapters may omit it; the P3
+    /// desktop query supplies it so a Toast activation can highlight the
+    /// exact reminder members in the current profile.
+    /// </summary>
+    public Guid? LogicalReminderId { get; }
 
     public bool IsUnread => Lifecycle == ReminderLifecycle.UNREAD;
 

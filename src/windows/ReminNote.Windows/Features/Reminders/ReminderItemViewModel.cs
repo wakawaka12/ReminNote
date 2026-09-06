@@ -20,6 +20,7 @@ public sealed class ReminderItemViewModel : ObservableObject
     private readonly Func<ReminderItemViewModel, ResolutionAction, long?, System.Threading.Tasks.Task> executeAction;
     private readonly Func<ReminderItemViewModel, System.Threading.Tasks.Task> markRead;
     private bool isBusy;
+    private bool isActivationMatch;
     private string actionFeedback = string.Empty;
 
     public ReminderItemViewModel(
@@ -96,6 +97,16 @@ public sealed class ReminderItemViewModel : ObservableObject
 
     public bool IsResolved => Model.IsResolved;
 
+    /// <summary>
+    /// True when this row was one of the logical IDs carried by the Toast
+    /// activation that opened the Reminder Center.
+    /// </summary>
+    public bool IsActivationMatch
+    {
+        get => isActivationMatch;
+        private set => SetProperty(ref isActivationMatch, value);
+    }
+
     public bool IsBusy
     {
         get => isBusy;
@@ -144,6 +155,11 @@ public sealed class ReminderItemViewModel : ObservableObject
     internal void SetActionFeedback(string? value)
     {
         ActionFeedback = value ?? string.Empty;
+    }
+
+    internal void SetActivationMatch(bool value)
+    {
+        IsActivationMatch = value;
     }
 
     private async System.Threading.Tasks.Task ExecuteActionAsync(
