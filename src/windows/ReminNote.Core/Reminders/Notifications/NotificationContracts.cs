@@ -17,6 +17,7 @@ public static class NotificationContractLimits
     public const int MaxCapabilityCount = 8;
     public const int MaxStableCodeBytes = 96;
     public const int MaxPurposeCodeCharacters = 64;
+    public const int MaxSummaryMemberCount = 64;
     public const int MaxSerializedChannelStatusBytes = 4_096;
     public const int MaxSerializedDeliveryAttemptBytes = 4_096;
 
@@ -94,6 +95,36 @@ public static class NotificationErrorCodes
     /// second channel effect is required for the same summary window.
     /// </summary>
     public const string PolicySummaryAggregated = "notification.policy.summary_aggregated";
+
+    /// <summary>
+    /// A transient channel failure while presenting a summary. The suffix is
+    /// the quiet-window end expressed as Unix seconds, allowing all members
+    /// of one summary to remain grouped even when their retry time moves.
+    /// </summary>
+    public const string PolicySummaryRetryPrefix = "notification.policy.summary_retry.";
+
+    public static string CreatePolicySummaryRetryCode(Instant summaryWindowEndUtc) =>
+        PolicySummaryRetryPrefix +
+        summaryWindowEndUtc.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+
+    public static bool TryParsePolicySummaryRetryCode(
+        string? code,
+        out long summaryWindowEndUnixSeconds)
+    {
+        summaryWindowEndUnixSeconds = default;
+        if (code is null || !code.StartsWith(PolicySummaryRetryPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var suffix = code[PolicySummaryRetryPrefix.Length..];
+        return suffix.Length > 0 &&
+            long.TryParse(
+                suffix,
+                NumberStyles.AllowLeadingSign,
+                CultureInfo.InvariantCulture,
+                out summaryWindowEndUnixSeconds);
+    }
 }
 
 /// <summary>
@@ -213,6 +244,59 @@ public readonly record struct NotificationPurposeSnapshot
     public static NotificationPurposeSnapshot Parse(string value) => new(value);
 
     public override string ToString() => Value ?? string.Empty;
+}
+
+/// <summary>
+/// Bounded machine-readable metadata for one quiet-hours summary effect. It
+/// contains only logical reminder IDs; the host turns the count and IDs into
+/// constant UI text plus a collection launch URI, never arbitrary user text.
+/// </summary>
+public sealed record NotificationSummarySnapshot
+{
+    public NotificationSummarySnapshot(
+        IEnumerable<Guid> logicalReminderIds,
+        Instant? summaryWindowEndUtc = null)
+    {
+        ArgumentNullException.ThrowIfNull(logicalReminderIds);
+        var values = logicalReminderIds.ToArray();
+        if (values.Length == 0 || values.Length > NotificationContractLimits.MaxSummaryMemberCount)
+        {
+            throw NotificationContractException.Invalid(
+                NotificationErrorCodes.SerializationTooLarge,
+                $"A notification summary must contain between one and {NotificationContractLimits.MaxSummaryMemberCount} members.",
+                nameof(logicalReminderIds));
+        }
+
+        if (values.Distinct().Count() != values.Length)
+        {
+            throw NotificationContractException.Invalid(
+                NotificationErrorCodes.SerializationInvalid,
+                "A notification summary cannot contain duplicate logical reminder IDs.",
+                nameof(logicalReminderIds));
+        }
+
+        for (var index = 0; index < values.Length; index++)
+        {
+            NotificationValidation.RequireUuidV7(values[index], $"{nameof(logicalReminderIds)}[{index}]");
+        }
+
+        LogicalReminderIds = new ReadOnlyCollection<Guid>(
+            values
+                .OrderBy(value => value.ToString("D"), StringComparer.Ordinal)
+                .ToArray());
+        SummaryWindowEndUtc = summaryWindowEndUtc;
+    }
+
+    public IReadOnlyList<Guid> LogicalReminderIds { get; }
+
+    public int Count => LogicalReminderIds.Count;
+
+    /// <summary>
+    /// Internal grouping context. It is not user content and is omitted from
+    /// the host bridge payload; the Agent uses it only to keep retries in one
+    /// quiet-window group.
+    /// </summary>
+    public Instant? SummaryWindowEndUtc { get; }
 }
 
 /// <summary>

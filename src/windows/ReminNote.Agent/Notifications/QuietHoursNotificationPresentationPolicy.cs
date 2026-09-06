@@ -249,9 +249,10 @@ public static class NotificationPresentationPolicyStore
 /// instant), retains the core-trigger fact, and records suppression as a
 /// durable channel attempt with a retry hint at the active window's end.
 /// Normal summary-eligible reminders use a distinct queued code; the Agent
-/// dispatcher later emits one representative effect per channel and closes
-/// the remaining queued attempts as aggregated, so the quiet-window boundary
-/// cannot create a notification burst.
+/// dispatcher later emits one bounded summary effect per channel carrying all
+/// member logical IDs. The remaining queued attempts close as aggregated only
+/// after that effect succeeds; transient failures keep the whole group behind
+/// the representative retry backoff.
 /// </summary>
 public sealed class QuietHoursNotificationPresentationPolicy : INotificationPresentationPolicy
 {

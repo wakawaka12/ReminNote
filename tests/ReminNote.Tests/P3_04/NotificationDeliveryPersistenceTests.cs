@@ -335,6 +335,17 @@ public sealed class NotificationDeliveryPersistenceTests
         Assert.Equal(2, recovered.Count);
         Assert.Equal(1, channel.DeliveryCount);
         Assert.Single(recovered, result => result.Outcome == NotificationDeliveryOutcome.DELIVERED);
+        var summaryRequest = Assert.Single(channel.Requests);
+        Assert.NotNull(summaryRequest.Summary);
+        Assert.Equal(2, summaryRequest.Summary!.Count);
+        Assert.Equal(
+            recovered
+                .Where(result => result.Attempt?.ErrorCode == NotificationErrorCodes.PolicySummaryAggregated)
+                .Select(result => result.CoreTrigger.LogicalReminderId)
+                .Append(summaryRequest.CoreTrigger.LogicalReminderId)
+                .OrderBy(id => id.ToString("D"), StringComparer.Ordinal),
+            summaryRequest.Summary.LogicalReminderIds
+                .OrderBy(id => id.ToString("D"), StringComparer.Ordinal));
         var aggregated = Assert.Single(
             recovered,
             result => result.Attempt?.ErrorCode == NotificationErrorCodes.PolicySummaryAggregated);
@@ -342,6 +353,91 @@ public sealed class NotificationDeliveryPersistenceTests
         Assert.False(aggregated.Attempt!.Retryable);
         Assert.Empty(await database.Attempts.ListRecoverableAsync(
             quietEnd,
+            TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task QuietHoursSummaryFailureDefersEveryMemberAndRetriesAsOneSummary()
+    {
+        using var database = await P304Database.CreateAsync();
+        var quietStart = Instant.FromUtc(2026, 9, 4, 15, 0);
+        var quietEnd = Instant.FromUtc(2026, 9, 4, 23, 0);
+        var policy = new ReminNote.Agent.Notifications.QuietHoursNotificationPresentationPolicy(
+            new ReminNote.Core.Reminders.Policy.QuietHoursPolicy(
+                [new ReminNote.Core.Reminders.Policy.QuietHoursWindow(
+                    new LocalTime(22, 0),
+                    new LocalTime(7, 0))]),
+            DateTimeZoneProviders.Tzdb["Asia/Shanghai"]);
+        var channel = new RecordingChannel(
+            NotificationChannelId.Toast,
+            new NotificationChannelDeliveryResponse(
+                NotificationDeliveryOutcome.FAILED,
+                NotificationErrorCodes.DeliveryFailed));
+
+        await using (var quietDispatcher = new ReminNote.Agent.Notifications.NotificationDeliveryDispatcher(
+                         new NotificationChannelCatalog([channel]),
+                         database.Attempts,
+                         policy,
+                         new FixedClock(quietStart)))
+        {
+            _ = await quietDispatcher.DispatchAsync(
+                NewRequest(NotificationChannelId.Toast, 0, NotificationPriority.NORMAL, pinned: false),
+                TestContext.Current.CancellationToken);
+            _ = await quietDispatcher.DispatchAsync(
+                NewRequest(NotificationChannelId.Toast, 1, NotificationPriority.NORMAL, pinned: false),
+                TestContext.Current.CancellationToken);
+        }
+
+        await using var firstRecovery = new ReminNote.Agent.Notifications.NotificationDeliveryDispatcher(
+            new NotificationChannelCatalog([channel]),
+            database.Attempts,
+            policy,
+            new FixedClock(quietEnd));
+        var failedRecovery = await firstRecovery.RecoverAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, failedRecovery.Count);
+        Assert.Equal(1, channel.DeliveryCount);
+        var failedRepresentative = Assert.Single(
+            failedRecovery,
+            result => result.ChannelInvoked);
+        Assert.Equal(NotificationDeliveryOutcome.FAILED, failedRepresentative.Outcome);
+        Assert.True(failedRepresentative.Attempt!.Retryable);
+        Assert.True(
+            NotificationErrorCodes.TryParsePolicySummaryRetryCode(
+                failedRepresentative.Attempt.ErrorCode,
+                out var summaryWindowEndUnixSeconds));
+        Assert.Equal(quietEnd.ToUnixTimeSeconds(), summaryWindowEndUnixSeconds);
+        var retryAtUtc = failedRepresentative.Attempt.NextAttemptAtUtc!.Value;
+        Assert.Empty(await database.Attempts.ListRecoverableAsync(
+            quietEnd,
+            TestContext.Current.CancellationToken));
+
+        channel.Response = new NotificationChannelDeliveryResponse(
+            NotificationDeliveryOutcome.DELIVERED);
+        await using var secondRecovery = new ReminNote.Agent.Notifications.NotificationDeliveryDispatcher(
+            new NotificationChannelCatalog([channel]),
+            database.Attempts,
+            policy,
+            new FixedClock(retryAtUtc));
+        var retried = await secondRecovery.RecoverAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, retried.Count);
+        Assert.Equal(2, channel.DeliveryCount);
+        var retriedSummaryRequest = Assert.Single(
+            channel.Requests,
+            request => request.RequestId != failedRepresentative.Attempt!.RequestId);
+        Assert.NotNull(retriedSummaryRequest.Summary);
+        Assert.Equal(2, retriedSummaryRequest.Summary!.Count);
+        Assert.Single(
+            retried,
+            result => result.Outcome == NotificationDeliveryOutcome.DELIVERED);
+        Assert.Single(
+            retried,
+            result => result.Attempt?.ErrorCode == NotificationErrorCodes.PolicySummaryAggregated);
+        Assert.Empty(await database.Attempts.ListRecoverableAsync(
+            retryAtUtc,
             TestContext.Current.CancellationToken));
     }
 
@@ -409,6 +505,8 @@ public sealed class NotificationDeliveryPersistenceTests
 
         public List<NotificationDeliveryRequest> Requests { get; } = [];
 
+        public NotificationChannelDeliveryResponse Response { get; set; } = response;
+
         public int DeliveryCount => Requests.Count;
 
         public NotificationChannelId ChannelId => channelId;
@@ -421,7 +519,7 @@ public sealed class NotificationDeliveryPersistenceTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Requests.Add(request);
-            return ValueTask.FromResult(response);
+            return ValueTask.FromResult(Response);
         }
     }
 

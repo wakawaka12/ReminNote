@@ -114,6 +114,28 @@ public sealed record NotificationDeliveryRequest
         Guid correlationId,
         Guid idempotencyKey,
         Guid requestId)
+        : this(
+            coreTrigger,
+            channelId,
+            correlationId,
+            idempotencyKey,
+            requestId,
+            summary: null)
+    {
+    }
+
+    /// <summary>
+    /// Creates one delivery request, optionally carrying bounded summary
+    /// metadata for a quiet-hours aggregate. The metadata never changes the
+    /// durable core trigger or logical delivery key.
+    /// </summary>
+    public NotificationDeliveryRequest(
+        NotificationTriggerFact coreTrigger,
+        NotificationChannelId channelId,
+        Guid correlationId,
+        Guid idempotencyKey,
+        Guid requestId,
+        NotificationSummarySnapshot? summary)
     {
         CoreTrigger = coreTrigger ?? throw new ArgumentNullException(nameof(coreTrigger));
         NotificationChannels.RequireKnown(channelId);
@@ -124,6 +146,7 @@ public sealed record NotificationDeliveryRequest
         CorrelationId = correlationId;
         IdempotencyKey = idempotencyKey;
         RequestId = requestId;
+        Summary = summary;
     }
 
     public NotificationTriggerFact CoreTrigger { get; }
@@ -146,6 +169,12 @@ public sealed record NotificationDeliveryRequest
     public Guid RequestId { get; }
 
     /// <summary>
+    /// Bounded collection metadata for one quiet-hours summary effect, or
+    /// null for an ordinary single-reminder delivery.
+    /// </summary>
+    public NotificationSummarySnapshot? Summary { get; }
+
+    /// <summary>
     /// Stable logical replacement/deduplication key. It deliberately contains
     /// only the frozen logical reminder identity and channel, never user text.
     /// </summary>
@@ -162,7 +191,8 @@ public sealed record NotificationDeliveryRequest
         ChannelId,
         CorrelationId,
         Guid.CreateVersion7(),
-        Guid.CreateVersion7());
+        Guid.CreateVersion7(),
+        Summary);
 }
 
 /// <summary>

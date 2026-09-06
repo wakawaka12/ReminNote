@@ -345,6 +345,19 @@ public sealed class ReminderScheduler : IAsyncDisposable
                 ReminderPolicyCodes.RecoveryDuplicate);
         }
 
+        // PRE_START is meaningful only before the task begins. This semantic
+        // guard is independent of the process' suspend duration, so a short
+        // wake that does not raise a native resume event cannot resurrect an
+        // obsolete pre-start notification through the normal due path.
+        if (schedule.PurposeSnapshot == ReminderPurpose.TASK_PRE_START &&
+            target.TaskStartAtUtc is { } taskStartAtUtc &&
+            evaluatedAtUtc >= taskStartAtUtc)
+        {
+            return ReminderDueMutation.Expire(
+                evaluatedAtUtc,
+                ReminderPolicyCodes.RecoveryPreStartObsolete);
+        }
+
         if (!isRecovery)
         {
             return BuildTriggeredMutation(
