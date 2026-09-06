@@ -3,7 +3,8 @@
 public enum ShellPage
 {
     Today,
-    Anime
+    Anime,
+    Reminders
 }
 
 public sealed record NavigationItemViewModel(

@@ -12,12 +12,13 @@ public sealed class MainWindowViewModel : ObservableObject
     private readonly TodayPageViewModel _todayPage;
     private readonly AnimePageViewModel _animePage;
     private readonly ReminderCenterViewModel? _reminderCenter;
+    private readonly ReminderSettingsViewModel? _reminderSettings;
     private ShellPageViewModel _currentPage;
 
     public MainWindowViewModel(
         TodayPageViewModel todayPage,
         AnimePageViewModel animePage)
-        : this(todayPage, animePage, null)
+        : this(todayPage, animePage, null, null)
     {
     }
 
@@ -25,15 +26,22 @@ public sealed class MainWindowViewModel : ObservableObject
         TodayPageViewModel todayPage,
         AnimePageViewModel animePage,
         ReminderCenterViewModel? reminderCenter)
+        : this(todayPage, animePage, reminderCenter, null)
+    {
+    }
+
+    public MainWindowViewModel(
+        TodayPageViewModel todayPage,
+        AnimePageViewModel animePage,
+        ReminderCenterViewModel? reminderCenter,
+        ReminderSettingsViewModel? reminderSettings)
     {
         _todayPage = todayPage;
         _animePage = animePage;
         _reminderCenter = reminderCenter;
+        _reminderSettings = reminderSettings;
         NavigationItems =
-        [
-            new NavigationItemViewModel(ShellPage.Today, UiText.ShellTodayTitle, UiText.ShellTodaySubtitle),
-            new NavigationItemViewModel(ShellPage.Anime, UiText.ShellAnimeTitle, UiText.ShellAnimeSubtitle)
-        ];
+            BuildNavigationItems(reminderSettings is not null);
         NavigateCommand = new RelayCommand<NavigationItemViewModel?>(Navigate);
         OpenReminderCenterCommand = new AsyncRelayCommand(
             OpenReminderCenterAsync,
@@ -48,6 +56,8 @@ public sealed class MainWindowViewModel : ObservableObject
     public AnimePageViewModel AnimePage => _animePage;
 
     public ReminderCenterViewModel? ReminderCenter => _reminderCenter;
+
+    public ReminderSettingsViewModel? ReminderSettings => _reminderSettings;
 
     public bool IsReminderCenterAvailable => ReminderCenter is not null;
 
@@ -65,6 +75,7 @@ public sealed class MainWindowViewModel : ObservableObject
     {
         TodayPageViewModel => UiText.ShellTodayTitle,
         AnimePageViewModel => UiText.ShellAnimeTitle,
+        ReminderSettingsViewModel => "提醒规则设置",
         _ => UiText.ShellFallbackTitle
     };
 
@@ -79,6 +90,7 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             ShellPage.Today => _todayPage,
             ShellPage.Anime => _animePage,
+            ShellPage.Reminders when _reminderSettings is not null => _reminderSettings,
             _ => _todayPage
         };
         OnPropertyChanged(nameof(ActiveTitle));
@@ -90,5 +102,23 @@ public sealed class MainWindowViewModel : ObservableObject
         {
             await ReminderCenter.ToggleCommand.ExecuteAsync(null).ConfigureAwait(true);
         }
+    }
+
+    private static List<NavigationItemViewModel> BuildNavigationItems(bool includeReminderSettings)
+    {
+        var items = new List<NavigationItemViewModel>
+        {
+            new(ShellPage.Today, UiText.ShellTodayTitle, UiText.ShellTodaySubtitle),
+            new(ShellPage.Anime, UiText.ShellAnimeTitle, UiText.ShellAnimeSubtitle)
+        };
+        if (includeReminderSettings)
+        {
+            items.Add(new NavigationItemViewModel(
+                ShellPage.Reminders,
+                "提醒规则",
+                "提前、重复、优先级和唤醒"));
+        }
+
+        return items;
     }
 }

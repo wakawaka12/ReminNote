@@ -10,6 +10,7 @@
                 <ResourceDictionary Source="Resources/DesignSystem/Typography.xaml" />
                 <ResourceDictionary Source="Resources/DesignSystem/Controls.xaml" />
                 <ResourceDictionary Source="Features/Today/TodayResources.xaml" />
+                <ResourceDictionary Source="Features/Reminders/ReminderResources.xaml" />
                 <ResourceDictionary Source="Features/Anime/AnimeResources.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>

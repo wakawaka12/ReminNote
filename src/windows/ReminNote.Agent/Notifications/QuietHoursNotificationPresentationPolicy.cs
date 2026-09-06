@@ -248,6 +248,10 @@ public static class NotificationPresentationPolicyStore
 /// uses the presentation evaluation instant (not the historical scheduled
 /// instant), retains the core-trigger fact, and records suppression as a
 /// durable channel attempt with a retry hint at the active window's end.
+/// Normal summary-eligible reminders use a distinct queued code; the Agent
+/// dispatcher later emits one representative effect per channel and closes
+/// the remaining queued attempts as aggregated, so the quiet-window boundary
+/// cannot create a notification burst.
 /// </summary>
 public sealed class QuietHoursNotificationPresentationPolicy : INotificationPresentationPolicy
 {
@@ -322,7 +326,7 @@ public sealed class QuietHoursNotificationPresentationPolicy : INotificationPres
             ReminderPresentationDisposition.SUMMARY or ReminderPresentationDisposition.SUPPRESSED_QUIET_HOURS =>
                 NotificationPresentationDecision.SuppressedQuietHours(
                     decision.ReasonCode == ReminderPolicyCodes.QuietHoursSummary
-                        ? NotificationErrorCodes.PolicySuppressedQuietHours
+                        ? NotificationErrorCodes.PolicySummaryQueued
                         : decision.ReasonCode,
                     quietHours.GetActiveQuietHoursEnd(context.EvaluatedAtUtc, timeZone)),
             ReminderPresentationDisposition.BLOCKED => NotificationPresentationDecision.Present,

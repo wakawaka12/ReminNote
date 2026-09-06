@@ -188,6 +188,19 @@ public static class ProtocolOperations
             TaskReorder or TaskContinue or TaskDelete or ReminderRuleUpsert or ReminderMarkRead or ReminderResolve;
 }
 
+/// <summary>
+/// Explicit intent for command.reminder.rule.upsert. CREATE never selects an
+/// existing Rule; UPDATE always names the exact Rule ID. Older callers that
+/// omit mode remain compatible because the Agent infers it from ruleId.
+/// </summary>
+public static class ReminderRuleUpsertModes
+{
+    public const string Create = "CREATE";
+    public const string Update = "UPDATE";
+
+    public static bool IsKnown(string? value) => value is Create or Update;
+}
+
 public static class ProtocolEventTypes
 {
     public const string ChangesAvailable = "changes.available";

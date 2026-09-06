@@ -42,6 +42,8 @@ public sealed class AgentTaskClient :
     ITodayQueryService,
     IWorkdaySettingsStore,
     IReminderQueryService,
+    IReminderRuleQueryService,
+    IReminderRuleCommandClient,
     IReminderCommandClient,
     IAsyncDisposable,
     IDisposable
@@ -53,6 +55,7 @@ public sealed class AgentTaskClient :
     private readonly NamedPipeTransportClient transport;
     private readonly ReadOnlyTaskServices readOnly;
     private readonly ReadOnlyReminderQueryService reminderReadOnly;
+    private readonly ReadOnlyReminderRuleQueryService reminderRuleReadOnly;
     private readonly SemaphoreSlim roundTripGate = new(1, 1);
     private bool sessionReady;
     private int disposed;
@@ -81,6 +84,7 @@ public sealed class AgentTaskClient :
             limits);
         readOnly = new ReadOnlyTaskServices(profile.DatabasePath);
         reminderReadOnly = new ReadOnlyReminderQueryService(profile.DatabasePath, profile.ProfileScope);
+        reminderRuleReadOnly = new ReadOnlyReminderRuleQueryService(profile.DatabasePath, profile.ProfileScope);
     }
 
     public string ProfileScope => profile.ProfileScope;
@@ -232,11 +236,16 @@ public sealed class AgentTaskClient :
         CancellationToken cancellationToken = default) =>
         reminderReadOnly.GetAsync(query, cancellationToken);
 
+    public ValueTask<ReminderRuleReadSnapshot> GetAsync(
+        ReminderRuleQuery query,
+        CancellationToken cancellationToken = default) =>
+        reminderRuleReadOnly.GetAsync(query, cancellationToken);
+
     /// <summary>
-    /// Creates or updates the reminder rule selected by a task-level command.
-    /// The operation is still committed by the Agent writer; this method only
-    /// exposes the public IPC client seam to callers that need more than the
-    /// default task-start rule materialized by TaskCreate.
+    /// Creates or updates a reminder rule through the task-level command.
+    /// Omitting ruleId emits an explicit CREATE intent and always appends a new
+    /// Rule; supplying ruleId emits UPDATE and targets that exact Rule. The
+    /// operation is still committed by the Agent writer.
     /// </summary>
     public async ValueTask<ReminderCommandResult> UpsertReminderRuleAsync(
         TaskId taskId,
@@ -272,6 +281,13 @@ public sealed class AgentTaskClient :
                 ErrorCode: ProtocolErrorCodes.AgentUnavailable);
         }
     }
+
+    public ValueTask<ReminderCommandResult> UpsertAsync(
+        TaskId taskId,
+        ReminderRuleOptions options,
+        ReminderRuleId? ruleId = null,
+        CancellationToken cancellationToken = default) =>
+        UpsertReminderRuleAsync(taskId, options, ruleId, cancellationToken);
 
     /// <summary>
     /// Sends a Task reminder action through the business pipe. The Agent owns
@@ -566,7 +582,16 @@ public sealed class AgentTaskClient :
             ProtocolOutcomes.Stale => ReminderCommandOutcome.Stale,
             _ => ReminderCommandOutcome.Rejected
         };
-        return new ReminderCommandResult(outcome, response.CommittedRevision);
+        ReminderRuleId? ruleId = null;
+        if (response.Payload is { } payload &&
+            payload.TryGetProperty("ruleId", out var ruleIdValue) &&
+            ruleIdValue.ValueKind == JsonValueKind.String &&
+            ReminderRuleId.TryParse(ruleIdValue.GetString(), out var parsedRuleId))
+        {
+            ruleId = parsedRuleId;
+        }
+
+        return new ReminderCommandResult(outcome, response.CommittedRevision, RuleId: ruleId);
     }
 
     private static ReminderCommandResult MapReminderCommandFailure(AgentCommandException exception)

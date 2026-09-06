@@ -1,0 +1,291 @@
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Runtime.Versioning;
+using System.Text;
+using System.IO;
+
+namespace ReminNote.Windows.Notifications;
+
+/// <summary>
+/// Registers the unpackaged desktop executable with the user's Start-menu
+/// shortcut and writes the same AUMID that WinRT ToastNotificationManager uses
+/// into the shortcut property store. The result is read back before it is
+/// advertised as verified; failures stay fail-closed.
+/// </summary>
+[SupportedOSPlatform("windows")]
+internal static class WindowsToastRegistration
+{
+    private const ushort VariantTypeBstr = 8;
+    private const ushort VariantTypeLpWStr = 31;
+    private static readonly PropertyKey ApplicationUserModelIdKey = new(
+        new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"),
+        5);
+
+    public static bool TryEnsureAndVerify(
+        string applicationUserModelId,
+        string? executablePath,
+        out string? failureCode)
+    {
+        failureCode = null;
+        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(applicationUserModelId))
+        {
+            failureCode = "windows.toast.registration.platform_unavailable";
+            return false;
+        }
+
+        var target = executablePath ?? Environment.ProcessPath;
+        if (string.IsNullOrWhiteSpace(target) || !File.Exists(target))
+        {
+            failureCode = "windows.toast.registration.target_missing";
+            return false;
+        }
+
+        target = Path.GetFullPath(target);
+        var startMenu = Environment.GetFolderPath(Environment.SpecialFolder.StartMenu);
+        if (string.IsNullOrWhiteSpace(startMenu))
+        {
+            failureCode = "windows.toast.registration.start_menu_missing";
+            return false;
+        }
+
+        var programs = Path.Combine(startMenu, "Programs");
+        var shortcut = Path.Combine(programs, "ReminNote.lnk");
+        var temporary = shortcut + ".partial-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            Directory.CreateDirectory(programs);
+            if (!IsRegularDirectory(programs) || (File.Exists(shortcut) && !IsRegularFile(shortcut)))
+            {
+                failureCode = "windows.toast.registration.path_invalid";
+                return false;
+            }
+
+            WriteShortcut(temporary, target, applicationUserModelId);
+            if (!VerifyShortcut(temporary, target, applicationUserModelId))
+            {
+                failureCode = "windows.toast.registration.verification_failed";
+                return false;
+            }
+
+            File.Move(temporary, shortcut, overwrite: true);
+            if (!VerifyShortcut(shortcut, target, applicationUserModelId))
+            {
+                failureCode = "windows.toast.registration.verification_failed";
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            failureCode = exception switch
+            {
+                UnauthorizedAccessException => "windows.toast.registration.access_denied",
+                IOException => "windows.toast.registration.io_failed",
+                COMException => "windows.toast.registration.com_failed",
+                _ => "windows.toast.registration.failed"
+            };
+            return false;
+        }
+        finally
+        {
+            try
+            {
+                if (File.Exists(temporary))
+                {
+                    File.Delete(temporary);
+                }
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
+    private static void WriteShortcut(
+        string shortcutPath,
+        string executablePath,
+        string applicationUserModelId)
+    {
+        object? linkObject = null;
+        IPropertyStore? propertyStore = null;
+        PropVariant value = default;
+        try
+        {
+            linkObject = new ShellLink();
+            var link = (IShellLinkW)linkObject;
+            ThrowIfFailed(link.SetPath(executablePath), "IShellLinkW.SetPath");
+            ThrowIfFailed(
+                link.SetWorkingDirectory(Path.GetDirectoryName(executablePath)!),
+                "IShellLinkW.SetWorkingDirectory");
+            ThrowIfFailed(link.SetDescription("ReminNote"), "IShellLinkW.SetDescription");
+            ((IPersistFile)linkObject).Save(shortcutPath, true);
+
+            propertyStore = (IPropertyStore)linkObject;
+            value = PropVariant.FromString(applicationUserModelId);
+            var propertyKey = ApplicationUserModelIdKey;
+            ThrowIfFailed(
+                propertyStore.SetValue(ref propertyKey, ref value),
+                "IPropertyStore.SetValue(PKEY_AppUserModel_ID)");
+            ThrowIfFailed(propertyStore.Commit(), "IPropertyStore.Commit");
+        }
+        finally
+        {
+            value.Dispose();
+            ReleaseCom(propertyStore);
+            ReleaseCom(linkObject);
+        }
+    }
+
+    private static bool VerifyShortcut(
+        string shortcutPath,
+        string executablePath,
+        string applicationUserModelId)
+    {
+        if (!IsRegularFile(shortcutPath))
+        {
+            return false;
+        }
+
+        object? linkObject = null;
+        IPropertyStore? propertyStore = null;
+        PropVariant value = default;
+        try
+        {
+            linkObject = new ShellLink();
+            var persistFile = (IPersistFile)linkObject;
+            persistFile.Load(shortcutPath, 0);
+            var link = (IShellLinkW)linkObject;
+            var target = new StringBuilder(32_768);
+            ThrowIfFailed(link.GetPath(target, target.Capacity, IntPtr.Zero, 0), "IShellLinkW.GetPath");
+            if (!Path.GetFullPath(target.ToString()).Equals(executablePath, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            propertyStore = (IPropertyStore)linkObject;
+            var propertyKey = ApplicationUserModelIdKey;
+            ThrowIfFailed(
+                propertyStore.GetValue(ref propertyKey, out value),
+                "IPropertyStore.GetValue(PKEY_AppUserModel_ID)");
+            var registeredId = value.ReadString();
+            return string.Equals(registeredId, applicationUserModelId, StringComparison.Ordinal);
+        }
+        finally
+        {
+            value.Dispose();
+            ReleaseCom(propertyStore);
+            ReleaseCom(linkObject);
+        }
+    }
+
+    private static bool IsRegularDirectory(string path)
+    {
+        var info = new DirectoryInfo(path);
+        return info.Exists && (info.Attributes & FileAttributes.ReparsePoint) == 0;
+    }
+
+    private static bool IsRegularFile(string path)
+    {
+        var info = new FileInfo(path);
+        return info.Exists && (info.Attributes & FileAttributes.ReparsePoint) == 0;
+    }
+
+    private static void ReleaseCom(object? value)
+    {
+        if (value is not null && Marshal.IsComObject(value))
+        {
+            Marshal.FinalReleaseComObject(value);
+        }
+    }
+
+    private static void ThrowIfFailed(int hresult, string operation)
+    {
+        if (hresult < 0)
+        {
+            Marshal.ThrowExceptionForHR(hresult);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct PropertyKey(Guid formatId, uint propertyId)
+    {
+        public Guid FormatId { get; } = formatId;
+        public uint PropertyId { get; } = propertyId;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct PropVariant
+    {
+        [FieldOffset(0)]
+        public ushort VariantType;
+
+        [FieldOffset(8)]
+        public IntPtr Pointer;
+
+        public static PropVariant FromString(string value) => new()
+        {
+            VariantType = VariantTypeLpWStr,
+            Pointer = Marshal.StringToCoTaskMemUni(value)
+        };
+
+        public string? ReadString() => VariantType is VariantTypeBstr or VariantTypeLpWStr
+            ? Marshal.PtrToStringUni(Pointer)
+            : null;
+
+        public void Dispose()
+        {
+            if (Pointer != IntPtr.Zero)
+            {
+                _ = PropVariantClear(ref this);
+                Pointer = IntPtr.Zero;
+            }
+        }
+    }
+
+    [ComImport]
+    [Guid("00021401-0000-0000-C000-000000000046")]
+    private sealed class ShellLink
+    {
+    }
+
+    [ComImport]
+    [Guid("000214F9-0000-0000-C000-000000000046")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellLinkW
+    {
+        [PreserveSig] int GetPath([Out] StringBuilder path, int maxPath, IntPtr findData, uint flags);
+        [PreserveSig] int GetIDList(out IntPtr idList);
+        [PreserveSig] int SetIDList(IntPtr idList);
+        [PreserveSig] int GetDescription([Out] StringBuilder name, int maxName);
+        [PreserveSig] int SetDescription([MarshalAs(UnmanagedType.LPWStr)] string name);
+        [PreserveSig] int GetWorkingDirectory([Out] StringBuilder path, int maxPath);
+        [PreserveSig] int SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string path);
+        [PreserveSig] int GetArguments([Out] StringBuilder arguments, int maxArguments);
+        [PreserveSig] int SetArguments([MarshalAs(UnmanagedType.LPWStr)] string arguments);
+        [PreserveSig] int GetHotkey(out short hotkey);
+        [PreserveSig] int SetHotkey(short hotkey);
+        [PreserveSig] int GetShowCmd(out int showCommand);
+        [PreserveSig] int SetShowCmd(int showCommand);
+        [PreserveSig] int GetIconLocation([Out] StringBuilder path, int maxPath, out int index);
+        [PreserveSig] int SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string path, int index);
+        [PreserveSig] int SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string path, uint reserved);
+        [PreserveSig] int Resolve(IntPtr window, uint flags);
+        [PreserveSig] int SetPath([MarshalAs(UnmanagedType.LPWStr)] string path);
+    }
+
+    [ComImport]
+    [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IPropertyStore
+    {
+        [PreserveSig] int GetCount(out uint count);
+        [PreserveSig] int GetAt(uint index, out PropertyKey key);
+        [PreserveSig] int GetValue(ref PropertyKey key, out PropVariant value);
+        [PreserveSig] int SetValue(ref PropertyKey key, ref PropVariant value);
+        [PreserveSig] int Commit();
+    }
+
+    [DllImport("ole32.dll")]
+    private static extern int PropVariantClear(ref PropVariant value);
+}

@@ -62,7 +62,7 @@ public static class ProtocolOperationSchemas
                 [ProtocolOperations.ReminderRuleUpsert] = new(
                     ProtocolOperations.ReminderRuleUpsert,
                     requiredFields: ["taskId", "reminder"],
-                    optionalFields: ["ruleId"]),
+                    optionalFields: ["ruleId", "mode"]),
                 [ProtocolOperations.ReminderMarkRead] = new(
                     ProtocolOperations.ReminderMarkRead,
                     requiredFields: ["instanceId"],
@@ -142,6 +142,50 @@ public static class ProtocolOperationSchemas
                     requiredField);
             }
         }
+
+        if (operation == ProtocolOperations.ReminderRuleUpsert)
+        {
+            ValidateReminderRuleUpsertSemantics(payload, seen);
+        }
+    }
+
+    private static void ValidateReminderRuleUpsertSemantics(
+        JsonElement payload,
+        HashSet<string> seen)
+    {
+        var hasRuleId = seen.Contains("ruleId");
+        var mode = payload.TryGetProperty("mode", out var modeValue)
+            ? modeValue.ValueKind == JsonValueKind.String
+                ? modeValue.GetString()
+                : null
+            : null;
+        if (seen.Contains("mode") && !ReminderRuleUpsertModes.IsKnown(mode))
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "Reminder rule mode must be CREATE or UPDATE.",
+                "mode");
+        }
+
+        // A missing mode is accepted only for wire compatibility: ruleId
+        // present means UPDATE, otherwise CREATE. Once mode is supplied the
+        // shape is unambiguous and the ID requirement is enforced here before
+        // any Agent/database code runs.
+        if (mode == ReminderRuleUpsertModes.Create && hasRuleId)
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "CREATE reminder rule commands must not include ruleId.",
+                "ruleId");
+        }
+
+        if (mode == ReminderRuleUpsertModes.Update && !hasRuleId)
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.MissingField,
+                "UPDATE reminder rule commands require ruleId.",
+                "ruleId");
+        }
     }
 
     private static void ValidateKnownFieldShape(
@@ -159,7 +203,7 @@ public static class ProtocolOperationSchemas
             ProtocolOperations.TaskReorder when fieldName == "taskId" => true,
             ProtocolOperations.TaskContinue when fieldName is "sourceTaskId" or "title" => true,
             ProtocolOperations.TaskDelete when fieldName == "taskId" => true,
-            ProtocolOperations.ReminderRuleUpsert when fieldName is "taskId" or "ruleId" => true,
+            ProtocolOperations.ReminderRuleUpsert when fieldName is "taskId" or "ruleId" or "mode" => true,
             ProtocolOperations.ReminderMarkRead when fieldName == "instanceId" => true,
             ProtocolOperations.ReminderResolve when fieldName is "instanceId" or "action" => true,
             _ => false,
@@ -187,6 +231,16 @@ public static class ProtocolOperationSchemas
             value.ValueKind == JsonValueKind.String)
         {
             ProtocolValidation.RequireLowercaseUuid(value.GetString(), fieldName);
+        }
+
+        if (operation == ProtocolOperations.ReminderRuleUpsert && fieldName == "mode" &&
+            value.ValueKind == JsonValueKind.String &&
+            !ReminderRuleUpsertModes.IsKnown(value.GetString()))
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "Reminder rule mode must be CREATE or UPDATE.",
+                fieldName);
         }
 
         if (operation == ProtocolOperations.SessionHello)

@@ -235,7 +235,7 @@ ReminNote $Version (Portable x64 Alpha)
 
 已知范围：
 - Agent/Main/Widget、Reminder 持久化调度、通知宿主桥和 P2.75 迁移代码已包含；
-- Toast registration、Windows 睡眠/唤醒、真实桌面通知效果和用户 sign-off 仍需人工验收；
+- 正常 Main 启动会创建并读回 Toast 的 AUMID Start-menu shortcut；Toast 权限、Windows 睡眠/唤醒、真实桌面通知效果和用户 sign-off 仍需人工验收；
 - 结构化导出可生成独立 artifact；恢复先建立隔离 Candidate，需先 verify，只有显式 --confirm promotion 才会写入 Active。
 
 用户数据命令（路径必须为仓库外绝对路径）：
@@ -280,7 +280,7 @@ $releaseManifest = [ordered]@{
         '人工验收声明不替代独立证据；请在总成报告中记录范围、版本和时间。'
     }
     knownLimitations = @(
-        'Toast registration and Windows sleep/wake/desktop visual/audio acceptance are pending',
+        'Toast permission/visual delivery and Windows sleep/wake/desktop visual/audio acceptance are pending',
         'normal desktop user sign-off is pending',
     'structured restore stages an isolated Candidate; explicit verify and promotion remain operator-controlled recovery actions'
 )

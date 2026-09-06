@@ -1,0 +1,223 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:reminder="clr-namespace:ReminNote.Windows.Features.Reminders">
+    <BooleanToVisibilityConverter x:Key="ReminderSettingsBooleanToVisibilityConverter" />
+
+    <DataTemplate DataType="{x:Type reminder:ReminderSettingsViewModel}">
+        <Grid Margin="{StaticResource PageContentMargin}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0"
+                        Margin="0,0,0,16">
+                <TextBlock Text="提醒规则设置"
+                           Style="{StaticResource PageTitleTextStyle}" />
+                <TextBlock Text="为每个 Task 配置提前、开始、范围结束、优先级、置顶、重复和唤醒策略。规则编辑只经 Agent 单写者提交。"
+                           Style="{StaticResource TodayIntroTextStyle}"
+                           MaxWidth="760" />
+                <TextBlock Text="{Binding InteractionMessage}"
+                           Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                           TextWrapping="Wrap"
+                           Margin="0,8,0,0"
+                           AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+
+            <StackPanel Grid.Row="1"
+                        Orientation="Horizontal"
+                        Margin="0,0,0,12">
+                <Button Content="刷新规则"
+                        Command="{Binding RefreshCommand}"
+                        Style="{StaticResource TodaySecondaryButtonStyle}"
+                        AutomationProperties.Name="刷新规则"
+                        AutomationProperties.HelpText="重新读取 Task 和 ReminderRule 快照" />
+            </StackPanel>
+
+            <ScrollViewer Grid.Row="2"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <Grid>
+                    <ItemsControl ItemsSource="{Binding Tasks}"
+                                  Visibility="{Binding HasTasks, Converter={StaticResource ReminderSettingsBooleanToVisibilityConverter}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource TodayPanelStyle}"
+                                        AutomationProperties.Name="{Binding Title}">
+                                    <StackPanel>
+                                        <DockPanel LastChildFill="True">
+                                            <Button DockPanel.Dock="Right"
+                                                    Content="添加规则"
+                                                    Command="{Binding AddRuleCommand}"
+                                                    Style="{StaticResource TodaySecondaryButtonStyle}"
+                                                    Margin="12,0,0,0"
+                                                    AutomationProperties.Name="为任务添加规则"
+                                                    AutomationProperties.HelpText="创建新的提醒规则草稿" />
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}"
+                                                           Style="{StaticResource TodayGroupTitleTextStyle}"
+                                                           TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding TimeLabel}"
+                                                           Style="{StaticResource TodayGroupSubtitleTextStyle}" />
+                                            </StackPanel>
+                                        </DockPanel>
+                                        <TextBlock Text="尚未配置提醒规则 · 点击‘添加规则’创建。"
+                                                   Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                                                   Margin="0,10,0,0"
+                                                   Visibility="{Binding HasNoRules, Converter={StaticResource ReminderSettingsBooleanToVisibilityConverter}}" />
+                                        <ItemsControl ItemsSource="{Binding Rules}"
+                                                      Margin="0,10,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Border Style="{StaticResource CardBorderStyle}"
+                                                            Padding="12"
+                                                            Margin="0,0,0,8">
+                                                        <Grid>
+                                                            <Grid.RowDefinitions>
+                                                                <RowDefinition Height="Auto" />
+                                                                <RowDefinition Height="Auto" />
+                                                                <RowDefinition Height="Auto" />
+                                                                <RowDefinition Height="Auto" />
+                                                            </Grid.RowDefinitions>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="170" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="150" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                                <ColumnDefinition Width="150" />
+                                                            </Grid.ColumnDefinitions>
+
+                                                            <TextBlock Text="{Binding RuleIdLabel}"
+                                                                       Grid.ColumnSpan="6"
+                                                                       Style="{StaticResource TodayTaskMetaTextStyle}"
+                                                                       Margin="0,0,0,8" />
+
+                                                            <TextBlock Grid.Row="1"
+                                                                       Text="用途"
+                                                                       Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                                                                       VerticalAlignment="Center" />
+                                                            <ComboBox Grid.Row="1"
+                                                                      Grid.Column="1"
+                                                                      ItemsSource="{Binding PurposeOptions}"
+                                                                      SelectedItem="{Binding Purpose, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Margin="8,3,12,3"
+                                                                      MinHeight="32"
+                                                                      AutomationProperties.Name="提醒用途" />
+                                                            <TextBlock Grid.Row="1"
+                                                                       Grid.Column="2"
+                                                                       Text="优先级"
+                                                                       Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                                                                       VerticalAlignment="Center" />
+                                                            <ComboBox Grid.Row="1"
+                                                                      Grid.Column="3"
+                                                                      ItemsSource="{Binding PriorityOptions}"
+                                                                      SelectedItem="{Binding Priority, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Margin="8,3,12,3"
+                                                                      MinHeight="32"
+                                                                      AutomationProperties.Name="提醒优先级" />
+                                                            <TextBlock Grid.Row="1"
+                                                                       Grid.Column="4"
+                                                                       Text="唤醒"
+                                                                       Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                                                                       VerticalAlignment="Center" />
+                                                            <ComboBox Grid.Row="1"
+                                                                      Grid.Column="5"
+                                                                      ItemsSource="{Binding WakePolicyOptions}"
+                                                                      SelectedItem="{Binding WakePolicy, UpdateSourceTrigger=PropertyChanged}"
+                                                                      Margin="8,3,0,3"
+                                                                      MinHeight="32"
+                                                                      AutomationProperties.Name="提醒唤醒策略" />
+
+                                                            <TextBlock Grid.Row="2"
+                                                                       Text="提前分钟"
+                                                                       Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBox Grid.Row="2"
+                                                                     Grid.Column="1"
+                                                                     Text="{Binding OffsetMinutesText, UpdateSourceTrigger=PropertyChanged}"
+                                                                     Style="{StaticResource TodayTextBoxStyle}"
+                                                                     Margin="8,3,12,3"
+                                                                     ToolTip="TASK_PRE_START 使用负数，例如 -30；TASK_START 使用 0。"
+                                                                     AutomationProperties.Name="提前分钟" />
+                                                            <TextBlock Grid.Row="2"
+                                                                       Grid.Column="2"
+                                                                       Text="自定义 UTC"
+                                                                       Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBox Grid.Row="2"
+                                                                     Grid.Column="3"
+                                                                     Grid.ColumnSpan="3"
+                                                                     Text="{Binding CustomUtcText, UpdateSourceTrigger=PropertyChanged}"
+                                                                     Style="{StaticResource TodayTextBoxStyle}"
+                                                                     Margin="8,3,0,3"
+                                                                     Visibility="{Binding IsCustomTiming, Converter={StaticResource ReminderSettingsBooleanToVisibilityConverter}}"
+                                                                     ToolTip="TASK_CUSTOM 使用 canonical UTC。"
+                                                                     AutomationProperties.Name="自定义 UTC 时间" />
+
+                                                            <StackPanel Grid.Row="3"
+                                                                        Grid.ColumnSpan="6"
+                                                                        Orientation="Horizontal"
+                                                                        Margin="0,4,0,0">
+                                                                <CheckBox Content="置顶"
+                                                                          IsChecked="{Binding Pinned, UpdateSourceTrigger=PropertyChanged}"
+                                                                          Margin="0,0,14,0"
+                                                                          VerticalAlignment="Center" />
+                                                                <CheckBox Content="启用重复"
+                                                                          IsChecked="{Binding RepeatEnabled, UpdateSourceTrigger=PropertyChanged}"
+                                                                          Margin="0,0,8,0"
+                                                                          VerticalAlignment="Center" />
+                                                                <TextBox Text="{Binding RepeatIntervalMinutesText, UpdateSourceTrigger=PropertyChanged}"
+                                                                         Style="{StaticResource TodayTextBoxStyle}"
+                                                                         Width="72"
+                                                                         Margin="0,0,6,0"
+                                                                         ToolTip="重复间隔（分钟）" />
+                                                                <TextBlock Text="分钟，最多"
+                                                                           Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                                                                           VerticalAlignment="Center" />
+                                                                <TextBox Text="{Binding RepeatMaxCountText, UpdateSourceTrigger=PropertyChanged}"
+                                                                         Style="{StaticResource TodayTextBoxStyle}"
+                                                                         Width="72"
+                                                                         Margin="6,0,6,0"
+                                                                         ToolTip="重复最大次数，留空使用安全上限。" />
+                                                                <TextBlock Text="次"
+                                                                           Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                                                                           VerticalAlignment="Center"
+                                                                           Margin="0,0,14,0" />
+                                                                <CheckBox Content="规则启用"
+                                                                          IsChecked="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}"
+                                                                          VerticalAlignment="Center"
+                                                                          Margin="0,0,14,0" />
+                                                                <Button Content="保存规则"
+                                                                        Command="{Binding SaveCommand}"
+                                                                        Style="{StaticResource TodayButtonStyle}"
+                                                                        Padding="12,7"
+                                                                        AutomationProperties.Name="保存提醒规则" />
+                                                                <TextBlock Text="{Binding Feedback}"
+                                                                           Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                                                                           TextWrapping="Wrap"
+                                                                           VerticalAlignment="Center"
+                                                                           Margin="10,0,0,0"
+                                                                           Visibility="{Binding HasFeedback, Converter={StaticResource ReminderSettingsBooleanToVisibilityConverter}}"
+                                                                           AutomationProperties.LiveSetting="Polite" />
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="暂无 Task。请先在 TODAY 创建 Task，再回来配置提醒规则。"
+                               Style="{StaticResource TodayGroupSubtitleTextStyle}"
+                               TextWrapping="Wrap"
+                               Visibility="{Binding HasNoTasks, Converter={StaticResource ReminderSettingsBooleanToVisibilityConverter}}" />
+                </Grid>
+            </ScrollViewer>
+        </Grid>
+    </DataTemplate>
+</ResourceDictionary>

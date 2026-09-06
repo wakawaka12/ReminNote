@@ -629,7 +629,8 @@ public static class ProtocolJson
     public static JsonElement CreateReminderRuleUpsertPayload(
         string taskId,
         ReminderRuleOptions reminder,
-        string? ruleId = null)
+        string? ruleId = null,
+        string? mode = null)
     {
         ProtocolValidation.RequireLowercaseUuid(taskId, nameof(taskId));
         ArgumentNullException.ThrowIfNull(reminder);
@@ -638,9 +639,23 @@ public static class ProtocolJson
             ProtocolValidation.RequireLowercaseUuid(ruleId, nameof(ruleId));
         }
 
+        var effectiveMode = mode ?? (ruleId is null
+            ? ReminderRuleUpsertModes.Create
+            : ReminderRuleUpsertModes.Update);
+        if (!ReminderRuleUpsertModes.IsKnown(effectiveMode) ||
+            (effectiveMode == ReminderRuleUpsertModes.Create && ruleId is not null) ||
+            (effectiveMode == ReminderRuleUpsertModes.Update && ruleId is null))
+        {
+            throw ProtocolContractException.Invalid(
+                ProtocolErrorCodes.InvalidRequest,
+                "Reminder rule upsert mode and ruleId must describe CREATE or UPDATE.",
+                nameof(mode));
+        }
+
         return CreateObject(writer =>
         {
             writer.WriteString("taskId", taskId);
+            writer.WriteString("mode", effectiveMode);
             if (ruleId is not null)
             {
                 writer.WriteString("ruleId", ruleId);

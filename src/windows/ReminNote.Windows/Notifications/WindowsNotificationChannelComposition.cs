@@ -14,9 +14,9 @@ namespace ReminNote.Windows.Notifications;
 public static class WindowsNotificationChannelComposition
 {
     /// <summary>
-    /// Creates the host-owned Windows catalog. Toast registration is
-    /// unverified by default, so the real sink is connected but remains
-    /// unavailable until the host supplies explicit registration evidence.
+    /// Creates the host-owned Windows catalog. Toast registration remains
+    /// fail-closed unless the normal Main startup supplied a verified option;
+    /// safe/test composition therefore cannot claim a desktop Toast effect.
     /// </summary>
     public static WindowsNotificationChannelHost CreateHostOwned(
         IClock clock,

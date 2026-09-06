@@ -19,6 +19,8 @@ internal sealed class AgentMutationMetadata
 {
     public string? TaskId { get; set; }
 
+    public string? RuleId { get; set; }
+
     public bool Deleted { get; set; }
 }
 
@@ -798,6 +800,10 @@ internal static class AgentDomainMutationAdapter
         AgentMutationMetadata metadata,
         CancellationToken cancellationToken)
     {
+        // The wire mode is the authoritative intent: CREATE always appends a
+        // new Rule (so one task may have pre-start and start reminders), while
+        // UPDATE must carry the exact Rule ID. A missing mode is inferred only
+        // for older clients and follows the same ruleId-based distinction.
         var taskId = ParseTaskId(request.Payload, "taskId");
         var task = await repository.FindAsync(taskId, cancellationToken).ConfigureAwait(false);
         if (task is null)
@@ -810,8 +816,39 @@ internal static class AgentDomainMutationAdapter
                 "reminder.options.required",
                 "A reminder rule intent is required.",
                 "reminder"));
+
+        var hasRuleId = request.Payload.TryGetProperty("ruleId", out var ruleIdValue);
+        var mode = request.Payload.TryGetProperty("mode", out var modeValue)
+            ? RequireStringValue(modeValue, "mode")
+            : hasRuleId
+                ? ReminderRuleUpsertModes.Update
+                : ReminderRuleUpsertModes.Create;
+        if (!ReminderRuleUpsertModes.IsKnown(mode))
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.mode.invalid",
+                "Reminder rule mode must be CREATE or UPDATE.",
+                "mode"));
+        }
+
+        if (mode == ReminderRuleUpsertModes.Create && hasRuleId)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.create_rule_id_forbidden",
+                "CREATE reminder rule commands must not include ruleId.",
+                "ruleId"));
+        }
+
+        if (mode == ReminderRuleUpsertModes.Update && !hasRuleId)
+        {
+            throw new DomainValidationException(new DomainValidationError(
+                "reminder.rule.update_rule_id_required",
+                "UPDATE reminder rule commands require ruleId.",
+                "ruleId"));
+        }
+
         ReminderRuleEntity? ruleEntity = null;
-        if (request.Payload.TryGetProperty("ruleId", out var ruleIdValue))
+        if (mode == ReminderRuleUpsertModes.Update)
         {
             var ruleId = ReminderRuleId.Parse(RequireStringValue(ruleIdValue, "ruleId"));
             ruleEntity = await context.ReminderRules
@@ -822,28 +859,14 @@ internal static class AgentDomainMutationAdapter
                 return P25MutationDecision.Rejected(ProtocolErrorCodes.NotFound);
             }
         }
-        else
-        {
-            var candidates = await context.ReminderRules
-                .Where(rule => rule.TargetId == taskId.Value)
-                .OrderBy(rule => rule.Id)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (candidates.Count > 1)
-            {
-                throw new DomainValidationException(new DomainValidationError(
-                    "reminder.rule.selection_required",
-                    "A task with multiple reminder rules requires ruleId.",
-                    "ruleId"));
-            }
-
-            ruleEntity = candidates.SingleOrDefault();
-        }
 
         metadata.TaskId = taskId.ToString();
-        var changes = ruleEntity is null
+        var changes = mode == ReminderRuleUpsertModes.Create
             ? await CreateReminderRuleAsync(context, taskId.Value, task.TimeSpec, options, cancellationToken).ConfigureAwait(false)
-            : await RebuildReminderRuleAsync(context, ruleEntity, task.TimeSpec, task.TimeSpec, options, cancellationToken).ConfigureAwait(false);
+            : await RebuildReminderRuleAsync(context, ruleEntity!, task.TimeSpec, task.TimeSpec, options, cancellationToken).ConfigureAwait(false);
+        metadata.RuleId = changes
+            .FirstOrDefault(change => change.EntityType == "reminder_rule")?.EntityId
+            ?? (mode == ReminderRuleUpsertModes.Update ? ruleEntity!.Id.ToString("D") : null);
         return changes.Count == 0
             ? P25MutationDecision.NoOp()
             : P25MutationDecision.Changed(changes);

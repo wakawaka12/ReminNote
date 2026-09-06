@@ -160,6 +160,7 @@ internal static class AgentRuntime
                 agentInstanceId: agentInstanceId,
                 committedTriggerSource: committedTriggerSource,
                 attemptStore: attemptStore);
+            var resumeCoverage = new AgentResumeCoverage();
             var limits = AgentTransportDefaults.CreateLimits();
             var businessEndpoint = new NamedPipeTransportEndpoint(profile, NamedPipeEndpointKind.Business);
             var controlEndpoint = new NamedPipeTransportEndpoint(profile, NamedPipeEndpointKind.Control);
@@ -206,6 +207,8 @@ internal static class AgentRuntime
                     runtimeCancellation.Token);
                 var reminderTask = RunReminderSchedulerAsync(
                     reminderRuntime,
+                    clock,
+                    resumeCoverage,
                     runtimeCancellation.Token);
                 try
                 {
@@ -255,40 +258,58 @@ internal static class AgentRuntime
 
     private static async Task RunReminderSchedulerAsync(
         ReminderNotificationRuntime runtime,
+        SystemClock clock,
+        AgentResumeCoverage resumeCoverage,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(runtime);
+        ArgumentNullException.ThrowIfNull(clock);
+        ArgumentNullException.ThrowIfNull(resumeCoverage);
         var recovery = true;
-        var previousTickUtc = SystemClock.Instance.GetCurrentInstant();
-        var recoveryGap = Duration.FromMinutes(2);
+        var previousTickUtc = clock.GetCurrentInstant();
         while (!cancellationToken.IsCancellationRequested)
         {
-            var now = SystemClock.Instance.GetCurrentInstant();
+            var now = clock.GetCurrentInstant();
             // The loop delay is capped at 30 seconds, so a materially larger
-            // wall-clock gap is a reliable sleep/resume or process pause
-            // signal even when Windows does not deliver a resume callback to
-            // the console Agent. A backwards clock jump is recovered too.
+            // wall-clock gap is a supplementary sleep/resume signal. The
+            // monotonic AgentResumeCoverage observation covers the common
+            // 60-90 second suspend interval even when Windows does not deliver
+            // a resume callback to the console Agent. A backwards clock jump
+            // is recovered too.
             var clockGap = now - previousTickUtc;
-            var shouldRecover = recovery || clockGap < Duration.Zero || clockGap >= recoveryGap;
+            var shouldRecover = ShouldRecover(
+                recovery,
+                clockGap,
+                resumeCoverage.ConsumeSignal());
             var run = shouldRecover
                 ? await runtime.RecoverAsync(cancellationToken).ConfigureAwait(false)
                 : await runtime.RunDueCycleAsync(cancellationToken).ConfigureAwait(false);
             recovery = false;
-            previousTickUtc = SystemClock.Instance.GetCurrentInstant();
+            previousTickUtc = clock.GetCurrentInstant();
             await Task.Delay(
-                    GetReminderLoopDelay(run.SchedulerResult?.NextWakeupUtc),
+                    GetReminderLoopDelay(run.SchedulerResult?.NextWakeupUtc, clock),
                     cancellationToken)
                 .ConfigureAwait(false);
         }
     }
 
-    private static TimeSpan GetReminderLoopDelay(Instant? nextWakeupUtc)
+    internal static bool ShouldRecover(
+        bool initialRecovery,
+        Duration clockGap,
+        bool resumeSignaled) =>
+        initialRecovery ||
+        resumeSignaled ||
+        clockGap < Duration.Zero ||
+        clockGap >= Duration.FromSeconds(45);
+
+    private static TimeSpan GetReminderLoopDelay(Instant? nextWakeupUtc, SystemClock clock)
     {
         if (nextWakeupUtc is not { } wakeup)
         {
             return TimeSpan.FromSeconds(30);
         }
 
-        var remaining = wakeup - SystemClock.Instance.GetCurrentInstant();
+        var remaining = wakeup - clock.GetCurrentInstant();
         if (remaining <= Duration.Zero)
         {
             // A rejected due attempt remains durable PENDING and must be

@@ -1346,10 +1346,12 @@ public static class UserDataExportService
 /// <summary>
 /// Explicit Candidate restore entry. Validation and staging are side
 /// effect free in dry-run mode. Confirmed import creates a new independent
-/// SQLite Candidate and never opens the Active database for writing. Pending
-/// schedules are intentionally not inserted into the Candidate scheduler
-/// projection; the staged source must pass the separate Candidate verifier
-/// before an operator-controlled promotion.
+/// SQLite Candidate and never opens the Active database for writing. Every
+/// exported schedule remains
+/// in the Candidate so self-references (for example SUPERSEDED -> PENDING)
+/// stay valid. A source PENDING row is then converted, in the Candidate only,
+/// to CANCELLED/RECOVERY_OBSOLETE and recorded in the marker as an explicit
+/// non-activating restore decision.
 /// </summary>
 public static class UserDataRestoreService
 {
@@ -1427,6 +1429,11 @@ public static class UserDataRestoreService
                 ? null
                 : "notification-policy.json",
             pendingSchedulesDeferred = plan.PendingSchedulesDeferred,
+            deferredScheduleIds = document.Reminders.Schedules
+                .Where(value => string.Equals(value.State, ReminderExportValues.SchedulePending, StringComparison.Ordinal))
+                .Select(value => value.Id)
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .ToArray(),
             activeWrite = false
         };
         await File.WriteAllTextAsync(
@@ -1470,8 +1477,11 @@ public static class UserDataRestoreService
                 var historyEntities = document.TaskHistory.Select(ToHistoryEntity).ToArray();
                 var rules = document.Reminders.Rules.Select(ToRuleEntity).ToArray();
                 var ruleById = document.Reminders.Rules.ToDictionary(value => value.Id, StringComparer.Ordinal);
+                // Keep the complete schedule graph until after the first
+                // save. In particular, a SUPERSEDED row may reference a
+                // source PENDING replacement; filtering that row before the
+                // insert breaks the self-FK and silently loses history.
                 var schedules = document.Reminders.Schedules
-                    .Where(value => string.Equals(value.State, ReminderExportValues.SchedulePending, StringComparison.Ordinal) == false)
                     .Select(value => ToScheduleEntity(value, ruleById))
                     .ToArray();
                 var scheduleIds = schedules.Select(value => value.Id).ToHashSet();
@@ -1506,6 +1516,29 @@ public static class UserDataRestoreService
                 context.ReminderSchedules.AddRange(schedules);
                 context.ReminderInstances.AddRange(instances);
                 context.ReminderDeliveryAttempts.AddRange(attempts);
+                await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+                // Candidate startup must never reactivate an old pending
+                // schedule. Use an existing terminal state rather than
+                // deleting the row or clearing a replacement FK. The source
+                // PENDING fact remains in structured-export.json and the
+                // marker carries the exact IDs for verifier normalization.
+                var deferredAt = schedules
+                    .Where(value => value.State == ScheduleState.PENDING)
+                    .ToArray();
+                foreach (var schedule in deferredAt)
+                {
+                    schedule.State = ScheduleState.CANCELLED;
+                    schedule.TerminalReason = ScheduleStateReason.RECOVERY_OBSOLETE;
+                    schedule.ReplacementScheduleId = null;
+                    schedule.TerminalAtUtc = schedule.CreatedAtUtc;
+                }
+
+                var revision = await context.RevisionStates
+                    .SingleAsync(value => value.ProfileScope == profileScope, cancellationToken)
+                    .ConfigureAwait(false);
+                revision.CurrentRevision = document.GlobalRevision;
+                revision.OldestAvailableRevision = 0;
                 await context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
 
