@@ -173,6 +173,12 @@ internal static class WindowsToastRegistration
                 return false;
             }
 
+            // URL associations are cached by the Shell.  A registry write can
+            // therefore verify successfully while an already-running Shell
+            // still reports that no app handles the scheme.  Invalidate the
+            // association cache before advertising the Toast channel as
+            // verified.
+            NotifyShellAssociationChanged();
             return true;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -209,6 +215,13 @@ internal static class WindowsToastRegistration
     }
 
     private static string QuoteCommandLineValue(string value) => $"\"{value}\"";
+
+    private static void NotifyShellAssociationChanged() =>
+        SHChangeNotify(
+            ShellChangeAssociationChanged,
+            ShellChangeNotifyIdList,
+            IntPtr.Zero,
+            IntPtr.Zero);
 
     private static void WriteShortcut(
         string shortcutPath,
@@ -420,4 +433,14 @@ internal static class WindowsToastRegistration
 
     [DllImport("ole32.dll")]
     private static extern int PropVariantClear(ref PropVariant value);
+
+    private const uint ShellChangeAssociationChanged = 0x08000000;
+    private const uint ShellChangeNotifyIdList = 0x0000;
+
+    [DllImport("shell32.dll", ExactSpelling = true)]
+    private static extern void SHChangeNotify(
+        uint eventId,
+        uint flags,
+        IntPtr item1,
+        IntPtr item2);
 }

@@ -482,11 +482,9 @@ public sealed class WindowsTrayNotificationEffectSink : INotificationChannelEffe
     private const uint NimAdd = 0;
     private const uint NimModify = 1;
     private const uint NimDelete = 2;
-    private const uint NotifyIconInfo = 0x00000010;
     private const uint NotifyIconIcon = 0x00000002;
     private const uint NotifyIconTip = 0x00000004;
     private const uint NotifyIconGuid = 0x00000080;
-    private const uint NotificationInfo = 0x00000001;
 
     private static readonly IReadOnlyList<NotificationCapability> TrayCapabilities =
     [
@@ -611,19 +609,19 @@ public sealed class WindowsTrayNotificationEffectSink : INotificationChannelEffe
                         CreateNotifyIconData(
                             registeredWindow,
                             icon,
-                            registeredLogicalReminderId,
-                            includeInfo: false));
+                            registeredLogicalReminderId));
                     iconRegistered = false;
                     registeredWindow = IntPtr.Zero;
                     registeredLogicalReminderId = Guid.Empty;
                 }
 
+                // Toast is the single user-facing popup.  Keep TRAY as a
+                // passive presence/health channel so one logical reminder
+                // cannot surface as a second balloon after the Toast closes.
                 var data = CreateNotifyIconData(
                     snapshot.Handle,
                     icon,
-                    request.LogicalReminderId,
-                    includeInfo: true,
-                    summary: request.Summary);
+                    request.LogicalReminderId);
                 var message = iconRegistered ? NimModify : NimAdd;
                 if (!WindowsNative.ShellNotifyIcon(message, data))
                 {
@@ -638,9 +636,7 @@ public sealed class WindowsTrayNotificationEffectSink : INotificationChannelEffe
                         data = CreateNotifyIconData(
                             snapshot.Handle,
                             icon,
-                            request.LogicalReminderId,
-                            includeInfo: true,
-                            summary: request.Summary);
+                            request.LogicalReminderId);
                         if (WindowsNative.ShellNotifyIcon(NimAdd, data))
                         {
                             iconRegistered = true;
@@ -711,8 +707,7 @@ public sealed class WindowsTrayNotificationEffectSink : INotificationChannelEffe
                 var data = CreateNotifyIconData(
                     registeredWindow,
                     IntPtr.Zero,
-                    registeredLogicalReminderId,
-                    includeInfo: false);
+                    registeredLogicalReminderId);
                 _ = WindowsNative.ShellNotifyIcon(NimDelete, data);
             }
 
@@ -727,27 +722,20 @@ public sealed class WindowsTrayNotificationEffectSink : INotificationChannelEffe
     private static WindowsNative.NotifyIconData CreateNotifyIconData(
         IntPtr windowHandle,
         IntPtr icon,
-        Guid logicalReminderId,
-        bool includeInfo,
-        NotificationSummarySnapshot? summary = null)
+        Guid logicalReminderId)
     {
-        var info = summary is { Count: > 1 }
-            ? $"有 {summary.Count} 项提醒需要查看。"
-            : "有一项提醒需要查看。";
         return new WindowsNative.NotifyIconData
         {
             CbSize = (uint)Marshal.SizeOf<WindowsNative.NotifyIconData>(),
             HWnd = windowHandle,
             UId = NotifyIconId,
-            UFlags = NotifyIconGuid | (includeInfo
-                ? NotifyIconIcon | NotifyIconTip | NotifyIconInfo
-                : 0),
+            UFlags = NotifyIconGuid | NotifyIconIcon | NotifyIconTip,
             HIcon = icon,
             SzTip = "ReminNote",
-            SzInfo = includeInfo ? info : string.Empty,
+            SzInfo = string.Empty,
             UTimeoutOrVersion = 5_000,
-            SzInfoTitle = includeInfo ? "ReminNote 提醒" : string.Empty,
-            DwInfoFlags = NotificationInfo,
+            SzInfoTitle = string.Empty,
+            DwInfoFlags = 0,
             GuidItem = logicalReminderId,
         };
     }

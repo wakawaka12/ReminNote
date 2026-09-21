@@ -124,10 +124,31 @@ public sealed class StartupAndMainUiInteractionTests
         Assert.Contains("activationType=\\\"protocol\\\"", sink, StringComparison.Ordinal);
         Assert.Contains("TryEnsureAndVerifyProtocolRegistration", registration, StringComparison.Ordinal);
         Assert.Contains("Software\\Classes\\reminnote", registration, StringComparison.Ordinal);
+        Assert.Contains("SHChangeNotify", registration, StringComparison.Ordinal);
+        Assert.Contains("ShellChangeAssociationChanged", registration, StringComparison.Ordinal);
         Assert.Contains("TryActivateExisting(activationArgument)", app, StringComparison.Ordinal);
         Assert.Contains("ReadLineAsync(cancellationToken)", coordinator, StringComparison.Ordinal);
         Assert.Contains("HandleNotificationActivationAsync", mainWindow, StringComparison.Ordinal);
         Assert.Contains("OpenForActivationAsync", center, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainTrayChannelStaysPassiveWhenToastIsThePopupSurface()
+    {
+        var sinks = ReadWorkspaceFile(
+            Path.Combine(
+                "src",
+                "windows",
+                "ReminNote.Windows",
+                "Notifications",
+                "WindowsNotificationEffectSinks.cs"));
+
+        Assert.Contains(
+            "Toast is the single user-facing popup",
+            sinks,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("includeInfo: true", sinks, StringComparison.Ordinal);
+        Assert.DoesNotContain("NotifyIconInfo", sinks, StringComparison.Ordinal);
     }
 
     [Fact]
